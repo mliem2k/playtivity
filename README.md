@@ -18,6 +18,39 @@
 - **🌙 Dark Mode**: Toggle between light and dark themes
 - **🎨 Spotify Design**: Authentic Spotify branding and colors
 
+## Screenshots
+
+<div align="center">
+  <table>
+    <tr>
+      <td align="center">
+        <img src="screenshots/login.png" alt="Login Screen" width="250"/>
+        <br><em>Login Screen</em>
+      </td>
+      <td align="center">
+        <img src="screenshots/home.png" alt="Home Screen" width="250"/>
+        <br><em>Home Screen</em>
+      </td>
+    </tr>
+    <tr>
+      <td align="center">
+        <img src="screenshots/profile_top_artists.png" alt="Profile Top Artists" width="250"/>
+        <br><em>Profile - Top Artists</em>
+      </td>
+      <td align="center">
+        <img src="screenshots/profile_top_songs.png" alt="Profile Top Songs" width="250"/>
+        <br><em>Profile - Top Songs</em>
+      </td>
+    </tr>
+    <tr>
+      <td align="center">
+        <img src="screenshots/settings.png" alt="Settings Screen" width="250"/>
+        <br><em>Settings Screen</em>
+      </td>
+    </tr>
+  </table>
+</div>
+
 ## How It Works
 
 ### Friend Activities
