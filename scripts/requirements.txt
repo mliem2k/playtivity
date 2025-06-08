@@ -1,0 +1,18 @@
+# Python requirements for Playtivity scripts
+# Icon and image conversion dependencies
+
+# Core image processing
+Pillow>=10.0.0
+
+# SVG conversion (primary option)
+cairosvg>=2.7.0
+
+# Alternative SVG conversion (fallback)
+reportlab>=4.0.0
+svglib>=1.5.0
+
+# Standard library dependencies (included for completeness)
+# pathlib - built-in
+# os - built-in  
+# sys - built-in
+# shutil - built-in 
