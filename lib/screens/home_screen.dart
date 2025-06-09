@@ -132,14 +132,14 @@ class _HomeScreenState extends State<HomeScreen> {
     if (spotifyProvider.isSkeletonLoading) {
       return Column(
         children: [
-          const SizedBox(height: 16),
+          // Add proper spacing to account for the app bar
+          SizedBox(height: MediaQuery.of(context).padding.top + kToolbarHeight + 16),
           Expanded(
             child: ListView.builder(
-              padding: EdgeInsets.only(
+              padding: const EdgeInsets.only(
                 left: 16,
                 right: 16,
-                top: MediaQuery.of(context).padding.top + kToolbarHeight,
-                bottom: MediaQuery.of(context).padding.bottom,
+                bottom: 16,
               ),
               itemCount: 6, // Show 6 skeleton cards
               itemBuilder: (context, index) {
@@ -152,95 +152,124 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     if (spotifyProvider.isLoading) {
-            return const Center(
+      return Column(
+        children: [
+          SizedBox(height: MediaQuery.of(context).padding.top + kToolbarHeight),
+          const Expanded(
+            child: Center(
               child: CircularProgressIndicator(),
-            );
-          }
+            ),
+          ),
+        ],
+      );
+    }
 
           if (spotifyProvider.error != null) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(
-                    Icons.error_outline,
-                    size: 64,
-                    color: Colors.grey,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Error loading activities',
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    spotifyProvider.error!,
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey,
+            return Column(
+              children: [
+                SizedBox(height: MediaQuery.of(context).padding.top + kToolbarHeight),
+                Expanded(
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(
+                          Icons.error_outline,
+                          size: 64,
+                          color: Colors.grey,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Error loading activities',
+                          style: Theme.of(context).textTheme.headlineSmall,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          spotifyProvider.error!,
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Colors.grey,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: _refreshData,
+                          child: const Text('Retry'),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: _refreshData,
-                    child: const Text('Retry'),
-                  ),
-                ],
-              ),
+                ),
+              ],
             );
           }
 
           final activities = spotifyProvider.friendsActivities;
 
           if (activities.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(
-                    Icons.music_note_outlined,
-                    size: 64,
-                    color: Colors.grey,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No recent activities',
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Your friends haven\'t been listening to music recently',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey,
+            return Column(
+              children: [
+                SizedBox(height: MediaQuery.of(context).padding.top + kToolbarHeight),
+                Expanded(
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(
+                          Icons.music_note_outlined,
+                          size: 64,
+                          color: Colors.grey,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'No recent activities',
+                          style: Theme.of(context).textTheme.headlineSmall,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Your friends haven\'t been listening to music recently',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Colors.grey,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: _refreshData,
+                          child: const Text('Refresh'),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: _refreshData,
-                    child: const Text('Refresh'),
-                  ),
-                ],
-              ),
+                ),
+              ],
             );
           }
 
           return RefreshIndicator(
             onRefresh: _refreshData,
-            child: Column(
-              children: [
-                LastUpdatedIndicator(
-                  lastUpdated: spotifyProvider.lastUpdated,
-                  isRefreshing: spotifyProvider.isRefreshing,
+            edgeOffset: kToolbarHeight,
+            child: CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(
+                  child: Column(
+                    children: [
+                      // Add proper spacing to account for the app bar
+                      SizedBox(height: MediaQuery.of(context).padding.top + kToolbarHeight + 8),
+                      LastUpdatedIndicator(
+                        lastUpdated: spotifyProvider.lastUpdated,
+                        isRefreshing: spotifyProvider.isRefreshing,
+                      ),
+                    ],
+                  ),
                 ),
-                Expanded(
-                  child: ListView.builder(
-                    padding: EdgeInsets.only(
-                      left: 16,
-                      right: 16,
-                      top: MediaQuery.of(context).padding.top + kToolbarHeight,
-                      bottom: MediaQuery.of(context).padding.bottom,
-                    ),
+                SliverPadding(
+                  padding: const EdgeInsets.only(
+                    left: 16,
+                    right: 16,
+                    bottom: 16,
+                  ),
+                  sliver: SliverList.builder(
                     itemCount: activities.length,
                     itemBuilder: (context, index) {
                       final activity = activities[index];
