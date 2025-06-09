@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/images/spotivity_logo_large_display.png" alt="Playtivity Logo" width="200"/>
+  <img src="assets/images/playtivity_logo_large_display.png" alt="Playtivity Logo" width="200"/>
   
   # Playtivity - Spotify Friends Activity App
   
