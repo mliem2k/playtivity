@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../models/user.dart';
@@ -59,157 +60,200 @@ class SpotifyService {
   }
 
   Future<Map<String, dynamic>> exchangeCodeForToken(String code) async {
-    final url = '$authUrl/api/token';
-    final headers = {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Authorization': 'Basic ${base64Encode(utf8.encode('$clientId:$clientSecret'))}',    };
-    // final body = 'grant_type=authorization_code&code=$code&redirect_uri=$redirectUri';
+    return _retryApiCall(
+      () async {
+        final url = '$authUrl/api/token';
+        final headers = {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': 'Basic ${base64Encode(utf8.encode('$clientId:$clientSecret'))}',
+        };
 
-    // Log curl format
-    // final curlCommand = _generateCurlCommand('POST', url, headers, body: body);
-    // print('🔧 Token Exchange CURL Command:');
-    // print(curlCommand);
+        final response = await http.post(
+          Uri.parse(url),
+          headers: headers,
+          body: {
+            'grant_type': 'authorization_code',
+            'code': code,
+            'redirect_uri': redirectUri,
+          },
+        );
 
-    final response = await http.post(
-      Uri.parse(url),
-      headers: headers,
-      body: {
-        'grant_type': 'authorization_code',
-        'code': code,
-        'redirect_uri': redirectUri,
+        if (response.statusCode == 200) {
+          return json.decode(response.body);
+        } else {
+          throw Exception('Failed to exchange code for token: ${response.statusCode} - ${response.body}');
+        }
       },
+      operation: 'Token Exchange',
     );
-
-    if (response.statusCode == 200) {
-      return json.decode(response.body);
-    } else {
-      throw Exception('Failed to exchange code for token: ${response.body}');
-    }
   }
 
   Future<Map<String, dynamic>> refreshToken(String refreshToken) async {
-    final url = '$authUrl/api/token';
-    final headers = {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Authorization': 'Basic ${base64Encode(utf8.encode('$clientId:$clientSecret'))}',    };
-    // final body = 'grant_type=refresh_token&refresh_token=$refreshToken';
+    return _retryApiCall(
+      () async {
+        final url = '$authUrl/api/token';
+        final headers = {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': 'Basic ${base64Encode(utf8.encode('$clientId:$clientSecret'))}',
+        };
 
-    // Log curl format
-    // final curlCommand = _generateCurlCommand('POST', url, headers, body: body);
-    // print('🔧 Refresh Token CURL Command:');
-    // print(curlCommand);
+        final response = await http.post(
+          Uri.parse(url),
+          headers: headers,
+          body: {
+            'grant_type': 'refresh_token',
+            'refresh_token': refreshToken,
+          },
+        );
 
-    final response = await http.post(
-      Uri.parse(url),
-      headers: headers,
-      body: {
-        'grant_type': 'refresh_token',
-        'refresh_token': refreshToken,
+        if (response.statusCode == 200) {
+          return json.decode(response.body);
+        } else {
+          throw Exception('Failed to refresh token: ${response.statusCode} - ${response.body}');
+        }
       },
+      operation: 'Token Refresh',
     );
-
-    if (response.statusCode == 200) {
-      return json.decode(response.body);
-    } else {
-      throw Exception('Failed to refresh token: ${response.body}');
-    }
   }
 
   Future<User> getCurrentUser(String accessToken) async {
-    final url = '$baseUrl/me';
-    final headers = {
-      'Authorization': 'Bearer $accessToken',    };
+    return _retryApiCall(
+      () async {
+        final url = '$baseUrl/me';
+        final headers = {
+          'Authorization': 'Bearer $accessToken',
+        };
 
-    // Log curl format
-    // final curlCommand = _generateCurlCommand('GET', url, headers);
-    // print('🔧 Get Current User CURL Command:');
-    // print(curlCommand);
+        final response = await http.get(
+          Uri.parse(url),
+          headers: headers,
+        );
 
-    final response = await http.get(
-      Uri.parse(url),
-      headers: headers,
+        if (response.statusCode == 200) {
+          return User.fromJson(json.decode(response.body));
+        } else {
+          throw Exception('Failed to get current user: ${response.statusCode} - ${response.body}');
+        }
+      },
+      operation: 'Get Current User',
     );
-
-    if (response.statusCode == 200) {
-      return User.fromJson(json.decode(response.body));
-    } else {
-      throw Exception('Failed to get current user: ${response.body}');
-    }
   }
 
   Future<Track?> getCurrentlyPlaying(String accessToken) async {
-    final url = '$baseUrl/me/player/currently-playing';
-    final headers = {
-      'Authorization': 'Bearer $accessToken',    };
+    return _retryApiCall(
+      () async {
+        final url = '$baseUrl/me/player/currently-playing';
+        final headers = {
+          'Authorization': 'Bearer $accessToken',
+        };
 
-    // Log curl format
-    // final curlCommand = _generateCurlCommand('GET', url, headers);
-    // print('🔧 Get Currently Playing CURL Command:');
-    // print(curlCommand);
+        final response = await http.get(
+          Uri.parse(url),
+          headers: headers,
+        );
 
-    final response = await http.get(
-      Uri.parse(url),
-      headers: headers,
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          if (data['item'] != null) {
+            return Track.fromJson(data['item']);
+          }
+          return null;
+        } else if (response.statusCode == 204) {
+          // No content - nothing is currently playing
+          return null;
+        } else {
+          throw Exception('Failed to get currently playing: ${response.statusCode} - ${response.body}');
+        }
+      },
+      operation: 'Get Currently Playing',
     );
-
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      if (data['item'] != null) {
-        return Track.fromJson(data['item']);
-      }
-    } else if (response.statusCode == 204) {
-      // No content - nothing is currently playing
-      return null;
-    }
-    
-    return null;
   }
 
   Future<List<Track>> getTopTracks(String accessToken, {String timeRange = 'medium_term', int limit = 20}) async {
-    final url = '$baseUrl/me/top/tracks?time_range=$timeRange&limit=$limit';
-    final headers = {
-      'Authorization': 'Bearer $accessToken',    };
+    return _retryApiCall(
+      () async {
+        final url = '$baseUrl/me/top/tracks?time_range=$timeRange&limit=$limit';
+        final headers = {
+          'Authorization': 'Bearer $accessToken',
+        };
 
-    // Log curl format
-    // final curlCommand = _generateCurlCommand('GET', url, headers);
-    // print('🔧 Get Top Tracks CURL Command:');
-    // print(curlCommand);
+        final response = await http.get(
+          Uri.parse(url),
+          headers: headers,
+        );
 
-    final response = await http.get(
-      Uri.parse(url),
-      headers: headers,
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          final items = data['items'] as List;
+          return items.map((item) => Track.fromJson(item)).toList();
+        } else {
+          throw Exception('Failed to get top tracks: ${response.statusCode} - ${response.body}');
+        }
+      },
+      operation: 'Get Top Tracks',
     );
-
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      final items = data['items'] as List;
-      return items.map((item) => Track.fromJson(item)).toList();
-    } else {
-      throw Exception('Failed to get top tracks: ${response.body}');
-    }
   }
 
   Future<List<Artist>> getTopArtists(String accessToken, {String timeRange = 'medium_term', int limit = 20}) async {
-    final url = '$baseUrl/me/top/artists?time_range=$timeRange&limit=$limit';
-    final headers = {
-      'Authorization': 'Bearer $accessToken',    };
+    return _retryApiCall(
+      () async {
+        final url = '$baseUrl/me/top/artists?time_range=$timeRange&limit=$limit';
+        final headers = {
+          'Authorization': 'Bearer $accessToken',
+        };
 
-    // Log curl format
-    // final curlCommand = _generateCurlCommand('GET', url, headers);
-    // print('🔧 Get Top Artists CURL Command:');
-    // print(curlCommand);
+        final response = await http.get(
+          Uri.parse(url),
+          headers: headers,
+        );
 
-    final response = await http.get(
-      Uri.parse(url),
-      headers: headers,
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          final items = data['items'] as List;
+          return items.map((item) => Artist.fromJson(item)).toList();
+        } else {
+          throw Exception('Failed to get top artists: ${response.statusCode} - ${response.body}');
+        }
+      },
+      operation: 'Get Top Artists',
     );
-
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      final items = data['items'] as List;
-      return items.map((item) => Artist.fromJson(item)).toList();
-    } else {
-      throw Exception('Failed to get top artists: ${response.body}');
-    }
   }
-} 
+
+  /// Retry logic for API calls with exponential backoff
+  static Future<T> _retryApiCall<T>(
+    Future<T> Function() apiCall, {
+    int maxRetries = 3,
+    Duration initialDelay = const Duration(milliseconds: 50),
+    String operation = 'API call',
+  }) async {
+    int attempt = 0;
+    Duration delay = initialDelay;
+    
+    while (attempt < maxRetries) {
+      try {
+        print('🔄 Attempting $operation (attempt ${attempt + 1}/$maxRetries)');
+        return await apiCall().timeout(
+          const Duration(seconds: 15), // 15 second timeout per request
+          onTimeout: () {
+            throw TimeoutException('Request timed out after 15 seconds', const Duration(seconds: 15));
+          },
+        );
+      } catch (e) {
+        attempt++;
+        
+        if (attempt >= maxRetries) {
+          print('❌ $operation failed after $maxRetries attempts: $e');
+          rethrow;
+        }
+        
+        print('⚠️ $operation failed (attempt $attempt/$maxRetries): $e');
+        print('🔄 Retrying in ${delay.inMilliseconds}ms...');
+        
+        await Future.delayed(delay);
+        delay = Duration(milliseconds: (delay.inMilliseconds * 1.5).round()); // Exponential backoff
+      }
+    }
+    
+    throw Exception('Failed to complete $operation after $maxRetries attempts');
+  }
+}

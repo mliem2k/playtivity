@@ -122,7 +122,7 @@ class SettingsScreen extends StatelessWidget {
                       ),
                     ),                    ListTile(
                       leading: Image.asset(
-                        'assets/images/spotivity_logo_small_icon.png',
+                        'assets/images/playtivity_logo_small_icon.png',
                         width: 24,
                         height: 24,
                       ),

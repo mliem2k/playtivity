@@ -149,15 +149,27 @@ class LoginScreen extends StatelessWidget {
     
     try {
       // Navigate to WebView login
-      final result = await Navigator.of(context).push<bool>(
-        MaterialPageRoute(
+      final result = await Navigator.of(context).push<bool>(        MaterialPageRoute(
           builder: (context) => SpotifyWebViewLogin(
             onAuthComplete: (oauthCode, spDcCookie) async {
-              Navigator.of(context).pop(true);
+              print('🔄 Login screen received auth completion callback');
               try {
                 await authProvider.handleAuthComplete(oauthCode, spDcCookie);
+                print('✅ Authentication handling completed successfully');
+                
+                // Ensure we're back on the login screen before popping
+                if (context.mounted && Navigator.canPop(context)) {
+                  Navigator.of(context).pop(true);
+                }
               } catch (e) {
+                print('❌ Error in auth completion: $e');
                 if (context.mounted) {
+                  // Pop the WebView first
+                  if (Navigator.canPop(context)) {
+                    Navigator.of(context).pop(false);
+                  }
+                  
+                  // Show error message
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text('Login failed: ${e.toString()}'),

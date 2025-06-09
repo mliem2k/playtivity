@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
+import 'dart:async';
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -28,6 +29,13 @@ class SpotifyBuddyService {
   
   // SharedPreferences key for persistent track duration cache
   static const String _trackDurationCacheKey = 'track_duration_cache';
+  
+  // Cache for buddy list activities to reduce API hits
+  List<Activity>? _cachedBuddyActivities;
+  DateTime? _lastBuddyListFetch;
+  
+  // Cache duration - refresh every 1.5 minutes
+  static const Duration _buddyListCacheDuration = Duration(minutes: 1, seconds: 30);
 
   String base32FromBytes(Uint8List e, String secretSauce) {
     var t = 0;
@@ -182,55 +190,84 @@ class SpotifyBuddyService {
     }
   }
 
-  /// Fetches track duration from Spotify API using OAuth token
-  Future<int?> _getTrackDuration(String trackUri, String oauthAccessToken) async {
-    try {
-      // Load cache from storage if not already loaded
-      if (_trackDurationCache.isEmpty) {
-        await _loadTrackDurationCache();
-      }
-      
-      // Check cache first
-      if (_trackDurationCache.containsKey(trackUri)) {
-        print('💾 Using cached duration for track: $trackUri');
-        return _trackDurationCache[trackUri];
-      }
-      
-      // Extract track ID from URI (spotify:track:id)
-      final trackId = trackUri.split(':').last;
-      
-      final url = 'https://api.spotify.com/v1/tracks/$trackId';
-      final headers = {
-        'Authorization': 'Bearer $oauthAccessToken',
-      };      // Log curl format
-      // final curlCommand = _generateCurlCommand('GET', url, headers);
-      // print('🔧 Get Track Duration CURL Command:');
-      // print(curlCommand);
+  /// Clears the buddy list cache to force a fresh fetch on next request
+  void clearBuddyListCache() {
+    _cachedBuddyActivities = null;
+    _lastBuddyListFetch = null;
+    print('🗑️ Cleared buddy list cache - next request will fetch fresh data');
+  }
 
-      final response = await http.get(
-        Uri.parse(url),
-        headers: headers,
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final durationMs = data['duration_ms'] as int?;
-        
-        if (durationMs != null) {
-          // Cache the duration in memory
-          _trackDurationCache[trackUri] = durationMs;
-          _cacheModified = true;
-          print('✅ Fetched and cached duration for track $trackId: ${(durationMs/1000).toStringAsFixed(1)}s');
-          return durationMs;
-        }
-      } else {
-        print('❌ Failed to fetch track duration: ${response.statusCode} - ${response.body}');
-      }
-    } catch (e) {
-      print('❌ Error fetching track duration: $e');
+  /// Gets information about the current buddy list cache status
+  Map<String, dynamic> getBuddyListCacheStatus() {
+    final now = DateTime.now();
+    final hasCache = _cachedBuddyActivities != null && _lastBuddyListFetch != null;
+    
+    if (!hasCache) {
+      return {
+        'hasCache': false,
+        'cacheAge': null,
+        'activityCount': 0,
+        'shouldRefresh': true,
+      };
     }
     
-    return null;
+    final cacheAge = now.difference(_lastBuddyListFetch!);
+    return {
+      'hasCache': true,
+      'cacheAge': cacheAge.inSeconds,
+      'activityCount': _cachedBuddyActivities!.length,
+      'shouldRefresh': _shouldRefreshBuddyList(),
+      'lastFetch': _lastBuddyListFetch!.toIso8601String(),
+    };
+  }
+
+  /// Fetches track duration from Spotify API using OAuth token
+  Future<int?> _getTrackDuration(String trackUri, String oauthAccessToken) async {
+    return _retryApiCall(
+      () async {
+        // Load cache from storage if not already loaded
+        if (_trackDurationCache.isEmpty) {
+          await _loadTrackDurationCache();
+        }
+        
+        // Check cache first
+        if (_trackDurationCache.containsKey(trackUri)) {
+          print('💾 Using cached duration for track: $trackUri');
+          return _trackDurationCache[trackUri];
+        }
+        
+        // Extract track ID from URI (spotify:track:id)
+        final trackId = trackUri.split(':').last;
+        
+        final url = 'https://api.spotify.com/v1/tracks/$trackId';
+        final headers = {
+          'Authorization': 'Bearer $oauthAccessToken',
+        };
+
+        final response = await http.get(
+          Uri.parse(url),
+          headers: headers,
+        );
+
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          final durationMs = data['duration_ms'] as int?;
+          
+          if (durationMs != null) {
+            // Cache the duration in memory
+            _trackDurationCache[trackUri] = durationMs;
+            _cacheModified = true;
+            print('✅ Fetched and cached duration for track $trackId: ${(durationMs/1000).toStringAsFixed(1)}s');
+            return durationMs;
+          }
+        } else {
+          throw Exception('Failed to fetch track duration: ${response.statusCode} - ${response.body}');
+        }
+        
+        throw Exception('Track duration not found in response');
+      },
+      operation: 'Get Track Duration',
+    );
   }
 
   /// Gets a cached access token or fetches a new one if needed
@@ -259,64 +296,63 @@ class SpotifyBuddyService {
   }
 
   Future<String?> getWebAccessToken(String spDcCookie) async {
-    try {
-      final totp = await generateTotp();
-      final timestamp = (DateTime.now().millisecondsSinceEpoch / 1000).floor();
+    return _retryApiCall(
+      () async {
+        final totp = await generateTotp();
+        final timestamp = (DateTime.now().millisecondsSinceEpoch / 1000).floor();
 
-      var accessTokenUrl = Uri.parse(
-        'https://open.spotify.com/get_access_token?reason=transport&productType=web-player'
-        '&totp=$totp&totpVer=5&ts=$timestamp',
-      );
+        var accessTokenUrl = Uri.parse(
+          'https://open.spotify.com/get_access_token?reason=transport&productType=web-player'
+          '&totp=$totp&totpVer=5&ts=$timestamp',
+        );
 
-      final headers = {
-        'Cookie': 'sp_dc=$spDcCookie',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      };      // Log curl format
-      // final curlCommand = _generateCurlCommand('GET', accessTokenUrl.toString(), headers);
-      // print('🔧 Access Token CURL Command:');
-      // print(curlCommand);
+        final headers = {
+          'Cookie': 'sp_dc=$spDcCookie',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        };
 
-      var response = await http.get(
-        accessTokenUrl,
-        headers: headers,
-      );
+        var response = await http.get(
+          accessTokenUrl,
+          headers: headers,
+        );
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final accessToken = data['accessToken'];
-        
-        if (accessToken != null && (accessToken as String).length == 374) {
-          return accessToken;
-        } else {
-          // Try with mode=init if transport didn't work or token is wrong length
-          accessTokenUrl = Uri.parse(
-            'https://open.spotify.com/get_access_token?reason=init&productType=web-player'
-            '&totp=$totp&totpVer=5&ts=$timestamp',
-          );
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          final accessToken = data['accessToken'];
+          
+          if (accessToken != null && (accessToken as String).length == 374) {
+            return accessToken;
+          } else {
+            // Try with mode=init if transport didn't work or token is wrong length
+            accessTokenUrl = Uri.parse(
+              'https://open.spotify.com/get_access_token?reason=init&productType=web-player'
+              '&totp=$totp&totpVer=5&ts=$timestamp',
+            );
 
-          final initHeaders = {
-            'Cookie': 'sp_dc=$spDcCookie',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          };          // Log curl format for init request
-          // final initCurlCommand = _generateCurlCommand('GET', accessTokenUrl.toString(), initHeaders);
-          // print('🔧 Access Token Init CURL Command:');
-          // print(initCurlCommand);
+            final initHeaders = {
+              'Cookie': 'sp_dc=$spDcCookie',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            };
 
-          response = await http.get(
-            accessTokenUrl,
-            headers: initHeaders,
-          );
+            response = await http.get(
+              accessTokenUrl,
+              headers: initHeaders,
+            );
 
-          if (response.statusCode == 200) {
-            final initData = json.decode(response.body);
-            return initData['accessToken'];
+            if (response.statusCode == 200) {
+              final initData = json.decode(response.body);
+              final accessToken = initData['accessToken'];
+              if (accessToken != null) {
+                return accessToken;
+              }
+            }
           }
         }
-      }
-    } catch (e) {
-      print('Error getting web access token: $e');
-    }
-    return null;
+        
+        throw Exception('Failed to get web access token: ${response.statusCode} - ${response.body}');
+      },
+      operation: 'Get Web Access Token',
+    );
   }
 
   /// Determines if a friend is currently playing based on timestamp and song duration
@@ -363,6 +399,46 @@ class SpotifyBuddyService {
       return false;
     }
   }
+  
+  /// Checks if we should refresh the buddy list cache based on cache expiration or track completion
+  bool _shouldRefreshBuddyList() {
+    final now = DateTime.now();
+    
+    // If no cache exists or cache is older than 1.5 minutes, refresh
+    if (_cachedBuddyActivities == null || _lastBuddyListFetch == null) {
+      print('📊 Cache refresh needed: No cached data');
+      return true;
+    }
+    
+    // Check if cache has expired (1.5 minutes)
+    final cacheAge = now.difference(_lastBuddyListFetch!);
+    if (cacheAge >= _buddyListCacheDuration) {
+      print('📊 Cache refresh needed: Cache expired (${cacheAge.inSeconds}s > ${_buddyListCacheDuration.inSeconds}s)');
+      return true;
+    }
+    
+    // Check if any currently playing track should have finished
+    for (final activity in _cachedBuddyActivities!) {
+      if (activity.type == ActivityType.track && 
+          activity.isCurrentlyPlaying && 
+          activity.track != null) {
+        
+        final trackStartTime = activity.timestamp;
+        final trackDurationMs = activity.track!.durationMs;
+        final elapsedMs = now.difference(trackStartTime).inMilliseconds;
+        
+        // If track should have finished (with 5 second buffer), refresh cache
+        if (elapsedMs >= (trackDurationMs + 5000)) {
+          print('📊 Cache refresh needed: Track "${activity.track!.name}" by ${activity.user.displayName} should have finished');
+          return true;
+        }
+      }
+    }
+    
+    print('📊 Cache still valid: Age=${cacheAge.inSeconds}s, no tracks finished');
+    return false;
+  }
+  
   /// Generates a curl command for debugging API requests
   // String _generateCurlCommand(String method, String url, Map<String, String> headers, {String? body}) {
   //   final buffer = StringBuffer();
@@ -385,81 +461,91 @@ class SpotifyBuddyService {
   // }
 
   Future<List<Activity>> getFriendActivity(String spDcCookie, {String? oauthAccessToken, bool fastLoad = false}) async {
-    try {
-      // Preload track duration cache only if not doing fast load
-      if (!fastLoad && _trackDurationCache.isEmpty) {
-        await _loadTrackDurationCache();
-      }
-      
-      print('🔄 Getting access token with sp_dc cookie...');
-      String? accessToken = await getCachedOrFreshAccessToken(spDcCookie);
-      
-      if (accessToken == null) {
-        print('❌ Failed to get access token');
-        return [];
-      }
-
-      print('✅ Got access token, fetching friend activity...');
-      
-      final url = '$_baseUrl/presence-view/v1/buddylist';
-      final headers = {
-        'Authorization': 'Bearer $accessToken',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      };      // Log curl format
-      // final curlCommand = _generateCurlCommand('GET', url, headers);
-      // print('🔧 CURL Command:');
-      // print(curlCommand);
-
-      final response = await http.get(
-        Uri.parse(url),
-        headers: headers,
-      );
-
-      print('📡 Buddy list API response: ${response.statusCode}');
-      print('📦 Response body: ${response.body}');
-
-      // Handle unauthorized response - clear cache and retry once
-      if (response.statusCode == 401 || response.statusCode == 403) {
-        print('🔄 Access token unauthorized, clearing cache and retrying...');
-        _cachedAccessToken = null;
-        _lastValidSpDcCookie = null;
-        _tokenExpiry = null;
-        
-        // Retry with fresh token
-        accessToken = await getCachedOrFreshAccessToken(spDcCookie);
-        if (accessToken == null) {
-          print('❌ Failed to get fresh access token after unauthorized response');
-          return [];
+    // Check if we can use cached data
+    if (!_shouldRefreshBuddyList()) {
+      print('✅ Using cached buddy list data');
+      return _cachedBuddyActivities!;
+    }
+    
+    return _retryApiCall(
+      () async {
+        // Preload track duration cache only if not doing fast load
+        if (!fastLoad && _trackDurationCache.isEmpty) {
+          await _loadTrackDurationCache();
         }
         
-        final retryHeaders = {
+        print('🔄 Getting access token with sp_dc cookie...');
+        String? accessToken = await getCachedOrFreshAccessToken(spDcCookie);
+        
+        if (accessToken == null) {
+          throw Exception('Failed to get access token');
+        }
+
+        print('✅ Got access token, fetching friend activity...');
+        
+        final url = '$_baseUrl/presence-view/v1/buddylist';
+        final headers = {
           'Authorization': 'Bearer $accessToken',
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         };
-        
-        final retryResponse = await http.get(
-          Uri.parse(url),
-          headers: retryHeaders,
-        );
-        
-        print('📡 Retry response: ${retryResponse.statusCode}');
-        
-        if (retryResponse.statusCode == 200) {
-          return _parseActivityResponse(retryResponse.body, oauthAccessToken, fastLoad: fastLoad);
-        } else {
-          print('❌ Retry also failed with status: ${retryResponse.statusCode}');
-          return [];
-        }
-      }
 
-      if (response.statusCode == 200) {
-        return _parseActivityResponse(response.body, oauthAccessToken, fastLoad: fastLoad);
-      }
-    } catch (e) {
-      print('❌ Error fetching friend activity: $e');
-    }
-    
-    return [];
+        final response = await http.get(
+          Uri.parse(url),
+          headers: headers,
+        );
+
+        print('📡 Buddy list API response: ${response.statusCode}');
+        print('📦 Response body: ${response.body}');
+
+        // Handle unauthorized response - clear cache and retry once
+        if (response.statusCode == 401 || response.statusCode == 403) {
+          print('🔄 Access token unauthorized, clearing cache and retrying...');
+          _cachedAccessToken = null;
+          _lastValidSpDcCookie = null;
+          _tokenExpiry = null;
+          
+          // Retry with fresh token
+          accessToken = await getCachedOrFreshAccessToken(spDcCookie);
+          if (accessToken == null) {
+            throw Exception('Failed to get fresh access token after unauthorized response');
+          }
+          
+          final retryHeaders = {
+            'Authorization': 'Bearer $accessToken',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          };
+          
+          final retryResponse = await http.get(
+            Uri.parse(url),
+            headers: retryHeaders,
+          );
+          
+          print('📡 Retry response: ${retryResponse.statusCode}');
+          
+          if (retryResponse.statusCode == 200) {
+            final activities = await _parseActivityResponse(retryResponse.body, oauthAccessToken, fastLoad: fastLoad);
+            // Cache the successful response
+            _cachedBuddyActivities = activities;
+            _lastBuddyListFetch = DateTime.now();
+            return activities;
+          } else {
+            throw Exception('Retry also failed with status: ${retryResponse.statusCode}');
+          }
+        }
+
+        if (response.statusCode == 200) {
+          final activities = await _parseActivityResponse(response.body, oauthAccessToken, fastLoad: fastLoad);
+          // Cache the successful response
+          _cachedBuddyActivities = activities;
+          _lastBuddyListFetch = DateTime.now();
+          print('💾 Cached buddy list data with ${activities.length} activities');
+          return activities;
+        } else {
+          throw Exception('Failed to fetch friend activity: ${response.statusCode} - ${response.body}');
+        }
+      },
+      operation: 'Get Friend Activity',
+    );
   }
 
   Future<List<Activity>> _parseActivityResponse(String responseBody, String? oauthAccessToken, {bool fastLoad = false}) async {
@@ -678,4 +764,42 @@ class SpotifyBuddyService {
     
     return activities;
   }
-} 
+
+  /// Retry logic for API calls with exponential backoff
+  static Future<T> _retryApiCall<T>(
+    Future<T> Function() apiCall, {
+    int maxRetries = 3,
+    Duration initialDelay = const Duration(milliseconds: 50),
+    String operation = 'API call',
+  }) async {
+    int attempt = 0;
+    Duration delay = initialDelay;
+    
+    while (attempt < maxRetries) {
+      try {
+        print('🔄 Attempting $operation (attempt ${attempt + 1}/$maxRetries)');
+        return await apiCall().timeout(
+          const Duration(seconds: 30), // 30 second timeout per request
+          onTimeout: () {
+            throw TimeoutException('Request timed out after 30 seconds', const Duration(seconds: 30));
+          },
+        );
+      } catch (e) {
+        attempt++;
+        
+        if (attempt >= maxRetries) {
+          print('❌ $operation failed after $maxRetries attempts: $e');
+          rethrow;
+        }
+        
+        print('⚠️ $operation failed (attempt $attempt/$maxRetries): $e');
+        print('🔄 Retrying in ${delay.inMilliseconds}ms...');
+        
+        await Future.delayed(delay);
+        delay = Duration(milliseconds: (delay.inMilliseconds * 1.5).round()); // Exponential backoff
+      }
+    }
+    
+    throw Exception('Failed to complete $operation after $maxRetries attempts');
+  }
+}

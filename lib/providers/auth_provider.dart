@@ -27,16 +27,19 @@ class AuthProvider extends ChangeNotifier {
   }
 
   bool get isAuthenticated {
-    if (!_isInitialized) return false;
+    if (!_isInitialized) {
+      print('🔍 isAuthenticated: false (not initialized)');
+      return false;
+    }
     
     final oauthAuth = _accessToken != null && !_isTokenExpired;
     final cookieAuth = _spDcCookie != null && _currentUser != null;
     final result = oauthAuth || cookieAuth;
     
-    // Keep minimal logging for release builds
-    if (!result) {
-      print('❌ Not authenticated - OAuth: $oauthAuth, Cookie: $cookieAuth');
-    }
+    print('🔍 isAuthenticated evaluation:');
+    print('   - OAuth valid: $oauthAuth (token: ${_accessToken != null}, expired: ${_isTokenExpired})');
+    print('   - Cookie valid: $cookieAuth (cookie: ${_spDcCookie != null}, user: ${_currentUser != null})');
+    print('   - Final result: $result');
     
     return result;
   }
@@ -72,6 +75,7 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> _initializeAuth() async {
     try {
+      print('🔄 Starting authentication initialization...');
       _loadStoredData();
       
       if (_accessToken != null && !_isTokenExpired) {
@@ -90,11 +94,26 @@ class AuthProvider extends ChangeNotifier {
           country: '',
         );
       }
+      
+      print('🔍 Initialization complete. Final state:');
+      print('   - Has OAuth token: ${_accessToken != null}');
+      print('   - Token expired: ${_isTokenExpired}');
+      print('   - Has cookie: ${_spDcCookie != null}');
+      print('   - Has user: ${_currentUser != null}');
+      
     } catch (e) {
       print('❌ Error during auth initialization: $e');
     } finally {
       _isInitialized = true;
+      print('✅ AuthProvider initialization completed');
       notifyListeners();
+      
+      // Additional notification after a short delay to ensure UI updates
+      Future.delayed(const Duration(milliseconds: 50), () {
+        if (!_isLoading) { // Only notify if not in an active auth flow
+          notifyListeners();
+        }
+      });
     }
   }
 
@@ -151,21 +170,21 @@ class AuthProvider extends ChangeNotifier {
       
       if (oauthCode.isNotEmpty) {
         // OAuth flow - exchange code for tokens
-      print('🔄 Processing OAuth code and sp_dc cookie...');
-      
-      final tokenData = await _spotifyService.exchangeCodeForToken(oauthCode);
-      
-      _accessToken = tokenData['access_token'];
-      _refreshToken = tokenData['refresh_token'];
-      
-      final expiresIn = tokenData['expires_in'] as int;
-      _tokenExpiry = DateTime.now().add(Duration(seconds: expiresIn));
+        print('🔄 Processing OAuth code and sp_dc cookie...');
+        
+        final tokenData = await _spotifyService.exchangeCodeForToken(oauthCode);
+        
+        _accessToken = tokenData['access_token'];
+        _refreshToken = tokenData['refresh_token'];
+        
+        final expiresIn = tokenData['expires_in'] as int;
+        _tokenExpiry = DateTime.now().add(Duration(seconds: expiresIn));
 
         // Store sp_dc cookie for friend activities
-      _spDcCookie = spDcCookie;
+        _spDcCookie = spDcCookie;
 
-      await _saveStoredData();
-      await _loadCurrentUser();
+        await _saveStoredData();
+        await _loadCurrentUser();
         
         print('✅ Authentication complete - OAuth tokens and sp_dc cookie stored');
       } else {
@@ -194,17 +213,29 @@ class AuthProvider extends ChangeNotifier {
         print('✅ Cookie-only authentication complete - sp_dc cookie stored');
       }
       
+      // Clear loading state and ensure initialization is complete
       _isLoading = false;
-      _isInitialized = true; // Ensure we're marked as initialized after auth completion
+      _isInitialized = true;
       
-      // Ensure UI updates in release builds
+      print('🔄 AuthProvider state after completion:');
+      print('   - isAuthenticated: $isAuthenticated');
+      print('   - isInitialized: $_isInitialized');
+      print('   - isLoading: $_isLoading');
+      print('   - currentUser: ${_currentUser?.displayName ?? 'null'}');
+      
+      // Force UI update with multiple notifications to ensure state propagation
       notifyListeners();
       
-      // Small delay to ensure state is properly propagated
+      // Add a short delay and notify again to handle any race conditions
+      await Future.delayed(const Duration(milliseconds: 50));
+      notifyListeners();
+      
+      // Final notification after a longer delay to ensure all consumers are updated
       await Future.delayed(const Duration(milliseconds: 100));
       notifyListeners();
       
     } catch (e) {
+      print('❌ Error in handleAuthComplete: $e');
       _isLoading = false;
       notifyListeners();
       rethrow;
@@ -299,4 +330,22 @@ class AuthProvider extends ChangeNotifier {
     
     return _accessToken;
   }
-} 
+
+  /// Debug method to print current authentication state
+  void debugAuthState() {
+    print('🔍 === AuthProvider Debug State ===');
+    print('   - isInitialized: $_isInitialized');
+    print('   - isLoading: $_isLoading');
+    print('   - isAuthenticated: $isAuthenticated');
+    print('   - hasAccessToken: ${_accessToken != null}');
+    print('   - accessToken: ${_accessToken?.substring(0, 20) ?? 'null'}...');
+    print('   - tokenExpired: $_isTokenExpired');
+    print('   - tokenExpiry: ${_tokenExpiry?.toIso8601String() ?? 'null'}');
+    print('   - hasRefreshToken: ${_refreshToken != null}');
+    print('   - hasSpDcCookie: ${_spDcCookie != null}');
+    print('   - spDcCookie: ${_spDcCookie?.substring(0, 20) ?? 'null'}...');
+    print('   - currentUser: ${_currentUser?.displayName ?? 'null'}');
+    print('   - currentUserId: ${_currentUser?.id ?? 'null'}');
+    print('=================================');
+  }
+}

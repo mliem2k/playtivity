@@ -191,13 +191,14 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                         
                         if (statusPageRegex.hasMatch(urlString)) {
                           print('🎯 Detected Spotify status page: $urlString');
-                          // Don't show logging in screen, keep webview visible
                           await _extractSpDcCookieAndStartOAuth(controller, url);
                         }
                       } else {
-                        // Step 2: Handle OAuth redirect (but don't show it)
+                        // Step 2: Handle OAuth redirect
                         if (urlString.startsWith('https://mliem.com') || urlString.startsWith('https://www.mliem.com')) {
-                          _handleOAuthRedirect(urlString);
+                          _handleOAuthRedirect(urlString).catchError((error) {
+                            print('❌ Error in OAuth redirect handling: $error');
+                          });
                         }
                       }
                     },
@@ -213,8 +214,6 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
       ),
     );
   }
-
-
 
   Future<void> _extractSpDcCookieAndStartOAuth(InAppWebViewController controller, WebUri url) async {
     try {
@@ -302,7 +301,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
     }
   }
 
-  void _handleOAuthRedirect(String url) {
+  Future<void> _handleOAuthRedirect(String url) async {
     print('🔗 Handling OAuth redirect: $url');
     
     try {
@@ -318,7 +317,16 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
         
         // Complete the authentication with both OAuth code and sp_dc cookie
         if (mounted) {
-        widget.onAuthComplete(code, _extractedSpDcCookie);
+          print('🔄 Calling onAuthComplete with OAuth code and cookie...');
+          widget.onAuthComplete(code, _extractedSpDcCookie);
+          
+          // Add a small delay to ensure the callback is processed
+          await Future.delayed(const Duration(milliseconds: 100));
+          
+          // Close the WebView after authentication
+          if (mounted && Navigator.canPop(context)) {
+            Navigator.of(context).pop(true);
+          }
         }
         return;
       }

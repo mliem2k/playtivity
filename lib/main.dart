@@ -71,13 +71,24 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class AppWrapper extends StatelessWidget {
+class AppWrapper extends StatefulWidget {
   const AppWrapper({super.key});
 
+  @override
+  State<AppWrapper> createState() => _AppWrapperState();
+}
+
+class _AppWrapperState extends State<AppWrapper> {
   @override
   Widget build(BuildContext context) {
     return Consumer<AuthProvider>(
       builder: (context, authProvider, child) {
+        // Debug logging for troubleshooting
+        print('🔍 AppWrapper rebuild - AuthProvider state:');
+        print('   - isInitialized: ${authProvider.isInitialized}');
+        print('   - isLoading: ${authProvider.isLoading}');
+        print('   - isAuthenticated: ${authProvider.isAuthenticated}');
+        
         // Show loading screen while authentication is being initialized or in progress
         if (!authProvider.isInitialized || authProvider.isLoading) {
           return const Scaffold(
@@ -97,7 +108,11 @@ class AppWrapper extends StatelessWidget {
           );
         }
         
-        if (authProvider.isAuthenticated) {
+        // Add explicit check with fallback
+        final isAuth = authProvider.isAuthenticated;
+        print('📊 Final authentication decision: $isAuth');
+        
+        if (isAuth) {
           return const MainNavigationScreen();
         } else {
           return const LoginScreen();
@@ -123,7 +138,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    print('🏠 MainNavigationScreen initialized');
+  }
+
+  @override
   Widget build(BuildContext context) {
+    print('🏠 MainNavigationScreen building with tab index: $_currentIndex');
     return Scaffold(
       extendBody: true, // Extend body behind bottom nav bar
       body: _screens[_currentIndex],
