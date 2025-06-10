@@ -209,8 +209,8 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                           // Update current URL and overlay logic
                           setState(() {
                             _currentUrl = urlString;
-                            // Hide overlay only if URL contains /login
-                            _showOverlay = !urlString.contains('/login');
+                            // Hide overlay only if URL contains /login or challenge.spotify.com
+                            _showOverlay = !urlString.contains('/login') && !urlString.contains('challenge.spotify.com');
                           });
                           
                           // Set up network interception to capture Bearer token
