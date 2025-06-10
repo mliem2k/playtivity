@@ -25,6 +25,9 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
   bool _isLoading = true;
   String? _error;
   Map<String, String> _extractedHeaders = {};
+  bool _spDcDetected = false;
+  String _currentUrl = '';
+  bool _showOverlay = true;
 
   @override
   Widget build(BuildContext context) {
@@ -142,174 +145,156 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                       ],
                     ),
                   )
-                : InAppWebView(
-                    initialSettings: InAppWebViewSettings(
-                      userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/537.36",
-                      javaScriptEnabled: true,
-                      domStorageEnabled: true,
-                      thirdPartyCookiesEnabled: true,
-                      supportZoom: false,
-                      builtInZoomControls: false,
-                      displayZoomControls: false,
-                      useWideViewPort: true,
-                      loadWithOverviewMode: true,
-                      javaScriptCanOpenWindowsAutomatically: true,
-                      mediaPlaybackRequiresUserGesture: false,
-                      allowsInlineMediaPlayback: true,
-                      iframeAllowFullscreen: true,
-                      allowsBackForwardNavigationGestures: true,
-                    ),
-                    initialUrlRequest: URLRequest(
-                      url: WebUri('https://open.spotify.com/'),
-                      headers: {
-                        'sec-ch-ua': '"Google Chrome";v="137", "Chromium";v="137", "Not/A)Brand";v="24"',
-                        'sec-ch-ua-mobile': '?0',
-                        'sec-ch-ua-platform': '"Windows"',
-                        'sec-fetch-dest': 'document',
-                        'sec-fetch-mode': 'navigate',
-                        'sec-fetch-site': 'none',
-                        'sec-fetch-user': '?1',
-                        'upgrade-insecure-requests': '1',
-                        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-                        'accept-encoding': 'gzip, deflate, br, zstd',
-                        'accept-language': 'en-US,en;q=0.9',
-                        'cache-control': 'max-age=0',
-                        'dnt': '1',
-                        'priority': 'u=0, i',
-                      },
-                    ),
-                    onPermissionRequest: (controller, permissionRequest) async {
-                      return PermissionResponse(
-                        resources: permissionRequest.resources,
-                        action: PermissionResponseAction.GRANT,
-                      );
-                    },
-                    onLoadStart: (controller, url) {
-                      setState(() {
-                        _isLoading = true;
-                        _error = null;
-                      });
-                    },
-                    onLoadStop: (controller, url) async {
-                      setState(() {
-                        _isLoading = false;
-                      });
+                : Stack(
+                    children: [
+                      // WebView (always present, loading in background when overlay is shown)
+                      InAppWebView(
+                        initialSettings: InAppWebViewSettings(
+                          userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/537.36",
+                          javaScriptEnabled: true,
+                          domStorageEnabled: true,
+                          thirdPartyCookiesEnabled: true,
+                          supportZoom: false,
+                          builtInZoomControls: false,
+                          displayZoomControls: false,
+                          useWideViewPort: true,
+                          loadWithOverviewMode: true,
+                          javaScriptCanOpenWindowsAutomatically: true,
+                          mediaPlaybackRequiresUserGesture: false,
+                          allowsInlineMediaPlayback: true,
+                          iframeAllowFullscreen: true,
+                          allowsBackForwardNavigationGestures: true,
+                        ),
+                        initialUrlRequest: URLRequest(
+                          url: WebUri('https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F__noul__%2F'),
+                          headers: {
+                            'sec-ch-ua': '"Google Chrome";v="137", "Chromium";v="137", "Not/A)Brand";v="24"',
+                            'sec-ch-ua-mobile': '?0',
+                            'sec-ch-ua-platform': '"Windows"',
+                            'sec-fetch-dest': 'document',
+                            'sec-fetch-mode': 'navigate',
+                            'sec-fetch-site': 'none',
+                            'sec-fetch-user': '?1',
+                            'upgrade-insecure-requests': '1',
+                            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                            'accept-encoding': 'gzip, deflate, br, zstd',
+                            'accept-language': 'en-US,en;q=0.9',
+                            'cache-control': 'max-age=0',
+                            'dnt': '1',
+                            'priority': 'u=0, i',
+                          },
+                        ),
+                        onPermissionRequest: (controller, permissionRequest) async {
+                          return PermissionResponse(
+                            resources: permissionRequest.resources,
+                            action: PermissionResponseAction.GRANT,
+                          );
+                        },
+                        onLoadStart: (controller, url) {
+                          setState(() {
+                            _isLoading = true;
+                            _error = null;
+                          });
+                        },
+                        onLoadStop: (controller, url) async {
+                          setState(() {
+                            _isLoading = false;
+                          });
+                          
+                          if (url == null) return;
+                          
+                          String urlString = url.toString();
+                          print('🌐 Page loaded: $urlString');
+                          
+                          // Update current URL and overlay logic
+                          setState(() {
+                            _currentUrl = urlString;
+                            // Hide overlay only if URL contains /login
+                            _showOverlay = !urlString.contains('/login');
+                          });
+                          
+                          // Set up network interception to capture Bearer token
+                          if (urlString.contains('open.spotify.com')) {
+                            await _setupNetworkInterception(controller, url);
+                          }
+                        },
+                        onReceivedError: (controller, request, error) {
+                          setState(() {
+                            _error = 'Failed to load page: ${error.description}';
+                            _isLoading = false;
+                          });
+                        },
+                      ),
                       
-                      if (url == null) return;
-                      
-                      String urlString = url.toString();
-                      print('🌐 Page loaded: $urlString');
-                      
-                      // Inject desktop browser characteristics
-                      await _injectDesktopBrowserMasking(controller);
-                      
-                      // Set up network interception to capture Bearer token
-                      if (urlString.contains('open.spotify.com')) {
-                        await _setupNetworkInterception(controller, url);
-                      }
-                    },
-                    onReceivedError: (controller, request, error) {
-                      setState(() {
-                        _error = 'Failed to load page: ${error.description}';
-                        _isLoading = false;
-                      });
-                    },
+                      // Loading overlay from the beginning until login page is reached
+                      if (_showOverlay)
+                        Container(
+                          color: Theme.of(context).scaffoldBackgroundColor,
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                SizedBox(
+                                  width: 60,
+                                  height: 60,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 4,
+                                    color: Theme.of(context).primaryColor,
+                                  ),
+                                ),
+                                const SizedBox(height: 24),
+                                Text(
+                                  'Logging you in...',
+                                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Please wait while we complete your authentication',
+                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.7),
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 32),
+                                // Spotify branding with theme-aware colors
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        Icons.music_note,
+                                        color: Colors.green,
+                                        size: 16,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      const Text(
+                                        'Connecting to Spotify',
+                                        style: TextStyle(
+                                          color: Colors.green,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
           ),
         ],
       ),
     );
-  }
-
-  Future<void> _injectDesktopBrowserMasking(InAppWebViewController controller) async {
-    try {
-      print('🖥️ Injecting desktop browser masking...');
-      
-      final maskingScript = '''
-        (function() {
-          try {
-            // Override platform detection
-            Object.defineProperty(navigator, 'platform', {
-              value: 'Win32',
-              writable: false,
-              configurable: false
-            });
-            
-            // Override user agent platform
-            Object.defineProperty(navigator, 'userAgentData', {
-              value: {
-                brands: [
-                  {brand: "Google Chrome", version: "137"},
-                  {brand: "Chromium", version: "137"},
-                  {brand: "Not/A)Brand", version: "24"}
-                ],
-                mobile: false,
-                platform: "Windows"
-              },
-              writable: false,
-              configurable: false
-            });
-            
-            // Override screen properties to look like desktop
-            Object.defineProperty(screen, 'width', {
-              value: 1920,
-              writable: false,
-              configurable: false
-            });
-            Object.defineProperty(screen, 'height', {
-              value: 1080,
-              writable: false,
-              configurable: false
-            });
-            Object.defineProperty(screen, 'availWidth', {
-              value: 1920,
-              writable: false,
-              configurable: false
-            });
-            Object.defineProperty(screen, 'availHeight', {
-              value: 1040,
-              writable: false,
-              configurable: false
-            });
-            
-            // Override window size
-            Object.defineProperty(window, 'innerWidth', {
-              value: 1440,
-              writable: false,
-              configurable: false
-            });
-            Object.defineProperty(window, 'innerHeight', {
-              value: 900,
-              writable: false,
-              configurable: false
-            });
-            
-            // Add missing desktop properties
-            if (!window.chrome) {
-              window.chrome = {
-                runtime: {},
-                app: {}
-              };
-            }
-            
-            // Remove mobile-specific properties
-            delete navigator.maxTouchPoints;
-            
-            console.log('✅ Desktop browser masking applied');
-            return true;
-          } catch (e) {
-            console.log('❌ Error applying desktop masking:', e);
-            return false;
-          }
-        })();
-      ''';
-      
-      await controller.evaluateJavascript(source: maskingScript);
-      print('✅ Desktop browser masking injected successfully');
-      
-    } catch (e) {
-      print('❌ Failed to inject desktop browser masking: $e');
-    }
   }
 
   Future<void> _setupNetworkInterception(InAppWebViewController controller, WebUri url) async {
@@ -327,6 +312,11 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
       // Check if sp_dc cookie is present
       bool hasSpDc = cookies.any((cookie) => cookie.name == 'sp_dc');
       print('🍪 sp_dc cookie present in initial request: $hasSpDc');
+      
+      // Log sp_dc detection
+      if (hasSpDc) {
+        print('🔄 sp_dc detected');
+      }
       
       // Build headers that will be saved and reused
       _extractedHeaders = {
@@ -681,6 +671,8 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
               _extractedHeaders['Cookie'] = capturedCookie;
               print('✅ Updated headers with sp_dc cookie');
               print('🍪 New cookie header: ${capturedCookie.substring(0, 100)}...');
+              
+              print('🔄 sp_dc detected in cookie update');
             } else if (hasSpDcNow) {
               // Update with latest cookie info
               _extractedHeaders['Cookie'] = capturedCookie;
@@ -695,6 +687,8 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
             print('📋 Token length: ${bearerToken.length} characters');
             print('🍪 Final captured cookie: ${capturedCookie?.substring(0, 50) ?? 'none'}...');
             print('📊 Token data: ${tokenInfo['data']}');
+            
+            print('🔄 Bearer token found');
             
             // Complete authentication with the Bearer token and headers
             if (mounted) {
@@ -757,6 +751,8 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
 
         if (spDcCookie.name.isNotEmpty && spDcCookie.value.isNotEmpty) {
           print('🍪 Found sp_dc cookie: ${spDcCookie.value.substring(0, 20)}...');
+          
+          print('🔄 sp_dc detected in cookie check');
           
           // Update the cookie string in headers with the complete set including sp_dc
           final allCookies = cookies.map((cookie) => '${cookie.name}=${cookie.value}').join('; ');

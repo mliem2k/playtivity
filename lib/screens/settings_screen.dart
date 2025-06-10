@@ -143,7 +143,6 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
   }
-
   void _showLogoutDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -158,7 +157,10 @@ class SettingsScreen extends StatelessWidget {
             ),
             TextButton(
               onPressed: () async {
+                // Close the confirmation dialog first
                 Navigator.of(context).pop();
+                
+                // Perform logout immediately without showing loading dialog
                 await _performLogout(context);
               },
               style: TextButton.styleFrom(
@@ -176,10 +178,16 @@ class SettingsScreen extends StatelessWidget {
     final authProvider = context.read<AuthProvider>();
     final spotifyProvider = context.read<SpotifyProvider>();
     
-    // Clear Spotify provider data first
+    // Clear all data
+    await authProvider.logout();
     spotifyProvider.clearData();
     
-    // Use the new force logout method that handles both clearing and navigation
-    await authProvider.forceLogoutAndNavigate(context);
+    // Navigate back to root and let AppWrapper handle screen selection
+    if (context.mounted) {
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        '/',
+        (route) => false,
+      );
+    }
   }
 } 

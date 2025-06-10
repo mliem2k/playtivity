@@ -8,7 +8,12 @@ class AppTheme {
   static const Color spotifyDarkGray = Color(0xFF282828);
   static const Color spotifyLightGray = Color(0xFFB3B3B3);
   static const Color spotifyWhite = Color(0xFFFFFFFF);
-
+  
+  // Additional theme-aware colors
+  static const Color lightTextSecondary = Color(0xFF666666);
+  static const Color lightTextTertiary = Color(0xFF999999);
+  static const Color lightCardBackground = Color(0xFFFAFAFA);
+  static const Color lightBorder = Color(0xFFE0E0E0);
   static ThemeData get lightTheme {
     return ThemeData(
       useMaterial3: true,
@@ -27,7 +32,7 @@ class AppTheme {
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
         backgroundColor: spotifyWhite.withOpacity(0.85), // Transparent effect
         selectedItemColor: spotifyGreen,
-        unselectedItemColor: spotifyLightGray,
+        unselectedItemColor: lightTextSecondary,
         type: BottomNavigationBarType.fixed,
         elevation: 0,
       ),
@@ -39,11 +44,14 @@ class AppTheme {
             borderRadius: BorderRadius.circular(25),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          elevation: 2,
+          shadowColor: spotifyGreen.withOpacity(0.3),
         ),
       ),
       cardTheme: CardThemeData(
-        color: spotifyWhite,
+        color: lightCardBackground,
         elevation: 2,
+        shadowColor: Colors.black.withOpacity(0.1),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
         ),
@@ -51,12 +59,13 @@ class AppTheme {
       colorScheme: const ColorScheme.light(
         primary: spotifyGreen,
         secondary: spotifyGreen,
-        surface: spotifyWhite,
+        surface: lightCardBackground,
         background: spotifyWhite,
         onPrimary: spotifyWhite,
         onSecondary: spotifyWhite,
         onSurface: spotifyBlack,
         onBackground: spotifyBlack,
+        outline: lightBorder,
       ),
     );
   }
@@ -112,4 +121,20 @@ class AppTheme {
       ),
     );
   }
-} 
+
+  // Helper methods for theme-aware colors
+  static Color getSecondaryTextColor(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return isDark ? spotifyLightGray : lightTextSecondary;
+  }
+  
+  static Color getTertiaryTextColor(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return isDark ? spotifyLightGray : lightTextTertiary;
+  }
+  
+  static Color getCardBackgroundColor(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return isDark ? spotifyDarkGray : lightCardBackground;
+  }
+}
