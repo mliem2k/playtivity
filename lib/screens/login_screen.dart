@@ -182,10 +182,18 @@ class LoginScreen extends StatelessWidget {
           ),
         ),
       );
-      
-      // If user cancelled or result is null, stop loading
+        // If user cancelled or result is null, stop loading
       if (result != true) {
         authProvider.cancelLogin();
+      } else {
+        // Login was successful, navigate to home
+        print('✅ Login successful, navigating to home screen...');
+        if (context.mounted) {
+          Navigator.of(context).pushNamedAndRemoveUntil(
+            '/',
+            (route) => false,
+          );
+        }
       }
     } catch (e) {
       authProvider.cancelLogin();

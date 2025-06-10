@@ -142,25 +142,24 @@ class SettingsScreen extends StatelessWidget {
         },
       ),
     );
-  }
-  void _showLogoutDialog(BuildContext context) {
+  }  void _showLogoutDialog(BuildContext context) {
     showDialog(
       context: context,
-      builder: (BuildContext context) {
+      builder: (BuildContext dialogContext) {
         return AlertDialog(
           title: const Text('Logout'),
           content: const Text('Are you sure you want to logout from your Spotify account?'),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () => Navigator.of(dialogContext).pop(),
               child: const Text('Cancel'),
             ),
             TextButton(
               onPressed: () async {
                 // Close the confirmation dialog first
-                Navigator.of(context).pop();
+                Navigator.of(dialogContext).pop();
                 
-                // Perform logout immediately without showing loading dialog
+                // Perform logout with the settings screen context, not dialog context
                 await _performLogout(context);
               },
               style: TextButton.styleFrom(
@@ -172,9 +171,9 @@ class SettingsScreen extends StatelessWidget {
         );
       },
     );
-  }
-
-  Future<void> _performLogout(BuildContext context) async {
+  }  Future<void> _performLogout(BuildContext context) async {
+    print('🚪 Starting logout process...');
+    
     final authProvider = context.read<AuthProvider>();
     final spotifyProvider = context.read<SpotifyProvider>();
     
@@ -182,12 +181,19 @@ class SettingsScreen extends StatelessWidget {
     await authProvider.logout();
     spotifyProvider.clearData();
     
-    // Navigate back to root and let AppWrapper handle screen selection
-    if (context.mounted) {
+    print('🔍 Checking navigation context...');
+    print('   - context.mounted: ${context.mounted}');
+    print('   - Current route: ${ModalRoute.of(context)?.settings.name}');
+    
+    // Check if still in valid context and not already on login screen
+    if (context.mounted && ModalRoute.of(context)?.settings.name != '/login') {
+      print('✅ Navigating to login screen...');
       Navigator.of(context).pushNamedAndRemoveUntil(
-        '/',
+        '/login',
         (route) => false,
       );
+    } else {
+      print('⚠️ Navigation skipped - context not valid or already on login');
     }
   }
 } 
