@@ -8,7 +8,7 @@ import '../widgets/activity_card.dart';
 import '../widgets/activity_skeleton.dart';
 import '../widgets/refresh_indicator_bar.dart';
 import '../widgets/last_updated_indicator.dart';
-import '../services/spotify_service.dart';
+import '../utils/auth_utils.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -53,15 +53,9 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
     
-    final token = await authProvider.getValidToken();
-    final spDcCookie = authProvider.spDcCookie;
-    
-    if (spDcCookie != null) {
+    if (authProvider.isAuthenticated) {
       // Use fast initial load with skeleton
-      await spotifyProvider.fastInitialLoad(
-        token ?? '', // Pass empty string if no OAuth token
-        spDcCookie: spDcCookie
-      );
+      await spotifyProvider.fastInitialLoad();
     } else {
       print('⚠️ No authentication available - cannot load friend activities');
     }
@@ -77,19 +71,11 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
     
-    final token = await authProvider.getValidToken();
-    final spDcCookie = authProvider.spDcCookie;
-    
-    if (spDcCookie != null) {
+    if (authProvider.isAuthenticated) {
       // Silent refresh - don't show loading spinner
-      // For cookie-only auth, only refresh friends' activities
-      if (token != null) {
-        // Full OAuth + cookie refresh
-        await spotifyProvider.silentRefresh(token, spDcCookie: spDcCookie);
-      } else {
-        // Cookie-only refresh (just friends' activities)
-        await spotifyProvider.loadFriendsActivities('', spDcCookie: spDcCookie, showLoading: false);
-      }
+      await spotifyProvider.silentRefresh();
+    } else {
+      print('⚠️ No authentication available - cannot refresh friend activities');
     }
   }
 
@@ -165,6 +151,8 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
           if (spotifyProvider.error != null) {
+            final isAuthError = spotifyProvider.error!.contains('Authentication expired');
+            
             return Column(
               children: [
                 SizedBox(height: MediaQuery.of(context).padding.top + kToolbarHeight),
@@ -173,14 +161,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(
-                          Icons.error_outline,
+                        Icon(
+                          isAuthError ? Icons.lock_outline : Icons.error_outline,
                           size: 64,
                           color: Colors.grey,
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'Error loading activities',
+                          isAuthError ? 'Authentication Required' : 'Error loading activities',
                           style: Theme.of(context).textTheme.headlineSmall,
                         ),
                         const SizedBox(height: 8),
@@ -192,10 +180,32 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                         const SizedBox(height: 16),
-                        ElevatedButton(
-                          onPressed: _refreshData,
-                          child: const Text('Retry'),
-                        ),
+                        if (isAuthError) ...[
+                          ElevatedButton(
+                            onPressed: () async {
+                              final success = await AuthUtils.handleReAuthentication(context);
+                              if (success && mounted) {
+                                // Clear error and refresh data
+                                spotifyProvider.clearError();
+                                _loadData();
+                              }
+                            },
+                            child: const Text('Login Again'),
+                          ),
+                          const SizedBox(height: 8),
+                          TextButton(
+                            onPressed: () {
+                              spotifyProvider.clearError();
+                              _refreshData();
+                            },
+                            child: const Text('Retry'),
+                          ),
+                        ] else ...[
+                          ElevatedButton(
+                            onPressed: _refreshData,
+                            child: const Text('Retry'),
+                          ),
+                        ],
                       ],
                     ),
                   ),

@@ -15,24 +15,6 @@ import 'utils/theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  try {
-    // Load environment variables
-    await dotenv.load(fileName: ".env");
-    
-    // Validate environment variables and check if OAuth is available
-    final oauthAvailable = SpotifyService.validateEnvironmentVariables();
-    if (!oauthAvailable) {
-      print('📝 OAuth not available - using cookie-based authentication only');
-      print('📝 To enable OAuth, add SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, and SPOTIFY_REDIRECT_URI to your .env file');
-    }
-    
-  } catch (e) {
-    print('❌ Error loading environment variables: $e');
-    print('📝 Make sure you have a .env file with your Spotify credentials');
-    print('📝 Copy env.example to .env and fill in your values');
-  }
-  
   final prefs = await SharedPreferences.getInstance();
   runApp(MyApp(prefs: prefs));
 }
@@ -59,10 +41,22 @@ class MyApp extends StatelessWidget {
             themeMode: themeProvider.themeMode,
             home: const AppWrapper(),
             routes: {
-              '/login': (context) => const LoginScreen(),
-              '/home': (context) => const HomeScreen(),
-              '/profile': (context) => const ProfileScreen(),
-              '/settings': (context) => const SettingsScreen(),
+              '/login': (context) {
+                print('🔗 Navigating to LoginScreen via route');
+                return const LoginScreen();
+              },
+              '/home': (context) {
+                print('🔗 Navigating to HomeScreen via route');
+                return const HomeScreen();
+              },
+              '/profile': (context) {
+                print('🔗 Navigating to ProfileScreen via route');
+                return const ProfileScreen();
+              },
+              '/settings': (context) {
+                print('🔗 Navigating to SettingsScreen via route');
+                return const SettingsScreen();
+              },
             },
           );
         },
@@ -88,9 +82,12 @@ class _AppWrapperState extends State<AppWrapper> {
         print('   - isInitialized: ${authProvider.isInitialized}');
         print('   - isLoading: ${authProvider.isLoading}');
         print('   - isAuthenticated: ${authProvider.isAuthenticated}');
+        print('   - currentUser: ${authProvider.currentUser?.displayName ?? 'null'}');
+        print('   - bearerToken exists: ${authProvider.bearerToken != null}');
         
         // Show loading screen while authentication is being initialized or in progress
         if (!authProvider.isInitialized || authProvider.isLoading) {
+          print('📱 Showing loading screen...');
           return const Scaffold(
             body: Center(
               child: Column(
@@ -113,8 +110,10 @@ class _AppWrapperState extends State<AppWrapper> {
         print('📊 Final authentication decision: $isAuth');
         
         if (isAuth) {
+          print('📱 Showing MainNavigationScreen...');
           return const MainNavigationScreen();
         } else {
+          print('📱 Showing LoginScreen...');
           return const LoginScreen();
         }
       },

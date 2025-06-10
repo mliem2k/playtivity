@@ -72,23 +72,25 @@ class ArtistTile extends StatelessWidget {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (artist.genres.isNotEmpty)
+            // if (artist.genres.isNotEmpty)
+            //   Text(
+            //     artist.genres.take(2).join(', '),
+            //     style: TextStyle(
+            //       color: Colors.grey[600],
+            //       fontSize: 13,
+            //     ),
+            //     maxLines: 1,
+            //     overflow: TextOverflow.ellipsis,
+            //   ),
+            // Only show followers count if it's loaded (not -1)
+            if (artist.followers >= 0)
               Text(
-                artist.genres.take(2).join(', '),
+                '${_formatFollowers(artist.followers)} followers',
                 style: TextStyle(
-                  color: Colors.grey[600],
-                  fontSize: 13,
+                  color: Colors.grey[500],
+                  fontSize: 12,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
-            Text(
-              '${_formatFollowers(artist.followers)} followers',
-              style: TextStyle(
-                color: Colors.grey[500],
-                fontSize: 12,
-              ),
-            ),
           ],
         ),
 

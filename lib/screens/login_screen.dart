@@ -151,10 +151,10 @@ class LoginScreen extends StatelessWidget {
       // Navigate to WebView login
       final result = await Navigator.of(context).push<bool>(        MaterialPageRoute(
           builder: (context) => SpotifyWebViewLogin(
-            onAuthComplete: (oauthCode, spDcCookie) async {
+            onAuthComplete: (bearerToken, headers) async {
               print('🔄 Login screen received auth completion callback');
               try {
-                await authProvider.handleAuthComplete(oauthCode, spDcCookie);
+                await authProvider.handleAuthComplete(bearerToken, headers);
                 print('✅ Authentication handling completed successfully');
                 
                 // Ensure we're back on the login screen before popping

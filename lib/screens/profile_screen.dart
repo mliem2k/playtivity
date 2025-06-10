@@ -9,6 +9,7 @@ import '../widgets/artist_tile.dart';
 import '../widgets/currently_playing_card.dart';
 import '../widgets/refresh_indicator_bar.dart';
 import '../utils/spotify_launcher.dart';
+import '../utils/auth_utils.dart';
 import 'settings_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -47,13 +48,12 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
       return;
     }
     
-    final token = await authProvider.getValidToken();
-    if (token != null) {
-      final spDcCookie = authProvider.spDcCookie;
-      
+    if (authProvider.isAuthenticated) {
       // Show loading only if we have no cached data
       final showLoading = spotifyProvider.topTracks.isEmpty && spotifyProvider.topArtists.isEmpty;
-      await spotifyProvider.refreshData(token, spDcCookie: spDcCookie, showLoading: showLoading);
+      await spotifyProvider.refreshData(showLoading: showLoading);
+    } else {
+      print('⚠️ No authentication available - cannot load profile data');
     }
   }
 
@@ -67,11 +67,11 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
       return;
     }
     
-    final token = await authProvider.getValidToken();
-    if (token != null) {
-      final spDcCookie = authProvider.spDcCookie;
+    if (authProvider.isAuthenticated) {
       // Silent refresh - don't show loading spinner
-      await spotifyProvider.silentRefresh(token, spDcCookie: spDcCookie);
+      await spotifyProvider.silentRefresh();
+    } else {
+      print('⚠️ No authentication available - cannot refresh profile data');
     }
   }
 

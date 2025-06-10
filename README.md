@@ -74,43 +74,12 @@ The app uses an innovative approach to show friend activities without requiring 
    cd playtivity
    ```
 
-2. **Set up Spotify Developer App** 
-
-   To enable full functionality, you need to create a Spotify Developer app and configure your credentials. Follow these steps:
-   without it, features like getting album photos and profile data will not work.
-   ### Create Spotify Developer Account
-   1. Go to [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
-   2. Log in with your Spotify account (or create one)
-   3. Accept the Spotify Developer Terms of Service
-
-   ### Create New App
-   1. Click **"Create App"** button
-   2. Fill in the app details:
-      - **App Name**: `Playtivity` (or your preferred name)
-      - **App Description**: `Flutter app that shows friends' Spotify activities in real-time`
-      - **Website**: Your website URL (optional)
-      - **Redirect URI**: `https://yourdomain.com` or `playtivity://callback` for mobile
-      - **API/SDKs**: Check "Web API"
-
-   ### Configure Environment
-   1. Copy `.env.example` to `.env`:
-      ```bash
-      copy .env.example .env
-      ```
-   2. Update `.env` with your app credentials:
-      ```properties
-      SPOTIFY_CLIENT_ID=your_client_id_from_dashboard
-      SPOTIFY_CLIENT_SECRET=your_client_secret_from_dashboard
-      SPOTIFY_REDIRECT_URI=https://yourdomain.com
-      ```
-   3. In your Spotify Developer Dashboard, add the same redirect URI to your app settings
-
-3. **Install dependencies**:
+2. **Install dependencies**:
    ```bash
    flutter pub get
    ```
 
-4. **Run the app**:
+3. **Run the app**:
    ```bash
    flutter run
    ```
@@ -176,7 +145,7 @@ See `scripts/README.md` for detailed usage instructions.
 
 Future improvements planned:
 
-- [ ] **Complete API-free implementation** - Remove all dependencies on Spotify API client/secret
+- [✅] **Complete API-free implementation** - Remove all dependencies on Spotify API client/secret
 - [ ] **iOS testing and support** - Test and fix iOS-specific issues
 - [ ] **Home screen widgets** - Android widgets showing friend activity and currently playing
 

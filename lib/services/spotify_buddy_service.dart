@@ -9,15 +9,33 @@ import 'package:playtivity/models/activity.dart';
 import 'package:playtivity/models/user.dart';
 import 'package:playtivity/models/track.dart';
 import 'package:playtivity/models/playlist.dart';
+import 'package:playtivity/models/artist.dart';
 // import 'package:playtivity/services/spotify_service.dart';
 
 class SpotifyBuddyService {
   static const String _baseUrl = 'https://guc-spclient.spotify.com';
   
-  // Cache for access token and sp_dc cookie to avoid repeated requests
+  // Singleton pattern
+  static SpotifyBuddyService? _instance;
+  static SpotifyBuddyService get instance {
+    _instance ??= SpotifyBuddyService._internal();
+    return _instance!;
+  }
+  
+  // Private constructor for singleton
+  SpotifyBuddyService._internal();
+  
+  // Public factory constructor that returns the singleton
+  factory SpotifyBuddyService() => instance;
+  
+  // Cache for access token and complete cookie string to avoid repeated requests
   String? _cachedAccessToken;
-  String? _lastValidSpDcCookie;
+  String? _completeCookieString;
   DateTime? _tokenExpiry;
+  
+  // New: Direct Bearer token support (bypasses TOTP generation)
+  String? _directBearerToken;
+  Map<String, String>? _savedHeaders;
     // Spotify service for fetching track details
   // final SpotifyService _spotifyService = SpotifyService();
   
@@ -30,6 +48,15 @@ class SpotifyBuddyService {
   // SharedPreferences key for persistent track duration cache
   static const String _trackDurationCacheKey = 'track_duration_cache';
   
+  // In-memory cache for artist details (followers, genres, popularity)
+  final Map<String, Map<String, dynamic>> _artistDetailsCache = {};
+  
+  // Track if artist cache has been modified since last save
+  bool _artistCacheModified = false;
+  
+  // SharedPreferences key for persistent artist details cache
+  static const String _artistDetailsCacheKey = 'artist_details_cache';
+  
   // Cache for buddy list activities to reduce API hits
   List<Activity>? _cachedBuddyActivities;
   DateTime? _lastBuddyListFetch;
@@ -37,114 +64,6 @@ class SpotifyBuddyService {
   // Cache duration - refresh every 1.5 minutes
   static const Duration _buddyListCacheDuration = Duration(minutes: 1, seconds: 30);
 
-  String base32FromBytes(Uint8List e, String secretSauce) {
-    var t = 0;
-    var n = 0;
-    var r = "";
-    for (int i = 0; i < e.length; i++) {
-      n = n << 8 | e[i];
-      t += 8;
-      while (t >= 5) {
-        r += secretSauce[n >>> t - 5 & 31];
-        t -= 5;
-      }
-    }
-    if (t > 0) {
-      r += secretSauce[n << 5 - t & 31];
-    }
-    return r;
-  }
-
-  Uint8List cleanBuffer(String e) {
-    e = e.replaceAll(" ", "");
-    final t = List.filled(e.length ~/ 2, 0);
-    final n = Uint8List.fromList(t);
-    for (int r = 0; r < e.length; r += 2) {
-      n[r ~/ 2] = int.parse(e.substring(r, r + 2), radix: 16);
-    }
-    return n;
-  }
-
-  Future<String> generateTotp() async {
-    const secretSauce = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-    final secretCipherBytes = [
-      12, 56, 76, 33, 88, 44, 88, 33, 78, 78, 11, 66, 22, 22, 55, 69, 54
-    ];
-    
-    final secretBytes = secretCipherBytes.asMap().entries.map((entry) {
-      return entry.value ^ (entry.key % 33 + 9);
-    }).toList();
-
-    final secretBytesHex = cleanBuffer(
-      utf8.encode(secretBytes.join("")).map((e) => e.toRadixString(16)).join(),
-    );
-
-    final secret = base32FromBytes(secretBytesHex, secretSauce);
-
-    // Get server time
-    final serverTimeResponse = await http.get(
-      Uri.parse('https://open.spotify.com/server-time'),
-      headers: {
-        'Host': 'open.spotify.com',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'accept': '*/*',
-      },
-    );
-
-    final serverTimeData = json.decode(serverTimeResponse.body);
-    final serverTimeSeconds = serverTimeData['serverTime'] as int;
-
-    // Generate TOTP
-    final time = DateTime.fromMillisecondsSinceEpoch(serverTimeSeconds * 1000);
-    final timeStep = (time.millisecondsSinceEpoch ~/ 1000) ~/ 30;
-    
-    return _generateTOTP(secret, timeStep);
-  }
-
-  String _generateTOTP(String secret, int timeStep) {
-    final key = _base32Decode(secret);
-    final timeBytes = _intToBytes(timeStep);
-    
-    // Use proper HMAC-SHA1 from crypto package
-    final hmacSha1 = Hmac(sha1, key);
-    final digest = hmacSha1.convert(timeBytes);
-    final hmac = digest.bytes;
-    
-    final offset = hmac[hmac.length - 1] & 0xf;
-    final code = ((hmac[offset] & 0x7f) << 24) |
-        ((hmac[offset + 1] & 0xff) << 16) |
-        ((hmac[offset + 2] & 0xff) << 8) |
-        (hmac[offset + 3] & 0xff);
-    return (code % 1000000).toString().padLeft(6, '0');
-  }
-
-  Uint8List _base32Decode(String input) {
-    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-    final output = <int>[];
-    var bits = 0;
-    var value = 0;
-
-    for (int i = 0; i < input.length; i++) {
-      value = (value << 5) | alphabet.indexOf(input[i].toUpperCase());
-      bits += 5;
-
-      if (bits >= 8) {
-        output.add((value >> (bits - 8)) & 255);
-        bits -= 8;
-      }
-    }
-
-    return Uint8List.fromList(output);
-  }
-
-  Uint8List _intToBytes(int value) {
-    final bytes = Uint8List(8);
-    for (int i = 7; i >= 0; i--) {
-      bytes[i] = value & 0xff;
-      value >>= 8;
-    }
-    return bytes;
-  }
 
   /// Loads track duration cache from SharedPreferences
   Future<void> _loadTrackDurationCache() async {
@@ -221,8 +140,8 @@ class SpotifyBuddyService {
     };
   }
 
-  /// Fetches track duration from Spotify API using OAuth token
-  Future<int?> _getTrackDuration(String trackUri, String oauthAccessToken) async {
+  /// Fetches track duration from Spotify API using stored bearer token
+  Future<int?> _getTrackDuration(String trackUri) async {
     return _retryApiCall(
       () async {
         // Load cache from storage if not already loaded
@@ -239,9 +158,12 @@ class SpotifyBuddyService {
         // Extract track ID from URI (spotify:track:id)
         final trackId = trackUri.split(':').last;
         
+        // Get Bearer token
+        final bearerToken = getBearerToken();
+        
         final url = 'https://api.spotify.com/v1/tracks/$trackId';
         final headers = {
-          'Authorization': 'Bearer $oauthAccessToken',
+          'Authorization': 'Bearer $bearerToken',
         };
 
         final response = await http.get(
@@ -270,90 +192,61 @@ class SpotifyBuddyService {
     );
   }
 
-  /// Gets a cached access token or fetches a new one if needed
-  Future<String?> getCachedOrFreshAccessToken(String spDcCookie) async {
-    // Check if we have a valid cached token for the same sp_dc cookie
-    if (_cachedAccessToken != null && 
-        _lastValidSpDcCookie == spDcCookie && 
-        _tokenExpiry != null && 
-        DateTime.now().isBefore(_tokenExpiry!)) {
-      print('✅ Using cached access token');
-      return _cachedAccessToken;
-    }
+  /// Sets the Bearer token and headers directly (bypasses TOTP generation)
+  void setBearerToken(String bearerToken, Map<String, String> headers) {
+    print('🔧 setBearerToken called with:');
+    print('   - bearerToken: ${bearerToken.substring(0, 20)}... (length: ${bearerToken.length})');
+    print('   - headers keys: ${headers.keys.join(', ')}');
     
-    print('🔄 Fetching new access token (cache expired or cookie changed)');
-    final accessToken = await getWebAccessToken(spDcCookie);
+    _directBearerToken = bearerToken;
+    _savedHeaders = Map.from(headers);
     
-    if (accessToken != null) {
-      _cachedAccessToken = accessToken;
-      _lastValidSpDcCookie = spDcCookie;
-      // Spotify web access tokens typically expire after 1 hour
-      _tokenExpiry = DateTime.now().add(const Duration(minutes: 55));
-      print('✅ Cached new access token (expires at ${_tokenExpiry})');
-    }
+    // Store the complete cookie string
+    _completeCookieString = headers['Cookie'] ?? '';
     
-    return accessToken;
+    print('✅ Bearer token and headers set directly');
+    print('   Token length: ${bearerToken.length}');
+    print('   Headers: ${headers.keys.join(', ')}');
+    print('   Cookie key exists: ${headers.containsKey('Cookie')}');
+    print('   Cookie value: ${headers['Cookie']?.substring(0, 100) ?? 'null'}...');
+    print('   Cookie length: ${_completeCookieString?.length ?? 0}');
+    print('   Final _completeCookieString: ${_completeCookieString?.isNotEmpty == true ? _completeCookieString!.substring(0, 100) + '...' : 'EMPTY'}');
+    print('   _directBearerToken stored: ${_directBearerToken?.substring(0, 20)}...');
   }
 
-  Future<String?> getWebAccessToken(String spDcCookie) async {
-    return _retryApiCall(
-      () async {
-        final totp = await generateTotp();
-        final timestamp = (DateTime.now().millisecondsSinceEpoch / 1000).floor();
-
-        var accessTokenUrl = Uri.parse(
-          'https://open.spotify.com/get_access_token?reason=transport&productType=web-player'
-          '&totp=$totp&totpVer=5&ts=$timestamp',
-        );
-
-        final headers = {
-          'Cookie': 'sp_dc=$spDcCookie',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        };
-
-        var response = await http.get(
-          accessTokenUrl,
-          headers: headers,
-        );
-
-        if (response.statusCode == 200) {
-          final data = json.decode(response.body);
-          final accessToken = data['accessToken'];
-          
-          if (accessToken != null && (accessToken as String).length == 374) {
-            return accessToken;
-          } else {
-            // Try with mode=init if transport didn't work or token is wrong length
-            accessTokenUrl = Uri.parse(
-              'https://open.spotify.com/get_access_token?reason=init&productType=web-player'
-              '&totp=$totp&totpVer=5&ts=$timestamp',
-            );
-
-            final initHeaders = {
-              'Cookie': 'sp_dc=$spDcCookie',
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            };
-
-            response = await http.get(
-              accessTokenUrl,
-              headers: initHeaders,
-            );
-
-            if (response.statusCode == 200) {
-              final initData = json.decode(response.body);
-              final accessToken = initData['accessToken'];
-              if (accessToken != null) {
-                return accessToken;
-              }
-            }
-          }
-        }
-        
-        throw Exception('Failed to get web access token: ${response.statusCode} - ${response.body}');
-      },
-      operation: 'Get Web Access Token',
-    );
+  /// Gets the current Bearer token (direct only)
+  String? getBearerToken() {
+    print('🔍 getBearerToken called:');
+    print('   - _directBearerToken null: ${_directBearerToken == null}');
+    print('   - _directBearerToken empty: ${_directBearerToken?.isEmpty ?? true}');
+    print('   - _directBearerToken length: ${_directBearerToken?.length ?? 0}');
+    print('   - _directBearerToken preview: ${_directBearerToken?.substring(0, 20) ?? 'null'}...');
+    
+    if (_directBearerToken != null && _directBearerToken!.isNotEmpty) {
+      print('✅ Using direct Bearer token');
+      return _directBearerToken;
+    }
+    
+    print('❌ No Bearer token available');
+    throw Exception('No Bearer token available - must authenticate first');
   }
+
+  /// Gets the complete cookie string
+  String? getCookieString() {
+    return _completeCookieString;
+  }
+
+  /// Clears the stored Bearer token and headers
+  void clearBearerToken() {
+    _directBearerToken = null;
+    _savedHeaders = null;
+    _cachedAccessToken = null;
+    _completeCookieString = null;
+    _tokenExpiry = null;
+    print('🗑️ Cleared Bearer token and headers');
+  }
+
+
 
   /// Determines if a friend is currently playing based on timestamp and song duration
   bool _isCurrentlyPlaying(Map<String, dynamic> friend, {int? durationMs}) {
@@ -460,7 +353,14 @@ class SpotifyBuddyService {
   //   return buffer.toString();
   // }
 
-  Future<List<Activity>> getFriendActivity(String spDcCookie, {String? oauthAccessToken, bool fastLoad = false}) async {
+  Future<List<Activity>> getFriendActivity({bool fastLoad = false}) async {
+    print('🔍 getFriendActivity called');
+    
+    // The new buddylist endpoint only requires Bearer token authentication
+    String? accessToken = getBearerToken();
+    if (accessToken == null) {
+      throw Exception('No Bearer token available - please authenticate first');
+    }
     // Check if we can use cached data
     if (!_shouldRefreshBuddyList()) {
       print('✅ Using cached buddy list data');
@@ -474,19 +374,14 @@ class SpotifyBuddyService {
           await _loadTrackDurationCache();
         }
         
-        print('🔄 Getting access token with sp_dc cookie...');
-        String? accessToken = await getCachedOrFreshAccessToken(spDcCookie);
-        
-        if (accessToken == null) {
-          throw Exception('Failed to get access token');
-        }
+        print('✅ Using Bearer token for buddylist API...');
 
         print('✅ Got access token, fetching friend activity...');
         
+        // Use the new buddylist endpoint - no hash parameter needed
         final url = '$_baseUrl/presence-view/v1/buddylist';
         final headers = {
           'Authorization': 'Bearer $accessToken',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         };
 
         final response = await http.get(
@@ -501,29 +396,24 @@ class SpotifyBuddyService {
         if (response.statusCode == 401 || response.statusCode == 403) {
           print('🔄 Access token unauthorized, clearing cache and retrying...');
           _cachedAccessToken = null;
-          _lastValidSpDcCookie = null;
+          _completeCookieString = null;
           _tokenExpiry = null;
           
-          // Retry with fresh token
-          accessToken = await getCachedOrFreshAccessToken(spDcCookie);
-          if (accessToken == null) {
-            throw Exception('Failed to get fresh access token after unauthorized response');
-          }
-          
+          // Use the new buddylist endpoint for retry as well
+          final retryUrl = '$_baseUrl/presence-view/v1/buddylist';
           final retryHeaders = {
             'Authorization': 'Bearer $accessToken',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
           };
           
           final retryResponse = await http.get(
-            Uri.parse(url),
+            Uri.parse(retryUrl),
             headers: retryHeaders,
           );
           
           print('📡 Retry response: ${retryResponse.statusCode}');
           
           if (retryResponse.statusCode == 200) {
-            final activities = await _parseActivityResponse(retryResponse.body, oauthAccessToken, fastLoad: fastLoad);
+            final activities = await _parseActivityResponse(retryResponse.body, fastLoad: fastLoad);
             // Cache the successful response
             _cachedBuddyActivities = activities;
             _lastBuddyListFetch = DateTime.now();
@@ -534,7 +424,7 @@ class SpotifyBuddyService {
         }
 
         if (response.statusCode == 200) {
-          final activities = await _parseActivityResponse(response.body, oauthAccessToken, fastLoad: fastLoad);
+          final activities = await _parseActivityResponse(response.body, fastLoad: fastLoad);
           // Cache the successful response
           _cachedBuddyActivities = activities;
           _lastBuddyListFetch = DateTime.now();
@@ -548,17 +438,21 @@ class SpotifyBuddyService {
     );
   }
 
-  Future<List<Activity>> _parseActivityResponse(String responseBody, String? oauthAccessToken, {bool fastLoad = false}) async {
+  Future<List<Activity>> _parseActivityResponse(String responseBody, {bool fastLoad = false}) async {
     try {
       final data = json.decode(responseBody);
+      print('📦 Buddy list response data: $data');
       final friends = data['friends'] as List?;
       
       if (friends != null) {
+        print('👥 Found ${friends.length} friends in response');
         final activities = <Activity>[];
         
         for (final friend in friends) {
           final userInfo = friend['user'];
           final timestamp = friend['timestamp'] ?? DateTime.now().millisecondsSinceEpoch;
+          
+          print('👤 Processing friend: ${userInfo?['name']} at timestamp $timestamp');
           
           // Create User object
           final user = User(
@@ -573,8 +467,10 @@ class SpotifyBuddyService {
           // Check if this is a track or playlist activity
           final trackInfo = friend['track'];
           final playlistInfo = friend['playlist'];
+          // final contextInfo = friend['context']; // v2 API includes context - not used yet
           
           if (playlistInfo != null) {
+            print('🎵 Processing playlist activity: ${playlistInfo['name']}');
             // For playlists, we can't calculate duration-based playback
             final playlist = Playlist(
               id: playlistInfo['uri']?.split(':').last ?? '',
@@ -596,15 +492,17 @@ class SpotifyBuddyService {
               type: ActivityType.playlist,
             ));
           } else if (trackInfo != null) {
+            print('🎵 Processing track activity: ${trackInfo['name']} by ${trackInfo['artist']?['name']}');
+            
             // Get track duration from Spotify API if available and not in fast load mode
             int? durationMs = trackInfo['duration_ms'];
             final trackUri = trackInfo['uri'] ?? '';
             bool isCurrentlyPlaying = false;
             
             if (!fastLoad) {
-              if (durationMs == null && oauthAccessToken != null && trackUri.isNotEmpty) {
+              if (durationMs == null && trackUri.isNotEmpty) {
                 print('🔍 Fetching duration for track: $trackUri');
-                durationMs = await _getTrackDuration(trackUri, oauthAccessToken);
+                durationMs = await _getTrackDuration(trackUri);
               }
               
               // Check if currently playing based on timestamp and song duration
@@ -616,7 +514,7 @@ class SpotifyBuddyService {
               print('⚡ Fast load: ${userInfo['name']} - Skipping duration check');
             }
             
-            // Create Track object
+            // Create Track object - handle v2 API structure
             final albumInfo = trackInfo['album'] ?? {};
             final artistInfo = trackInfo['artist'] ?? {};
             
@@ -637,11 +535,15 @@ class SpotifyBuddyService {
               isCurrentlyPlaying: isCurrentlyPlaying,
               type: ActivityType.track,
             ));
+          } else {
+            print('⚠️ Friend ${userInfo?['name']} has no track or playlist data');
           }
         }
         
         // Sort by timestamp - most recent first
         activities.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+        
+        print('✅ Parsed ${activities.length} activities successfully');
         
         // Save cache if it was modified
         if (_cacheModified) {
@@ -650,9 +552,12 @@ class SpotifyBuddyService {
         }
         
         return activities;
+      } else {
+        print('⚠️ No friends array found in response');
       }
     } catch (e) {
       print('❌ Error parsing activity response: $e');
+      print('📦 Raw response: $responseBody');
     }
     
     return [];
@@ -765,6 +670,8 @@ class SpotifyBuddyService {
     return activities;
   }
 
+
+
   /// Retry logic for API calls with exponential backoff
   static Future<T> _retryApiCall<T>(
     Future<T> Function() apiCall, {
@@ -801,5 +708,461 @@ class SpotifyBuddyService {
     }
     
     throw Exception('Failed to complete $operation after $maxRetries attempts');
+  }
+
+  /// Gets current user profile using web access token
+  /// Gets user profile using Bearer token directly
+  Future<User?> getCurrentUserProfileWithToken(String bearerToken) async {
+    return _retryApiCall(
+      () async {
+        print('🔄 Getting user profile with Bearer token...');
+        
+        final url = 'https://api.spotify.com/v1/me';
+        final headers = {
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $bearerToken',
+          'Content-Type': 'application/json',
+        };
+
+        final response = await http.get(
+          Uri.parse(url),
+          headers: headers,
+        );
+
+        print('📡 User profile API response: ${response.statusCode}');
+
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          print('✅ Successfully fetched user profile: ${data['display_name']}');
+          
+          return User.fromSpotifyApi(data);
+        } else {
+          throw Exception('Failed to fetch user profile: ${response.statusCode} - ${response.body}');
+        }
+      },
+      operation: 'Get User Profile with Bearer Token',
+    );
+  }
+
+  /// Helper method to get the best image URL from Spotify's images array
+  String? _getBestImageUrl(List? images) {
+    if (images == null || images.isEmpty) return null;
+    
+    // Look for a medium-sized image (around 64-300px)
+    for (final image in images) {
+      final height = image['height'] as int?;
+      if (height != null && height >= 64 && height <= 300) {
+        return image['url'] as String?;
+      }
+    }
+    
+    // Fallback to the first image if no medium size found
+    return images.first['url'] as String?;
+  }
+
+
+
+  /// Gets user's top content (tracks and artists) using GraphQL API
+  Future<Map<String, dynamic>> getTopContent({
+    String timeRange = 'SHORT_TERM', 
+    int tracksLimit = 4, 
+    int artistsLimit = 10,
+    bool includeTopTracks = true,
+    bool includeTopArtists = true,
+  }) async {
+    if (_completeCookieString == null) {
+      throw Exception('No cookie string available - please authenticate first');
+    }
+    
+    return _retryApiCall(
+      () async {
+        print('🔄 Getting top content with GraphQL API...');
+        
+        // Get Bearer token (direct only)
+        String? accessToken = getBearerToken();
+        
+        if (accessToken == null) {
+          throw Exception('Failed to get access token for top content');
+        }
+
+        print('✅ Got access token, fetching top content...');
+        
+        // Convert timeRange to GraphQL format
+        final gqlTimeRange = _convertTimeRangeToGraphQL(timeRange);
+        
+        final url = 'https://api-partner.spotify.com/pathfinder/v2/query';
+        final headers = {
+          'accept': 'application/json',
+          'accept-language': 'en',
+          'app-platform': 'WebPlayer',
+          'authorization': 'Bearer $accessToken',
+          'client-token': _generateClientToken(),
+          'content-type': 'application/json;charset=UTF-8',
+          'dnt': '1',
+          'origin': 'https://open.spotify.com',
+          'priority': 'u=1, i',
+          'referer': 'https://open.spotify.com/',
+          'sec-ch-ua': '"Google Chrome";v="137", "Chromium";v="137", "Not/A)Brand";v="24"',
+          'sec-ch-ua-mobile': '?0',
+          'sec-ch-ua-platform': '"Windows"',
+          'sec-fetch-dest': 'empty',
+          'sec-fetch-mode': 'cors',
+          'sec-fetch-site': 'same-site',
+          'spotify-app-version': '1.2.66.322.g4d62a810',
+          'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/537.36',
+          'Cookie': _completeCookieString!,
+        };
+
+        final requestBody = {
+          'variables': {
+            'includeTopArtists': includeTopArtists,
+            'topArtistsInput': {
+              'offset': 0,
+              'limit': artistsLimit,
+              'sortBy': 'AFFINITY',
+              'timeRange': gqlTimeRange,
+            },
+            'includeTopTracks': includeTopTracks,
+            'topTracksInput': {
+              'offset': 0,
+              'limit': tracksLimit,
+              'sortBy': 'AFFINITY',
+              'timeRange': gqlTimeRange,
+            },
+          },
+          'operationName': 'userTopContent',
+          'extensions': {
+            'persistedQuery': {
+              'version': 1,
+              'sha256Hash': 'feb6d55177e2cbce2ac59214f9493f1ef2e4368eec01b3d4c3468fa1b97336e2',
+            },
+          },
+        };
+
+        final response = await http.post(
+          Uri.parse(url),
+          headers: headers,
+          body: json.encode(requestBody),
+        );
+
+        print('📡 Top content GraphQL API response: ${response.statusCode}');
+
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          print('✅ Successfully fetched top content');
+          return data;
+        } else {
+          throw Exception('Failed to fetch top content: ${response.statusCode} - ${response.body}');
+        }
+      },
+      operation: 'Get Top Content',
+    );
+  }
+
+  /// Gets user's top tracks using the new GraphQL API
+  Future<List<Track>> getTopTracks({String timeRange = 'medium_term', int limit = 20}) async {
+    final gqlTimeRange = _convertTimeRangeToGraphQL(timeRange);
+    final data = await getTopContent(
+      timeRange: gqlTimeRange,
+      tracksLimit: limit,
+      includeTopTracks: true,
+      includeTopArtists: false,
+    );
+    
+    final tracks = <Track>[];
+    final topTracksItems = data['data']?['me']?['profile']?['topTracks']?['items'] as List? ?? [];
+    
+    for (final item in topTracksItems) {
+      final trackData = item['data'];
+      if (trackData != null) {
+        final albumData = trackData['albumOfTrack'] ?? {};
+        final artistsData = trackData['artists']?['items'] as List? ?? [];
+        
+        // Extract artist names
+        final artistNames = artistsData
+            .map((artist) => artist['profile']?['name'] as String? ?? 'Unknown Artist')
+            .toList();
+        
+        // Get the best album image
+        final coverArt = albumData['coverArt']?['sources'] as List? ?? [];
+        String? imageUrl;
+        if (coverArt.isNotEmpty) {
+          for (final image in coverArt) {
+            final height = image['height'] as int?;
+            if (height != null && height >= 300 && height <= 640) {
+              imageUrl = image['url'] as String?;
+              break;
+            }
+          }
+          imageUrl ??= coverArt.first['url'] as String?;
+        }
+        
+        tracks.add(Track(
+          id: trackData['uri']?.split(':').last ?? '',
+          name: trackData['name'] ?? 'Unknown Track',
+          artists: artistNames,
+          album: albumData['name'] ?? 'Unknown Album',
+          imageUrl: imageUrl ?? '',
+          durationMs: trackData['duration']?['totalMilliseconds'] ?? 0,
+          uri: trackData['uri'] ?? '',
+        ));
+      }
+    }
+    
+    print('✅ Parsed ${tracks.length} top tracks from GraphQL response');
+    return tracks;
+  }
+
+  /// Gets user's top artists using the new GraphQL API
+  Future<List<Artist>> getTopArtists({String timeRange = 'medium_term', int limit = 20}) async {
+    final gqlTimeRange = _convertTimeRangeToGraphQL(timeRange);
+    final data = await getTopContent(
+      timeRange: gqlTimeRange,
+      artistsLimit: limit,
+      includeTopTracks: false,
+      includeTopArtists: true,
+    );
+    
+    // Load artist details cache if not already loaded
+    if (_artistDetailsCache.isEmpty) {
+      await _loadArtistDetailsCache();
+    }
+    
+    final artists = <Artist>[];
+    final topArtistsItems = data['data']?['me']?['profile']?['topArtists']?['items'] as List? ?? [];
+    
+    for (final item in topArtistsItems) {
+      final artistData = item['data'];
+      if (artistData != null) {
+        // Get the best artist image
+        final avatarImages = artistData['visuals']?['avatarImage']?['sources'] as List? ?? [];
+        String? imageUrl;
+        if (avatarImages.isNotEmpty) {
+          for (final image in avatarImages) {
+            final height = image['height'] as int?;
+            if (height != null && height >= 300 && height <= 640) {
+              imageUrl = image['url'] as String?;
+              break;
+            }
+          }
+          imageUrl ??= avatarImages.first['url'] as String?;
+        }
+        
+        final artistId = artistData['uri']?.split(':').last ?? '';
+        
+        // Check cache first for artist details
+        int followers = -1; // Use -1 to indicate not loaded yet
+        List<String> genres = [];
+        int popularity = 0;
+        
+        if (_artistDetailsCache.containsKey(artistId)) {
+          final cachedDetails = _artistDetailsCache[artistId]!;
+          followers = cachedDetails['followers'] ?? -1;
+          genres = (cachedDetails['genres'] as List?)?.map((g) => g.toString()).toList() ?? [];
+          popularity = cachedDetails['popularity'] ?? 0;
+          print('💾 Using cached artist details for $artistId: $followers followers');
+        }
+        
+        artists.add(Artist(
+          id: artistId,
+          name: artistData['profile']?['name'] ?? 'Unknown Artist',
+          imageUrl: imageUrl,
+          followers: followers,
+          genres: genres,
+          popularity: popularity,
+          uri: artistData['uri'] ?? '',
+        ));
+      }
+    }
+    
+    print('✅ Parsed ${artists.length} top artists from GraphQL response');
+    
+    return artists;
+  }
+
+  /// Gets user's top artists and fetches missing details in background
+  Future<List<Artist>> getTopArtistsWithDetails({
+    String timeRange = 'medium_term', 
+    int limit = 20,
+    Function(List<Artist>)? onArtistDetailsUpdate,
+  }) async {
+    // First get the basic artist list
+    final artists = await getTopArtists(timeRange: timeRange, limit: limit);
+    
+    // Fetch missing details in background with callback
+    _fetchMissingArtistDetails(artists, onUpdate: onArtistDetailsUpdate);
+    
+    return artists;
+  }
+
+  /// Fetches missing artist details in background and updates cache
+  Future<List<Artist>> _fetchMissingArtistDetails(List<Artist> artists, {Function(List<Artist>)? onUpdate}) async {
+    final missingIds = <String>[];
+    
+    for (final artist in artists) {
+      if (artist.followers == -1) { // Not loaded yet
+        missingIds.add(artist.id);
+      }
+    }
+    
+    if (missingIds.isEmpty) {
+      print('✅ All artist details already cached');
+      return artists;
+    }
+    
+    print('🔄 Fetching details for ${missingIds.length} artists in background...');
+    
+    var updatedArtists = List<Artist>.from(artists);
+    
+    for (final artistId in missingIds) {
+      try {
+        final artistDetails = await _getArtistDetails(artistId);
+        if (artistDetails != null) {
+          _artistDetailsCache[artistId] = {
+            'followers': artistDetails['followers']?['total'] ?? 0,
+            'genres': artistDetails['genres'] ?? [],
+            'popularity': artistDetails['popularity'] ?? 0,
+            'cached_at': DateTime.now().millisecondsSinceEpoch,
+          };
+          _artistCacheModified = true;
+          
+          // Update the artist in the list
+          final artistIndex = updatedArtists.indexWhere((a) => a.id == artistId);
+          if (artistIndex != -1) {
+            final oldArtist = updatedArtists[artistIndex];
+            updatedArtists[artistIndex] = Artist(
+              id: oldArtist.id,
+              name: oldArtist.name,
+              imageUrl: oldArtist.imageUrl,
+              followers: artistDetails['followers']?['total'] ?? 0,
+              genres: (artistDetails['genres'] as List?)?.map((g) => g.toString()).toList() ?? [],
+              popularity: artistDetails['popularity'] ?? 0,
+              uri: oldArtist.uri,
+            );
+            
+            print('✅ Updated artist $artistId with ${artistDetails['followers']?['total']} followers');
+            
+            // Notify callback with updated list
+            if (onUpdate != null) {
+              onUpdate(List<Artist>.from(updatedArtists));
+            }
+          }
+        }
+      } catch (e) {
+        print('⚠️ Failed to fetch details for artist $artistId: $e');
+        // Cache a placeholder to avoid repeated failures
+        _artistDetailsCache[artistId] = {
+          'followers': 0,
+          'genres': [],
+          'popularity': 0,
+          'cached_at': DateTime.now().millisecondsSinceEpoch,
+          'failed': true,
+        };
+        _artistCacheModified = true;
+      }
+    }
+    
+    // Save updated cache
+    if (_artistCacheModified) {
+      await _saveArtistDetailsCache();
+      _artistCacheModified = false;
+    }
+    
+    return updatedArtists;
+  }
+
+  /// Fetches detailed artist information from Spotify Web API
+  Future<Map<String, dynamic>?> _getArtistDetails(String artistId) async {
+    return _retryApiCall(
+      () async {
+        // Get Bearer token
+        final bearerToken = getBearerToken();
+        
+        final url = 'https://api.spotify.com/v1/artists/$artistId';
+        final headers = {
+          'Authorization': 'Bearer $bearerToken',
+        };
+
+        final response = await http.get(
+          Uri.parse(url),
+          headers: headers,
+        );
+
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          return data;
+        } else {
+          throw Exception('Failed to fetch artist details: ${response.statusCode} - ${response.body}');
+        }
+      },
+      operation: 'Get Artist Details',
+    );
+  }
+
+  /// Loads artist details cache from SharedPreferences
+  Future<void> _loadArtistDetailsCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cacheJson = prefs.getString(_artistDetailsCacheKey);
+      
+      if (cacheJson != null) {
+        final cacheData = json.decode(cacheJson) as Map<String, dynamic>;
+        _artistDetailsCache.clear();
+        
+        // Convert and validate cache entries
+        cacheData.forEach((artistId, details) {
+          if (details is Map<String, dynamic>) {
+            final cachedAt = details['cached_at'] as int?;
+            final now = DateTime.now().millisecondsSinceEpoch;
+            
+            // Cache expires after 7 days for artist details (they don't change often)
+            if (cachedAt != null && (now - cachedAt) < (7 * 24 * 60 * 60 * 1000)) {
+              _artistDetailsCache[artistId] = Map<String, dynamic>.from(details);
+            } else {
+              print('🗑️ Artist details cache expired for $artistId');
+            }
+          }
+        });
+        
+        print('💾 Loaded ${_artistDetailsCache.length} artist details from cache');
+      }
+    } catch (e) {
+      print('⚠️ Failed to load artist details cache: $e');
+      _artistDetailsCache.clear();
+    }
+  }
+
+  /// Saves artist details cache to SharedPreferences
+  Future<void> _saveArtistDetailsCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cacheJson = json.encode(_artistDetailsCache);
+      await prefs.setString(_artistDetailsCacheKey, cacheJson);
+      print('💾 Saved ${_artistDetailsCache.length} artist details to cache');
+    } catch (e) {
+      print('⚠️ Failed to save artist details cache: $e');
+    }
+  }
+
+  /// Converts time range from REST API format to GraphQL format
+  String _convertTimeRangeToGraphQL(String timeRange) {
+    switch (timeRange) {
+      case 'short_term':
+        return 'SHORT_TERM';
+      case 'medium_term':
+        return 'MEDIUM_TERM';
+      case 'long_term':
+        return 'LONG_TERM';
+      default:
+        return 'SHORT_TERM';
+    }
+  }
+
+  /// Generates a client token for the GraphQL API
+  /// This is a simplified version - in a real app, this would be more complex
+  String _generateClientToken() {
+    // This is a placeholder - the actual client token generation is complex
+    // For now, we'll use a static token from the example
+    return 'AAAyrFCYuQiGGFsq0OYbkiotiZ9YtDPzdjemsDOtMJ6msHslHFxskOjd1h1q28igZTPhiB+n++o4n7/QkdHbIuzznY/QOKMesZKLlV83stuo8yn7hiiDN1R7b0HyInceiDZUgEPotzcBSM7v9ff76LEOJ53Hxl4W8qp+bwi+WAMlKSG6LSKb4905Tyqj0p2nsnWblSZVUw+Lj7huYgvu2y4istr4/zCyTIed9nI6ys3M2C8yhYfF1+5PC58l5gwGasCb7J7EikdPOfjBXZlMfMfh3gnOP4mK1ITzqmfaevpbrZDkJpspdzZFtYJT2eax';
   }
 }

@@ -176,16 +176,10 @@ class SettingsScreen extends StatelessWidget {
     final authProvider = context.read<AuthProvider>();
     final spotifyProvider = context.read<SpotifyProvider>();
     
-    // Clear all data
-    await authProvider.logout();
+    // Clear Spotify provider data first
     spotifyProvider.clearData();
     
-    // Navigate back to root and let AppWrapper handle screen selection
-    if (context.mounted) {
-      Navigator.of(context).pushNamedAndRemoveUntil(
-        '/',
-        (route) => false,
-      );
-    }
+    // Use the new force logout method that handles both clearing and navigation
+    await authProvider.forceLogoutAndNavigate(context);
   }
 } 

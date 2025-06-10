@@ -20,6 +20,18 @@ class User {
       id: json['id'] ?? '',
       displayName: json['display_name'] ?? '',
       email: json['email'] ?? '',
+      imageUrl: json['image_url'],
+      followers: json['followers'] ?? 0,
+      country: json['country'] ?? '',
+    );
+  }
+
+  /// Creates User from Spotify API response
+  factory User.fromSpotifyApi(Map<String, dynamic> json) {
+    return User(
+      id: json['id'] ?? '',
+      displayName: json['display_name'] ?? '',
+      email: json['email'] ?? '',
       imageUrl: json['images'] != null && json['images'].isNotEmpty 
           ? json['images'][0]['url'] 
           : null,

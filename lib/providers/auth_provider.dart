@@ -1,23 +1,20 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../services/spotify_service.dart';
 import '../services/spotify_buddy_service.dart';
 import '../models/user.dart';
+import '../services/spotify_service.dart';
 
 class AuthProvider extends ChangeNotifier {
-  static const String _spDcCookieKey = 'spotify_sp_dc_cookie';
-  static const String _accessTokenKey = 'spotify_access_token';
-  static const String _refreshTokenKey = 'spotify_refresh_token';
-  static const String _tokenExpiryKey = 'spotify_token_expiry';
+  static const String _bearerTokenKey = 'spotify_bearer_token';
+  static const String _headersKey = 'spotify_headers';
+  static const String _userKey = 'spotify_user';
   
   final SharedPreferences _prefs;
-  final SpotifyService _spotifyService = SpotifyService();
   final SpotifyBuddyService _buddyService = SpotifyBuddyService();
   
-  String? _spDcCookie;
-  String? _accessToken;
-  String? _refreshToken;
-  DateTime? _tokenExpiry;
+  String? _bearerToken;
+  Map<String, String>? _headers;
   User? _currentUser;
   bool _isLoading = false;
   bool _isInitialized = false;
@@ -32,74 +29,62 @@ class AuthProvider extends ChangeNotifier {
       return false;
     }
     
-    final oauthAuth = _accessToken != null && !_isTokenExpired;
-    final cookieAuth = _spDcCookie != null && _currentUser != null;
-    final result = oauthAuth || cookieAuth;
+    // Check for Bearer token authentication
+    final tokenAuth = _bearerToken != null && _currentUser != null;
     
     print('🔍 isAuthenticated evaluation:');
-    print('   - OAuth valid: $oauthAuth (token: ${_accessToken != null}, expired: ${_isTokenExpired})');
-    print('   - Cookie valid: $cookieAuth (cookie: ${_spDcCookie != null}, user: ${_currentUser != null})');
-    print('   - Final result: $result');
+    print('   - Token valid: $tokenAuth (token: ${_bearerToken != null}, user: ${_currentUser != null})');
+    print('   - User: ${_currentUser?.displayName ?? 'none'}');
+    print('   - Final result: $tokenAuth');
     
-    return result;
+    return tokenAuth;
   }
   bool get isLoading => _isLoading;
   bool get isInitialized => _isInitialized;
   User? get currentUser => _currentUser;
-  String? get accessToken => _accessToken;
-  String? get spDcCookie => _spDcCookie;
-
-  bool get _isTokenExpired {
-    if (_tokenExpiry == null) return true;
-    return DateTime.now().isAfter(_tokenExpiry!);
-  }
-
-  /// Gets token status information for debugging
-  Map<String, dynamic> get tokenStatus {
-    final now = DateTime.now();
-    final hasToken = _accessToken != null;
-    final hasRefreshToken = _refreshToken != null;
-    final isExpired = _isTokenExpired;
-    final timeUntilExpiry = _tokenExpiry != null 
-        ? _tokenExpiry!.difference(now).inMinutes 
-        : null;
-    
-    return {
-      'hasToken': hasToken,
-      'hasRefreshToken': hasRefreshToken,
-      'isExpired': isExpired,
-      'expiryTime': _tokenExpiry?.toIso8601String(),
-      'minutesUntilExpiry': timeUntilExpiry,
-    };
-  }
+  String? get bearerToken => _bearerToken;
+  Map<String, String>? get headers => _headers;
 
   Future<void> _initializeAuth() async {
     try {
       print('🔄 Starting authentication initialization...');
       _loadStoredData();
       
-      if (_accessToken != null && !_isTokenExpired) {
-        print('✅ Valid OAuth token found, loading user profile');
-        await _loadCurrentUser();
-      } else if (_accessToken != null && _isTokenExpired) {
-        print('⚠️ OAuth token found but expired');
-      } else if (_spDcCookie != null && _accessToken == null) {
-        print('✅ Cookie-only authentication found, creating minimal user profile');
-        _currentUser = User(
-          id: 'cookie_user',
-          displayName: 'Spotify User',
-          email: '',
-          imageUrl: null,
-          followers: 0,
-          country: '',
-        );
+      // Load saved Bearer token and headers if available
+      final savedBearerToken = _prefs.getString(_bearerTokenKey);
+      final savedHeadersJson = _prefs.getString(_headersKey);
+      final savedUserJson = _prefs.getString(_userKey);
+      
+      if (savedBearerToken != null && savedHeadersJson != null) {
+        try {
+          _bearerToken = savedBearerToken;
+          _headers = Map<String, String>.from(json.decode(savedHeadersJson));
+          _buddyService.setBearerToken(savedBearerToken, _headers!);
+          print('✅ Restored saved Bearer token and headers');
+          
+          // Try to load saved user profile
+          if (savedUserJson != null) {
+            final userMap = json.decode(savedUserJson);
+            _currentUser = User.fromJson(userMap);
+            print('✅ Restored saved user profile: ${_currentUser!.displayName}');
+          } else {
+            // Fetch user profile using Bearer token
+            print('🔄 Fetching user profile with Bearer token...');
+            _currentUser = await _buddyService.getCurrentUserProfileWithToken(_bearerToken!);
+            if (_currentUser != null) {
+              print('✅ Successfully loaded user profile: ${_currentUser!.displayName}');
+            }
+          }
+        } catch (e) {
+          print('⚠️ Failed to restore saved authentication: $e');
+          await _clearStoredData();
+        }
       }
       
       print('🔍 Initialization complete. Final state:');
-      print('   - Has OAuth token: ${_accessToken != null}');
-      print('   - Token expired: ${_isTokenExpired}');
-      print('   - Has cookie: ${_spDcCookie != null}');
+      print('   - Has Bearer token: ${_bearerToken != null}');
       print('   - Has user: ${_currentUser != null}');
+      print('   - User name: ${_currentUser?.displayName ?? 'none'}');
       
     } catch (e) {
       print('❌ Error during auth initialization: $e');
@@ -118,38 +103,14 @@ class AuthProvider extends ChangeNotifier {
   }
 
   void _loadStoredData() {
-    _spDcCookie = _prefs.getString(_spDcCookieKey);
-    _accessToken = _prefs.getString(_accessTokenKey);
-    _refreshToken = _prefs.getString(_refreshTokenKey);
+    // Clean up old data during migration
+    print('🧹 Cleaning up old authentication data...');
+    _prefs.remove('spotify_sp_dc_cookie');
+    _prefs.remove('spotify_access_token');
+    _prefs.remove('spotify_refresh_token');
+    _prefs.remove('spotify_token_expiry');
     
-    final expiryTimestamp = _prefs.getInt(_tokenExpiryKey);
-    if (expiryTimestamp != null) {
-      _tokenExpiry = DateTime.fromMillisecondsSinceEpoch(expiryTimestamp);
-    }
-
-    // Log what we loaded
-    print('📦 Loaded stored auth data:');
-    print('   - sp_dc cookie: ${_spDcCookie != null ? 'present' : 'missing'}');
-    print('   - OAuth access token: ${_accessToken != null ? 'present' : 'missing'}');
-    print('   - Refresh token: ${_refreshToken != null ? 'present' : 'missing'}');
-    print('   - Token expiry: ${_tokenExpiry?.toIso8601String() ?? 'not set'}');
-    print('   - Token expired: ${_isTokenExpired}');
-  }
-
-  Future<void> _loadCurrentUser() async {
-    try {
-      // Use OAuth token to get real user profile from Spotify API
-      _currentUser = await _spotifyService.getCurrentUser(_accessToken!);
-    } catch (e) {
-      print('Failed to load user: $e');
-      // Don't logout during initialization, just clear the invalid token
-      _accessToken = null;
-      _refreshToken = null;
-      _tokenExpiry = null;
-      await _prefs.remove(_accessTokenKey);
-      await _prefs.remove(_refreshTokenKey);
-      await _prefs.remove(_tokenExpiryKey);
-    }
+    print('📦 Old authentication data cleaned up');
   }
 
   void startLogin() {
@@ -162,56 +123,36 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> handleAuthComplete(String oauthCode, String? spDcCookie) async {
+  Future<void> handleAuthComplete(String bearerToken, Map<String, String> headers) async {
     try {
       print('🔍 handleAuthComplete called with:');
-      print('   - oauthCode: "${oauthCode}" (length: ${oauthCode.length}, isEmpty: ${oauthCode.isEmpty})');
-      print('   - spDcCookie: ${spDcCookie != null ? 'present' : 'null'}');
+      print('   - bearerToken: "${bearerToken.substring(0, 20)}..." (length: ${bearerToken.length})');
+      print('   - headers: ${headers.keys.join(', ')}');
+      print('   - headers Cookie exists: ${headers.containsKey('Cookie')}');
+      print('   - headers Cookie value: ${headers['Cookie']?.substring(0, 100) ?? 'null'}...');
+      print('   - headers Cookie length: ${headers['Cookie']?.length ?? 0}');
+
+      print('🔄 Processing Bearer token authentication...');
       
-      if (oauthCode.isNotEmpty) {
-        // OAuth flow - exchange code for tokens
-        print('🔄 Processing OAuth code and sp_dc cookie...');
-        
-        final tokenData = await _spotifyService.exchangeCodeForToken(oauthCode);
-        
-        _accessToken = tokenData['access_token'];
-        _refreshToken = tokenData['refresh_token'];
-        
-        final expiresIn = tokenData['expires_in'] as int;
-        _tokenExpiry = DateTime.now().add(Duration(seconds: expiresIn));
-
-        // Store sp_dc cookie for friend activities
-        _spDcCookie = spDcCookie;
-
-        await _saveStoredData();
-        await _loadCurrentUser();
-        
-        print('✅ Authentication complete - OAuth tokens and sp_dc cookie stored');
+      // Store Bearer token and headers
+      _bearerToken = bearerToken;
+      _headers = headers;
+      
+      // Set the Bearer token directly in buddy service
+      _buddyService.setBearerToken(bearerToken, headers);
+      
+      // Fetch user profile using Bearer token
+      print('🔄 Fetching user profile with Bearer token...');
+      _currentUser = await _buddyService.getCurrentUserProfileWithToken(_bearerToken!);
+      if (_currentUser != null) {
+        print('✅ Successfully loaded user profile: ${_currentUser!.displayName}');
       } else {
-        // Cookie-only authentication
-        print('🔄 Processing cookie-only authentication...');
-        
-        if (spDcCookie == null || spDcCookie.isEmpty) {
-          throw Exception('No sp_dc cookie provided for cookie-only authentication');
-        }
-
-        // Store sp_dc cookie
-        _spDcCookie = spDcCookie;
-        
-        // Create a minimal user profile for cookie-only auth
-        _currentUser = User(
-          id: 'cookie_user',
-          displayName: 'Spotify User',
-          email: '',
-          imageUrl: null,
-          followers: 0,
-          country: '',
-        );
-
-        await _saveStoredData();
-        
-        print('✅ Cookie-only authentication complete - sp_dc cookie stored');
+        print('⚠️ Failed to load user profile');
       }
+
+      await _saveStoredData();
+      
+      print('✅ Bearer token authentication complete - token and user profile stored');
       
       // Clear loading state and ensure initialization is complete
       _isLoading = false;
@@ -245,90 +186,126 @@ class AuthProvider extends ChangeNotifier {
   Future<void> _saveStoredData() async {
     print('💾 Saving auth data to storage...');
     
-    if (_spDcCookie != null) {
-      await _prefs.setString(_spDcCookieKey, _spDcCookie!);
+    if (_bearerToken != null) {
+      await _prefs.setString(_bearerTokenKey, _bearerToken!);
+      print('✅ Bearer token saved successfully');
     }
-    if (_accessToken != null) {
-      await _prefs.setString(_accessTokenKey, _accessToken!);
+    
+    if (_headers != null) {
+      await _prefs.setString(_headersKey, json.encode(_headers!));
+      print('✅ Headers saved successfully');
     }
-    if (_refreshToken != null) {
-      await _prefs.setString(_refreshTokenKey, _refreshToken!);
-    }
-    if (_tokenExpiry != null) {
-      await _prefs.setInt(_tokenExpiryKey, _tokenExpiry!.millisecondsSinceEpoch);
+    
+    if (_currentUser != null) {
+      await _prefs.setString(_userKey, json.encode(_currentUser!.toJson()));
+      print('✅ User profile saved successfully');
     }
     
     print('✅ Auth data saved successfully');
-    print('   - Token expires at: ${_tokenExpiry?.toIso8601String()}');
   }
 
-  Future<void> refreshAccessToken() async {
-    if (_refreshToken == null) {
-      print('❌ No refresh token available, logging out');
-      await logout();
-      return;
-    }
-
-    try {
-      print('🔄 Refreshing OAuth access token...');
-      final tokenData = await _spotifyService.refreshToken(_refreshToken!);
-      
-      _accessToken = tokenData['access_token'];
-      final expiresIn = tokenData['expires_in'] as int;
-      _tokenExpiry = DateTime.now().add(Duration(seconds: expiresIn));
-
-      await _saveStoredData();
-      notifyListeners();
-      
-      print('✅ OAuth access token refreshed successfully (expires at ${_tokenExpiry?.toIso8601String()})');
-    } catch (e) {
-      print('❌ Failed to refresh OAuth access token: $e');
-      print('🔄 Clearing invalid tokens and logging out');
-      await logout();
-    }
+  Future<void> _clearStoredData() async {
+    print('🗑️ Clearing stored auth data...');
+    
+    await _prefs.remove(_bearerTokenKey);
+    await _prefs.remove(_headersKey);
+    await _prefs.remove(_userKey);
+    
+    _bearerToken = null;
+    _headers = null;
+    _currentUser = null;
+    
+    print('✅ Stored auth data cleared');
   }
 
   Future<void> logout() async {
     print('🚪 Logging out and clearing all auth data...');
     
-    _spDcCookie = null;
-    _accessToken = null;
-    _refreshToken = null;
-    _tokenExpiry = null;
-    _currentUser = null;
-
-    await _prefs.remove(_spDcCookieKey);
-    await _prefs.remove(_accessTokenKey);
-    await _prefs.remove(_refreshTokenKey);
-    await _prefs.remove(_tokenExpiryKey);
-
+    // Set loading state to prevent race conditions
+    _isLoading = true;
+    notifyListeners();
+    
+    await _clearStoredData();
+    
+    // Clean up buddy service
+    _buddyService.clearBearerToken();
+    
+    // Ensure all state is properly reset
+    _isLoading = false;
+    
     print('✅ All auth data cleared successfully');
+    print('🔍 Post-logout state:');
+    print('   - isAuthenticated: $isAuthenticated');
+    print('   - isInitialized: $_isInitialized');
+    print('   - isLoading: $_isLoading');
+    print('   - currentUser: ${_currentUser?.displayName ?? 'null'}');
+    
+    // Force multiple notifications to ensure UI updates
+    notifyListeners();
+    
+    // Additional notification after a short delay to handle race conditions
+    await Future.delayed(const Duration(milliseconds: 50));
+    notifyListeners();
+    
+    // Final notification to ensure all consumers are updated
+    await Future.delayed(const Duration(milliseconds: 100));
     notifyListeners();
   }
 
-  Future<String?> getValidToken() async {
-    // Check if we have a valid cached token
-    if (_accessToken != null && !_isTokenExpired) {
-      print('✅ Using cached OAuth access token (expires at ${_tokenExpiry?.toIso8601String()})');
-      return _accessToken;
+  /// Re-authenticate when token expires or is invalid
+  Future<bool> reAuthenticate() async {
+    print('🔄 Re-authentication requested...');
+    
+    try {
+      // Clear old authentication data
+      await _clearStoredData();
+      _buddyService.clearBearerToken();
+      
+      // Start loading state
+      _isLoading = true;
+      notifyListeners();
+      
+      // Import the WebView login widget
+      // Note: This would need to be called from a UI context
+      // For now, we'll return false to indicate manual login is needed
+      print('⚠️ Re-authentication requires user interaction');
+      
+      return false;
+    } catch (e) {
+      print('❌ Error during re-authentication: $e');
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Check if token needs refresh and handle it
+  Future<bool> ensureValidAuthentication() async {
+    if (!isAuthenticated) {
+      print('⚠️ No valid authentication, re-authentication needed');
+      return false;
     }
     
-    // Token is expired but we have a refresh token
-    if (_isTokenExpired && _refreshToken != null) {
-      print('🔄 OAuth access token expired, refreshing...');
-      await refreshAccessToken();
-      if (_accessToken != null) {
-        print('✅ Successfully refreshed OAuth access token');
-        return _accessToken;
+    // Test if current token is still valid by making a simple API call
+    try {
+      await _buddyService.getCurrentUserProfileWithToken(_bearerToken!);
+      print('✅ Current authentication is valid');
+      return true;
+    } catch (e) {
+      try {
+        // Fallback to SpotifyService
+        final spotifyService = SpotifyService();
+        await spotifyService.getCurrentUser(_bearerToken!);
+        print('✅ Current authentication is valid (via fallback)');
+        return true;
+      } catch (fallbackError) {
+        print('⚠️ Current authentication invalid: $e');
+        print('⚠️ Fallback also failed: $fallbackError');
+        print('🔄 Attempting re-authentication...');
+        return await reAuthenticate();
       }
     }
-    
-    // No valid token available
-    if (_accessToken == null) {
-      print('❌ No OAuth access token available');
-    }
-    
-    return _accessToken;
   }
 
   /// Debug method to print current authentication state
@@ -337,15 +314,48 @@ class AuthProvider extends ChangeNotifier {
     print('   - isInitialized: $_isInitialized');
     print('   - isLoading: $_isLoading');
     print('   - isAuthenticated: $isAuthenticated');
-    print('   - hasAccessToken: ${_accessToken != null}');
-    print('   - accessToken: ${_accessToken?.substring(0, 20) ?? 'null'}...');
-    print('   - tokenExpired: $_isTokenExpired');
-    print('   - tokenExpiry: ${_tokenExpiry?.toIso8601String() ?? 'null'}');
-    print('   - hasRefreshToken: ${_refreshToken != null}');
-    print('   - hasSpDcCookie: ${_spDcCookie != null}');
-    print('   - spDcCookie: ${_spDcCookie?.substring(0, 20) ?? 'null'}...');
+    print('   - hasBearerToken: ${_bearerToken != null}');
+    print('   - bearerToken: ${_bearerToken?.substring(0, 20) ?? 'null'}...');
     print('   - currentUser: ${_currentUser?.displayName ?? 'null'}');
     print('   - currentUserId: ${_currentUser?.id ?? 'null'}');
+    print('   - userEmail: ${_currentUser?.email ?? 'null'}');
     print('=================================');
+  }
+
+  /// Force logout with complete state reset and navigation
+  Future<void> forceLogoutAndNavigate(BuildContext context) async {
+    print('🚪 Force logout initiated...');
+    
+    // Set loading state
+    _isLoading = true;
+    notifyListeners();
+    
+    // Clear all authentication data
+    await _clearStoredData();
+    _buddyService.clearBearerToken();
+    
+    // Reset all state variables
+    _isLoading = false;
+    _bearerToken = null;
+    _headers = null;
+    _currentUser = null;
+    
+    print('✅ All auth data cleared, forcing navigation...');
+    
+    // Force multiple notifications
+    notifyListeners();
+    
+    // Navigate directly to login screen with complete stack clear
+    if (context.mounted) {
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        '/login',
+        (route) => false,
+      );
+      print('✅ Navigation completed to login screen');
+    }
+    
+    // Additional notifications after navigation
+    await Future.delayed(const Duration(milliseconds: 100));
+    notifyListeners();
   }
 }
