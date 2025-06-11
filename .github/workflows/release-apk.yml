@@ -71,7 +71,8 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "version_name=$(echo $VERSION | cut -d'+' -f1)" >> $GITHUB_OUTPUT
           echo "build_number=$(echo $VERSION | cut -d'+' -f2)" >> $GITHUB_OUTPUT
-            - name: Verify APK Signing
+          
+      - name: Verify APK Signing
         run: |
           cd build/app/outputs/flutter-apk
           # Check if APK is signed
