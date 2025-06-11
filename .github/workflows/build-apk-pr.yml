@@ -9,7 +9,7 @@ jobs:
   build-apk:
     name: Build APK
     runs-on: ubuntu-latest
-      steps:
+    steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         
@@ -50,4 +50,4 @@ jobs:
         with:
           name: playtivity-pr-${{ github.event.number }}-apk
           path: build/app/outputs/flutter-apk/app-release.apk
-          retention-days: 7
+          retention-days: 7 
