@@ -34,7 +34,9 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-    }    signingConfigs {
+    }
+
+    signingConfigs {
         create("release") {
             storeFile = file(System.getenv("ANDROID_KEYSTORE_PATH") ?: "release-key.jks")
             storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
