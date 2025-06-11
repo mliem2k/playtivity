@@ -63,70 +63,24 @@ class WidgetService {  static const String _widgetName = 'PlaytivityWidget';
   }) async {
     try {
       
-      // Save friends' activities (up to 5 to stay within Android widget Column limit)
+      // Save friends' activities (show all activities, no longer limited to 5)
       if (friendsActivities != null && friendsActivities.isNotEmpty) {
-        final limitedActivities = friendsActivities.take(5).toList();
+        // Remove the take(5) limitation to show all friends
+        final activities = friendsActivities.toList();
         
-        print('📊 Widget: Saving ${limitedActivities.length} activities');
+        print('📊 Widget: Saving ${activities.length} activities');
         
-        // Save activity count for widget to know how many to show
-        await HomeWidget.saveWidgetData('activities_count', limitedActivities.length.toString());
-        await _saveToSharedPreferences('activities_count', limitedActivities.length.toString());
-        print('📊 Widget: Saved activities_count as ${limitedActivities.length}');
-        
-        for (int i = 0; i < 5; i++) {
-          if (i < limitedActivities.length) {
-            final activity = limitedActivities[i];
-            print('📊 Widget: Activity $i - ${activity.user.displayName}: ${activity.contentName}');
-            
-            // Save via HomeWidget
-            await HomeWidget.saveWidgetData('friend_${i}_name', activity.user.displayName);
-            await HomeWidget.saveWidgetData('friend_${i}_track', activity.contentName);
-            await HomeWidget.saveWidgetData('friend_${i}_artist', activity.contentSubtitle);
-            await HomeWidget.saveWidgetData('friend_${i}_album_art', activity.contentImageUrl ?? '');
-            // Note: friend_image saved for potential future iOS widget support
-            await HomeWidget.saveWidgetData('friend_${i}_image', activity.user.imageUrl ?? '');
-            // Save friend user ID for Spotify profile launching
-            await HomeWidget.saveWidgetData('friend_${i}_user_id', activity.user.id);
-            
-            // Save directly to SharedPreferences as fallback
-            await _saveToSharedPreferences('friend_${i}_name', activity.user.displayName);
-            await _saveToSharedPreferences('friend_${i}_track', activity.contentName);
-            await _saveToSharedPreferences('friend_${i}_artist', activity.contentSubtitle);
-            await _saveToSharedPreferences('friend_${i}_album_art', activity.contentImageUrl ?? '');
-            // Note: Android Glance widgets don't support network images, but saving for iOS
-            await _saveToSharedPreferences('friend_${i}_image', activity.user.imageUrl ?? '');
-            // Save friend user ID for Spotify profile launching
-            await _saveToSharedPreferences('friend_${i}_user_id', activity.user.id);
-          } else {
-            // Clear unused slots
-            await HomeWidget.saveWidgetData('friend_${i}_name', '');
-            await HomeWidget.saveWidgetData('friend_${i}_track', '');
-            await HomeWidget.saveWidgetData('friend_${i}_artist', '');
-            await HomeWidget.saveWidgetData('friend_${i}_album_art', '');
-            await HomeWidget.saveWidgetData('friend_${i}_image', '');
-            await HomeWidget.saveWidgetData('friend_${i}_user_id', '');
-            
-            await _saveToSharedPreferences('friend_${i}_name', '');
-            await _saveToSharedPreferences('friend_${i}_track', '');
-            await _saveToSharedPreferences('friend_${i}_artist', '');
-            await _saveToSharedPreferences('friend_${i}_album_art', '');
-            await _saveToSharedPreferences('friend_${i}_image', '');
-            await _saveToSharedPreferences('friend_${i}_user_id', '');
-          }
-        }
-      } else {
-        print('📊 Widget: No activities to save');
-        // No activities - clear all slots and set count to 0
-        await HomeWidget.saveWidgetData('activities_count', '0');
-        await _saveToSharedPreferences('activities_count', '0');
-        for (int i = 0; i < 5; i++) {
+        // First, clear any old data by clearing up to 50 slots to handle large friend lists
+        for (int i = 0; i < 50; i++) {
           await HomeWidget.saveWidgetData('friend_${i}_name', '');
           await HomeWidget.saveWidgetData('friend_${i}_track', '');
           await HomeWidget.saveWidgetData('friend_${i}_artist', '');
           await HomeWidget.saveWidgetData('friend_${i}_album_art', '');
           await HomeWidget.saveWidgetData('friend_${i}_image', '');
           await HomeWidget.saveWidgetData('friend_${i}_user_id', '');
+          await HomeWidget.saveWidgetData('friend_${i}_timestamp', '');
+          await HomeWidget.saveWidgetData('friend_${i}_is_currently_playing', '');
+          await HomeWidget.saveWidgetData('friend_${i}_activity_type', '');
           
           await _saveToSharedPreferences('friend_${i}_name', '');
           await _saveToSharedPreferences('friend_${i}_track', '');
@@ -134,6 +88,80 @@ class WidgetService {  static const String _widgetName = 'PlaytivityWidget';
           await _saveToSharedPreferences('friend_${i}_album_art', '');
           await _saveToSharedPreferences('friend_${i}_image', '');
           await _saveToSharedPreferences('friend_${i}_user_id', '');
+          await _saveToSharedPreferences('friend_${i}_timestamp', '');
+          await _saveToSharedPreferences('friend_${i}_is_currently_playing', '');
+          await _saveToSharedPreferences('friend_${i}_activity_type', '');
+        }
+        
+        // Now save all the actual activities
+        for (int i = 0; i < activities.length; i++) {
+          final activity = activities[i];
+          print('📊 Widget: Activity $i - ${activity.user.displayName}: ${activity.contentName}');
+          
+          // Save via HomeWidget
+          await HomeWidget.saveWidgetData('friend_${i}_name', activity.user.displayName);
+          await HomeWidget.saveWidgetData('friend_${i}_track', activity.contentName);
+          await HomeWidget.saveWidgetData('friend_${i}_artist', activity.contentSubtitle);
+          await HomeWidget.saveWidgetData('friend_${i}_album_art', activity.contentImageUrl ?? '');
+          // Note: friend_image saved for potential future iOS widget support
+          await HomeWidget.saveWidgetData('friend_${i}_image', activity.user.imageUrl ?? '');
+          // Save friend user ID for Spotify profile launching
+          await HomeWidget.saveWidgetData('friend_${i}_user_id', activity.user.id);
+          // Save timestamp and currently playing status for "time ago" functionality
+          await HomeWidget.saveWidgetData('friend_${i}_timestamp', activity.timestamp.millisecondsSinceEpoch.toString());
+          await HomeWidget.saveWidgetData('friend_${i}_is_currently_playing', activity.isCurrentlyPlaying.toString());
+          await HomeWidget.saveWidgetData('friend_${i}_activity_type', activity.type == ActivityType.playlist ? 'playlist' : 'track');
+          
+          // Save directly to SharedPreferences as fallback
+          await _saveToSharedPreferences('friend_${i}_name', activity.user.displayName);
+          await _saveToSharedPreferences('friend_${i}_track', activity.contentName);
+          await _saveToSharedPreferences('friend_${i}_artist', activity.contentSubtitle);
+          await _saveToSharedPreferences('friend_${i}_album_art', activity.contentImageUrl ?? '');
+          // Note: Android Glance widgets don't support network images, but saving for iOS
+          await _saveToSharedPreferences('friend_${i}_image', activity.user.imageUrl ?? '');
+          // Save friend user ID for Spotify profile launching
+          await _saveToSharedPreferences('friend_${i}_user_id', activity.user.id);
+          // Save timestamp and currently playing status for "time ago" functionality
+          await _saveToSharedPreferences('friend_${i}_timestamp', activity.timestamp.millisecondsSinceEpoch.toString());
+          await _saveToSharedPreferences('friend_${i}_is_currently_playing', activity.isCurrentlyPlaying.toString());
+          await _saveToSharedPreferences('friend_${i}_activity_type', activity.type == ActivityType.playlist ? 'playlist' : 'track');
+        }
+        
+        // Save activity count AFTER all activities are saved for atomic updates
+        await HomeWidget.saveWidgetData('activities_count', activities.length.toString());
+        await _saveToSharedPreferences('activities_count', activities.length.toString());
+        print('📊 Widget: Saved activities_count as ${activities.length} AFTER saving all activities');
+        
+        // Extra debug logging
+        print('📊 Widget: Successfully saved all ${activities.length} activities');
+        print('📊 Widget: First friend saved: ${activities.isNotEmpty ? activities[0].user.displayName : 'none'}');
+        print('📊 Widget: Last friend saved: ${activities.isNotEmpty ? activities[activities.length - 1].user.displayName : 'none'}');
+        
+      } else {
+        print('📊 Widget: No activities to save');
+        // No activities - clear all slots and set count to 0
+        await HomeWidget.saveWidgetData('activities_count', '0');
+        await _saveToSharedPreferences('activities_count', '0');
+        for (int i = 0; i < 50; i++) {
+          await HomeWidget.saveWidgetData('friend_${i}_name', '');
+          await HomeWidget.saveWidgetData('friend_${i}_track', '');
+          await HomeWidget.saveWidgetData('friend_${i}_artist', '');
+          await HomeWidget.saveWidgetData('friend_${i}_album_art', '');
+          await HomeWidget.saveWidgetData('friend_${i}_image', '');
+          await HomeWidget.saveWidgetData('friend_${i}_user_id', '');
+          await HomeWidget.saveWidgetData('friend_${i}_timestamp', '');
+          await HomeWidget.saveWidgetData('friend_${i}_is_currently_playing', '');
+          await HomeWidget.saveWidgetData('friend_${i}_activity_type', '');
+          
+          await _saveToSharedPreferences('friend_${i}_name', '');
+          await _saveToSharedPreferences('friend_${i}_track', '');
+          await _saveToSharedPreferences('friend_${i}_artist', '');
+          await _saveToSharedPreferences('friend_${i}_album_art', '');
+          await _saveToSharedPreferences('friend_${i}_image', '');
+          await _saveToSharedPreferences('friend_${i}_user_id', '');
+          await _saveToSharedPreferences('friend_${i}_timestamp', '');
+          await _saveToSharedPreferences('friend_${i}_is_currently_playing', '');
+          await _saveToSharedPreferences('friend_${i}_activity_type', '');
         }
       }
       
@@ -141,8 +169,8 @@ class WidgetService {  static const String _widgetName = 'PlaytivityWidget';
       await HomeWidget.saveWidgetData('last_update', DateTime.now().toIso8601String());
       await _saveToSharedPreferences('last_update', DateTime.now().toIso8601String());
       
-      // Small delay to ensure data is persisted before widget update
-      await Future.delayed(const Duration(milliseconds: 100));
+      // Longer delay to ensure all data is persisted before widget update
+      await Future.delayed(const Duration(milliseconds: 500));
       
       print('📊 Widget: About to call updateWidget()');
       print('📊 Widget: Using androidName: $_androidWidgetName');
@@ -179,18 +207,21 @@ class WidgetService {  static const String _widgetName = 'PlaytivityWidget';
   // Clear widget data
   static Future<void> clearWidgetData() async {
     try {
-      final keys = [
-        'activities_count',
-        'friend_0_name', 'friend_0_track', 'friend_0_artist', 'friend_0_album_art', 'friend_0_image', 'friend_0_user_id',
-        'friend_1_name', 'friend_1_track', 'friend_1_artist', 'friend_1_album_art', 'friend_1_image', 'friend_1_user_id',
-        'friend_2_name', 'friend_2_track', 'friend_2_artist', 'friend_2_album_art', 'friend_2_image', 'friend_2_user_id',
-        'friend_3_name', 'friend_3_track', 'friend_3_artist', 'friend_3_album_art', 'friend_3_image', 'friend_3_user_id',
-        'friend_4_name', 'friend_4_track', 'friend_4_artist', 'friend_4_album_art', 'friend_4_image', 'friend_4_user_id',
-        'last_update'
-      ];
+      // Clear activities count
+      await HomeWidget.saveWidgetData('activities_count', '0');
+      await HomeWidget.saveWidgetData('last_update', '');
       
-      for (String key in keys) {
-        await HomeWidget.saveWidgetData(key, '');
+      // Clear up to 50 friend slots to ensure all data is cleared
+      for (int i = 0; i < 50; i++) {
+        await HomeWidget.saveWidgetData('friend_${i}_name', '');
+        await HomeWidget.saveWidgetData('friend_${i}_track', '');
+        await HomeWidget.saveWidgetData('friend_${i}_artist', '');
+        await HomeWidget.saveWidgetData('friend_${i}_album_art', '');
+        await HomeWidget.saveWidgetData('friend_${i}_image', '');
+        await HomeWidget.saveWidgetData('friend_${i}_user_id', '');
+        await HomeWidget.saveWidgetData('friend_${i}_timestamp', '');
+        await HomeWidget.saveWidgetData('friend_${i}_is_currently_playing', '');
+        await HomeWidget.saveWidgetData('friend_${i}_activity_type', '');
       }
       
       await HomeWidget.updateWidget(
@@ -214,11 +245,17 @@ class WidgetService {  static const String _widgetName = 'PlaytivityWidget';
       final activitiesCount = prefs.getString('flutter.activities_count') ?? 'null';
       print('📊   activities_count: $activitiesCount');
       
-      for (int i = 0; i < 5; i++) {
+      // Debug all activities (up to 20 to avoid spam)
+      final count = int.tryParse(activitiesCount) ?? 0;
+      final maxDebug = count > 20 ? 20 : count;
+      for (int i = 0; i < maxDebug; i++) {
         final name = prefs.getString('flutter.friend_${i}_name') ?? 'null';
         final track = prefs.getString('flutter.friend_${i}_track') ?? 'null';
         final artist = prefs.getString('flutter.friend_${i}_artist') ?? 'null';
         print('📊   friend_$i: $name - $track by $artist');
+      }
+      if (count > 20) {
+        print('📊   ... and ${count - 20} more activities');
       }
       
       // Test widget update via method channel

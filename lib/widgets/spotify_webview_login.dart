@@ -233,7 +233,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                       ),
                       
                       // Loading overlay from the beginning until login page is reached
-                      if (false)
+                      if (_showOverlay)
                         Container(
                           color: Theme.of(context).scaffoldBackgroundColor,
                           child: Center(

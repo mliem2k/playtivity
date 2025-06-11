@@ -23,6 +23,8 @@ import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.Column
+import androidx.glance.appwidget.lazy.LazyColumn
+import androidx.glance.appwidget.lazy.items
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxSize
@@ -43,8 +45,53 @@ data class FriendActivity(
     val artistName: String,
     val friendImageUrl: String,
     val cachedImagePath: String = "",
-    val friendUserId: String = ""
-)
+    val friendUserId: String = "",
+    val timestamp: Long = 0L,
+    val isCurrentlyPlaying: Boolean = false,
+    val activityType: String = "track"
+) {
+    fun getStatusText(): String {
+        val currentTime = System.currentTimeMillis()
+        val timestampDate = if (timestamp > 0) timestamp else currentTime
+        val timeDiffMinutes = (currentTime - timestampDate) / (1000 * 60)
+        
+        // Consider recent if within 1 minute (like Flutter app)
+        val isRecent = timeDiffMinutes < 1
+        
+        return when {
+            isCurrentlyPlaying || isRecent -> {
+                if (activityType == "playlist") {
+                    "Listening to playlist now"
+                } else {
+                    "Listening now"
+                }
+            }
+            else -> {
+                if (activityType == "playlist") {
+                    "Played playlist ${formatTimeAgo(timeDiffMinutes)}"
+                } else {
+                    "Played ${formatTimeAgo(timeDiffMinutes)}"
+                }
+            }
+        }
+    }
+    
+    fun isRecentOrPlaying(): Boolean {
+        val currentTime = System.currentTimeMillis()
+        val timestampDate = if (timestamp > 0) timestamp else currentTime
+        val timeDiffMinutes = (currentTime - timestampDate) / (1000 * 60)
+        return isCurrentlyPlaying || timeDiffMinutes < 1
+    }
+    
+    private fun formatTimeAgo(minutes: Long): String {
+        return when {
+            minutes < 1 -> "just now"
+            minutes < 60 -> "${minutes}m ago"
+            minutes < 1440 -> "${minutes / 60}h ago"
+            else -> "${minutes / 1440}d ago"
+        }
+    }
+}
 
 class PlaytivityAppWidget : GlanceAppWidget() {
 
@@ -76,13 +123,27 @@ class PlaytivityAppWidget : GlanceAppWidget() {
         val allPrefs = prefs.all
         android.util.Log.d("PlaytivityWidget", "All HomeWidget preferences keys: ${allPrefs.keys}")
         
-        for (i in 0..4) {
+        // Enhanced debugging: Check if we have data for more friends than activitiesCount suggests
+        for (i in 0 until activitiesCount) {
             val friendName = prefs.getString("friend_${i}_name", "") ?: ""
             val friendTrack = prefs.getString("friend_${i}_track", "") ?: ""
             val friendArtist = prefs.getString("friend_${i}_artist", "") ?: ""
             val friendImage = prefs.getString("friend_${i}_image", "") ?: ""
             android.util.Log.d("PlaytivityWidget", "  friend_${i}: $friendName - $friendTrack by $friendArtist (image: $friendImage)")
         }
+        
+        // Additional debugging: Check if there are more friends beyond the activitiesCount
+        android.util.Log.d("PlaytivityWidget", "Checking for additional friends beyond activitiesCount...")
+        var foundAdditionalFriends = 0
+        for (i in activitiesCount until (activitiesCount + 10)) {
+            val friendName = prefs.getString("friend_${i}_name", "") ?: ""
+            val friendTrack = prefs.getString("friend_${i}_track", "") ?: ""
+            if (friendName.isNotEmpty() && friendTrack.isNotEmpty()) {
+                foundAdditionalFriends++
+                android.util.Log.d("PlaytivityWidget", "  EXTRA friend_${i}: $friendName - $friendTrack")
+            }
+        }
+        android.util.Log.d("PlaytivityWidget", "Found $foundAdditionalFriends additional friends beyond activitiesCount")
         
         Scaffold(
             titleBar = {
@@ -149,38 +210,66 @@ class PlaytivityAppWidget : GlanceAppWidget() {
 
     @Composable
     private fun ActivitiesView(prefs: android.content.SharedPreferences, activitiesCount: Int) {
-        // Create a list of valid activities, limited to 5 to stay within the 10 element Column limit
-        // Each activity item + spacer = 2 elements, so 5 activities = 10 elements maximum
-        val activities = (0 until minOf(activitiesCount, 5)).mapNotNull { index ->
+        android.util.Log.d("PlaytivityWidget", "ActivitiesView called with activitiesCount: $activitiesCount")
+        
+        // Create a list of all valid activities (no longer limited to 5)
+        val activities = (0 until activitiesCount).mapNotNull { index ->
             val friendName = prefs.getString("friend_${index}_name", "") ?: ""
             val friendTrack = prefs.getString("friend_${index}_track", "") ?: ""
             val friendArtist = prefs.getString("friend_${index}_artist", "") ?: ""
             val friendImage = prefs.getString("friend_${index}_image", "") ?: ""
             val cachedImagePath = prefs.getString("friend_${index}_cached_image", "") ?: ""
             val friendUserId = prefs.getString("friend_${index}_user_id", "") ?: ""
+            val timestampString = prefs.getString("friend_${index}_timestamp", "0") ?: "0"
+            val isCurrentlyPlayingString = prefs.getString("friend_${index}_is_currently_playing", "false") ?: "false"
+            val activityType = prefs.getString("friend_${index}_activity_type", "track") ?: "track"
             
-            if (friendName.isNotEmpty() && friendTrack.isNotEmpty()) {
-                FriendActivity(friendName, friendTrack, friendArtist, friendImage, cachedImagePath, friendUserId)
+            val timestamp = timestampString.toLongOrNull() ?: 0L
+            val isCurrentlyPlaying = isCurrentlyPlayingString.toBoolean()
+            
+            val isValid = friendName.isNotEmpty() && friendTrack.isNotEmpty()
+            android.util.Log.d("PlaytivityWidget", "Activity $index: name='$friendName', track='$friendTrack', valid=$isValid, timestamp=$timestamp, playing=$isCurrentlyPlaying, type=$activityType")
+            
+            if (isValid) {
+                FriendActivity(
+                    friendName = friendName, 
+                    trackName = friendTrack, 
+                    artistName = friendArtist, 
+                    friendImageUrl = friendImage, 
+                    cachedImagePath = cachedImagePath, 
+                    friendUserId = friendUserId,
+                    timestamp = timestamp,
+                    isCurrentlyPlaying = isCurrentlyPlaying,
+                    activityType = activityType
+                )
             } else null
         }
         
-        Column(
-            modifier = GlanceModifier
-                .fillMaxSize()
-                .padding(vertical = 8.dp)
-        ) {
-            if (activities.isEmpty()) {
-                // Show a message when no activities are available
+        android.util.Log.d("PlaytivityWidget", "Created activities list with ${activities.size} valid activities from $activitiesCount total")
+        
+        if (activities.isEmpty()) {
+            // Show a message when no activities are available
+            Box(
+                modifier = GlanceModifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
                 Text(
                     text = "No recent friend activities",
                     style = TextStyle(
                         color = GlanceTheme.colors.onSurfaceVariant,
                         fontSize = 11.sp
-                    ),
-                    modifier = GlanceModifier.padding(horizontal = 8.dp)
+                    )
                 )
-            } else {
-                activities.forEachIndexed { index, activity ->
+            }
+        } else {
+            // Use LazyColumn to efficiently handle potentially large lists
+            LazyColumn(
+                modifier = GlanceModifier
+                    .fillMaxSize()
+                    .padding(vertical = 8.dp)
+            ) {
+                items(activities.size) { index ->
+                    val activity = activities[index]
                     FriendActivityItem(
                         activity = activity,
                         onClick = if (activity.friendUserId.isNotEmpty()) {
@@ -191,7 +280,7 @@ class PlaytivityAppWidget : GlanceAppWidget() {
                             actionStartActivity<MainActivity>()
                         }
                     )
-                    // Only add spacer if not the last item to avoid unnecessary elements
+                    // Only add spacer if not the last item
                     if (index < activities.size - 1) {
                         Spacer(modifier = GlanceModifier.height(6.dp))
                     }
@@ -264,6 +353,36 @@ class PlaytivityAppWidget : GlanceAppWidget() {
                         ),
                         maxLines = 1
                     )
+                    Spacer(modifier = GlanceModifier.height(4.dp))
+                    // Add status row with icon and text
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Image(
+                            provider = ImageProvider(
+                                if (activity.isRecentOrPlaying()) {
+                                    R.drawable.ic_play_circle
+                                } else {
+                                    R.drawable.ic_history
+                                }
+                            ),
+                            contentDescription = "Status",
+                            modifier = GlanceModifier.size(12.dp)
+                        )
+                        Spacer(modifier = GlanceModifier.width(4.dp))
+                        Text(
+                            text = activity.getStatusText(),
+                            style = TextStyle(
+                                color = if (activity.isRecentOrPlaying()) {
+                                    GlanceTheme.colors.primary
+                                } else {
+                                    GlanceTheme.colors.onSurfaceVariant
+                                },
+                                fontSize = 10.sp
+                            ),
+                            maxLines = 1
+                        )
+                    }
                 }
             }
         }
