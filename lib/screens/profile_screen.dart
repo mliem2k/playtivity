@@ -8,8 +8,6 @@ import '../widgets/track_tile.dart';
 import '../widgets/artist_tile.dart';
 import '../widgets/currently_playing_card.dart';
 import '../widgets/refresh_indicator_bar.dart';
-import '../utils/spotify_launcher.dart';
-import '../utils/auth_utils.dart';
 import 'settings_screen.dart';
 
 class ProfileScreen extends StatefulWidget {

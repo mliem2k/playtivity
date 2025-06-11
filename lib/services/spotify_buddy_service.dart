@@ -204,7 +204,7 @@ class SpotifyBuddyService {
     print('   Cookie key exists: ${headers.containsKey('Cookie')}');
     print('   Cookie value: ${headers['Cookie']?.substring(0, 100) ?? 'null'}...');
     print('   Cookie length: ${_completeCookieString?.length ?? 0}');
-    print('   Final _completeCookieString: ${_completeCookieString?.isNotEmpty == true ? _completeCookieString!.substring(0, 100) + '...' : 'EMPTY'}');
+    print('   Final _completeCookieString: ${_completeCookieString?.isNotEmpty == true ? '${_completeCookieString!.substring(0, 100)}...' : 'EMPTY'}');
     print('   _directBearerToken stored: ${_directBearerToken?.substring(0, 20)}...');
   }
 
