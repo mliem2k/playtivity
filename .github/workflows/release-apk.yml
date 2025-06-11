@@ -71,8 +71,7 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "version_name=$(echo $VERSION | cut -d'+' -f1)" >> $GITHUB_OUTPUT
           echo "build_number=$(echo $VERSION | cut -d'+' -f2)" >> $GITHUB_OUTPUT
-          
-      - name: Verify APK Signing
+            - name: Verify APK Signing
         run: |
           cd build/app/outputs/flutter-apk
           # Check if APK is signed
@@ -86,7 +85,8 @@ jobs:
         run: |
           cd build/app/outputs/flutter-apk
           mv app-release.apk playtivity-${{ steps.version.outputs.version_name }}-release.apk
-            - name: Create Release
+          
+      - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.event.inputs.release_name }}
