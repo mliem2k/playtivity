@@ -55,6 +55,9 @@ class _HomeScreenState extends State<HomeScreen> {
     if (authProvider.isAuthenticated) {
       // Use fast initial load with skeleton
       await spotifyProvider.fastInitialLoad();
+      
+      // Update widget with current user data
+      await spotifyProvider.updateWidget(currentUser: authProvider.currentUser);
     } else {
       print('⚠️ No authentication available - cannot load friend activities');
     }
@@ -73,6 +76,9 @@ class _HomeScreenState extends State<HomeScreen> {
     if (authProvider.isAuthenticated) {
       // Silent refresh - don't show loading spinner
       await spotifyProvider.silentRefresh();
+      
+      // Update widget with current user data
+      await spotifyProvider.updateWidget(currentUser: authProvider.currentUser);
     } else {
       print('⚠️ No authentication available - cannot refresh friend activities');
     }
