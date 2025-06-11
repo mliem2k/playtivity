@@ -6,7 +6,6 @@ import '../providers/auth_provider.dart';
 import '../providers/spotify_provider.dart';
 import '../widgets/activity_card.dart';
 import '../widgets/activity_skeleton.dart';
-import '../widgets/refresh_indicator_bar.dart';
 import '../widgets/last_updated_indicator.dart';
 import '../utils/auth_utils.dart';
 
@@ -274,10 +273,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 SliverPadding(
-                  padding: const EdgeInsets.only(
+                  padding: EdgeInsets.only(
                     left: 16,
                     right: 16,
-                    bottom: 16,
+                    bottom: MediaQuery.of(context).padding.bottom,
                   ),
                   sliver: SliverList.builder(
                     itemCount: activities.length,

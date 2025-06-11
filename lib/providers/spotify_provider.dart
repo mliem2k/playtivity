@@ -4,6 +4,7 @@ import '../services/spotify_service.dart';
 import '../models/track.dart';
 import '../models/activity.dart';
 import '../models/artist.dart';
+import '../utils/auth_utils.dart';
 
 class SpotifyProvider extends ChangeNotifier {
   final SpotifyBuddyService _buddyService = SpotifyBuddyService();
@@ -18,6 +19,10 @@ class SpotifyProvider extends ChangeNotifier {
   bool _isSkeletonLoading = false;
   String? _error;
   DateTime? _lastUpdated;
+  
+  // Flag to indicate if an authentication error occurred
+  bool _hasAuthError = false;
+  String? _authErrorMessage;
   List<Track> get topTracks => _topTracks;
   List<Artist> get topArtists => _topArtists;
   List<Activity> get friendsActivities => _friendsActivities;
@@ -27,8 +32,33 @@ class SpotifyProvider extends ChangeNotifier {
   bool get isSkeletonLoading => _isSkeletonLoading;
   String? get error => _error;
   DateTime? get lastUpdated => _lastUpdated;
+  bool get hasAuthError => _hasAuthError;
+  String? get authErrorMessage => _authErrorMessage;
 
+  /// Check if error is authentication-related and handle accordingly
+  bool _isAuthenticationError(String error) {
+    return error.contains('401') || 
+           error.contains('403') || 
+           error.contains('No Bearer token available') || 
+           error.contains('No cookie string available') ||
+           error.contains('Authentication expired') ||
+           error.contains('Unauthorized');
+  }
 
+  /// Handle authentication errors by setting flag for UI to handle
+  Future<void> _handleAuthenticationError(String error) async {
+    print('🚨 Authentication error detected in provider: $error');
+    _hasAuthError = true;
+    _authErrorMessage = error;
+    notifyListeners();
+  }
+
+  /// Clear authentication error flag
+  void clearAuthError() {
+    _hasAuthError = false;
+    _authErrorMessage = null;
+    notifyListeners();
+  }
 
   Future<void> loadCurrentlyPlaying({bool showLoading = false}) async {
     try {
@@ -138,7 +168,13 @@ class SpotifyProvider extends ChangeNotifier {
         // Use fast load when showing skeleton to avoid slow API calls
         final useFastLoad = showSkeleton;
         activities = await _buddyService.getFriendActivity(
-          fastLoad: useFastLoad
+          fastLoad: useFastLoad,
+          onActivitiesUpdate: (updatedActivities) {
+            // Update activities progressively as track durations are fetched
+            _friendsActivities = updatedActivities;
+            notifyListeners();
+            print('🔄 Progressive update: ${updatedActivities.length} activities updated');
+          },
         );
         if (activities.isNotEmpty) {
           print('✅ Successfully fetched ${activities.length} friend activities');
@@ -150,12 +186,10 @@ class SpotifyProvider extends ChangeNotifier {
         
         // Check if this is an authentication error
         final errorMessage = e.toString();
-        if (errorMessage.contains('No Bearer token available') || 
-            errorMessage.contains('No cookie string available') ||
-            errorMessage.contains('401') ||
-            errorMessage.contains('403')) {
+        if (_isAuthenticationError(errorMessage)) {
           print('🔐 Authentication error detected, may need re-authentication');
           _error = 'Authentication expired. Please login again.';
+          await _handleAuthenticationError(errorMessage);
         } else {
           _error = 'Failed to load friend activities: $errorMessage';
         }
@@ -167,6 +201,12 @@ class SpotifyProvider extends ChangeNotifier {
       } else if (showSkeleton) {
         _isSkeletonLoading = false;
       }
+      
+      // Only update lastUpdated when we actually fetch new data
+      if (activities.isNotEmpty) {
+        _lastUpdated = DateTime.now();
+      }
+      
       notifyListeners();
     } catch (e) {
       _error = e.toString();
@@ -195,6 +235,8 @@ class SpotifyProvider extends ChangeNotifier {
     _isSkeletonLoading = false;
     _error = null;
     _lastUpdated = null;
+    _hasAuthError = false;
+    _authErrorMessage = null;
     notifyListeners();
   }
 
@@ -269,7 +311,13 @@ class SpotifyProvider extends ChangeNotifier {
       print('🔄 Enhancing activities with detailed info...');
       // Load detailed activities (with duration checks)
       final detailedActivities = await _buddyService.getFriendActivity(
-        fastLoad: false // Full load with duration checks
+        fastLoad: false, // Full load with duration checks
+        onActivitiesUpdate: (updatedActivities) {
+          // Update activities progressively as track durations are fetched
+          _friendsActivities = updatedActivities;
+          notifyListeners();
+          print('🔄 Background enhancement update: ${updatedActivities.length} activities updated');
+        },
       );
       
       if (detailedActivities.isNotEmpty) {
@@ -283,12 +331,10 @@ class SpotifyProvider extends ChangeNotifier {
       
       // Check if this is an authentication error
       final errorMessage = e.toString();
-      if (errorMessage.contains('No Bearer token available') || 
-          errorMessage.contains('No cookie string available') ||
-          errorMessage.contains('401') ||
-          errorMessage.contains('403')) {
+      if (_isAuthenticationError(errorMessage)) {
         print('🔐 Authentication error detected during enhancement');
         _error = 'Authentication expired. Please login again.';
+        await _handleAuthenticationError(errorMessage);
         notifyListeners();
       }
       // Don't update error state for other errors since we already have basic data

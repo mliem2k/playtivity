@@ -12,6 +12,7 @@ import 'screens/profile_screen.dart';
 import 'screens/settings_screen.dart';
 import 'services/spotify_service.dart';
 import 'utils/theme.dart';
+import 'utils/auth_utils.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -145,6 +146,26 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   @override
   Widget build(BuildContext context) {
     print('🏠 MainNavigationScreen building with tab index: $_currentIndex');
+    
+    return Consumer<SpotifyProvider>(
+      builder: (context, spotifyProvider, child) {
+        // Check for authentication errors and handle them
+        if (spotifyProvider.hasAuthError) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            spotifyProvider.clearAuthError();
+            AuthUtils.handleAuthenticationError(
+              context, 
+              errorMessage: spotifyProvider.authErrorMessage,
+            );
+          });
+        }
+        
+        return _buildMainScaffold();
+      },
+    );
+  }
+
+  Widget _buildMainScaffold() {
     return Scaffold(
       extendBody: true, // Extend body behind bottom nav bar
       body: _screens[_currentIndex],

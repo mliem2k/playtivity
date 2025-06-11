@@ -205,12 +205,14 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                           
                           String urlString = url.toString();
                           print('🌐 Page loaded: $urlString');
-                          
-                          // Update current URL and overlay logic
+                            // Update current URL and overlay logic
                           setState(() {
                             _currentUrl = urlString;
-                            // Hide overlay only if URL contains /login or challenge.spotify.com
-                            _showOverlay = !urlString.contains('/login') && !urlString.contains('challenge.spotify.com');
+                            // Hide overlay only for Spotify URLs that are NOT login or challenge pages
+                            // Show overlay for: non-Spotify sites OR Spotify login/challenge pages
+                            bool isSpotifyUrl = urlString.contains('spotify.com');
+                            bool isLoginOrChallenge = urlString.contains('/login') || urlString.contains('challenge.spotify.com');
+                            _showOverlay = !isSpotifyUrl || isLoginOrChallenge;
                           });
                           
                           // Set up network interception to capture Bearer token

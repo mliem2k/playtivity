@@ -85,10 +85,12 @@ class SpotifyService {
           headers['Cookie'] = cookieString;
         }
 
+        try {
         final response = await http.get(
           Uri.parse(url),
           headers: headers,
         );
+        
 
         if (response.statusCode == 200) {
           final data = json.decode(response.body);
@@ -101,7 +103,12 @@ class SpotifyService {
           return null;
         } else {
           print('Failed to get currently playing: ${response.statusCode} - ${response.body}');
-          // throw Exception('Failed to get currently playing: ${response.statusCode} - ${response.body}');
+          return null;
+        }
+        
+        } catch (e) {
+          print('❌ Error getting currently playing: $e');
+          return null;
         }
       },
       operation: 'Get Currently Playing',

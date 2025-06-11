@@ -105,4 +105,38 @@ class AuthUtils {
     
     return true;
   }
+
+  /// Handles 401/403 errors by immediately navigating to login screen
+  /// This should be called when authentication errors are detected
+  static Future<void> handleAuthenticationError(BuildContext context, {String? errorMessage}) async {
+    print('🚨 Authentication error detected: ${errorMessage ?? "401/403 error"}');
+    
+    try {
+      final authProvider = context.read<AuthProvider>();
+      
+      // Force logout and navigate to login screen
+      await authProvider.forceLogoutAndNavigate(context);
+      
+      // Show a brief message about the authentication error
+      if (context.mounted && errorMessage != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Session expired: $errorMessage'),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      print('❌ Error handling authentication error: $e');
+      
+      // Fallback: try to navigate directly
+      if (context.mounted) {
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/login',
+          (route) => false,
+        );
+      }
+    }
+  }
 } 

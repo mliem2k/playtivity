@@ -11,6 +11,28 @@ class LastUpdatedIndicator extends StatelessWidget {
     required this.isRefreshing,
   });
 
+  String _formatTimeAgo(DateTime dateTime) {
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
+    
+    // Only show "a moment ago" for times within 5 seconds
+    if (difference.inSeconds <= 5) {
+      return 'a moment ago';
+    }
+    
+    // Manual formatting based on time difference
+    if (difference.inHours > 0) {
+      final hours = difference.inHours;
+      return hours == 1 ? '1 hour ago' : '$hours hours ago';
+    } else if (difference.inMinutes > 0) {
+      final minutes = difference.inMinutes;
+      return minutes == 1 ? '1 minute ago' : '$minutes minutes ago';
+    } else {
+      final seconds = difference.inSeconds;
+      return seconds == 1 ? '1 second ago' : '$seconds seconds ago';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (lastUpdated == null && !isRefreshing) {
@@ -32,7 +54,7 @@ class LastUpdatedIndicator extends StatelessWidget {
             isRefreshing 
                 ? 'Updating...' 
                 : lastUpdated != null 
-                    ? 'Updated ${timeago.format(lastUpdated!)}'
+                    ? 'Updated ${_formatTimeAgo(lastUpdated!)}'
                     : '',
             style: TextStyle(
               fontSize: 11,
