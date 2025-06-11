@@ -60,11 +60,9 @@ class AppTheme {
         primary: spotifyGreen,
         secondary: spotifyGreen,
         surface: lightCardBackground,
-        background: spotifyWhite,
         onPrimary: spotifyWhite,
         onSecondary: spotifyWhite,
         onSurface: spotifyBlack,
-        onBackground: spotifyBlack,
         outline: lightBorder,
       ),
     );
@@ -113,11 +111,9 @@ class AppTheme {
         primary: spotifyGreen,
         secondary: spotifyGreen,
         surface: spotifyDarkGray,
-        background: spotifyBlack,
         onPrimary: spotifyWhite,
         onSecondary: spotifyWhite,
         onSurface: spotifyWhite,
-        onBackground: spotifyWhite,
       ),
     );
   }

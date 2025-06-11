@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:timeago/timeago.dart' as timeago;
 
 class LastUpdatedIndicator extends StatelessWidget {
   final DateTime? lastUpdated;

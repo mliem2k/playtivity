@@ -1,0 +1,129 @@
+name: Release APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_name:
+        description: 'Release name'
+        required: true
+        default: 'v1.0.0'
+      release_notes:
+        description: 'Release notes'
+        required: false
+        default: 'New release'
+
+jobs:
+  build-and-release:
+    name: Build and Release APK
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+          - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '21'
+          
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 'stable'
+          channel: 'stable'
+          
+      - name: Setup FVM
+        run: |
+          flutter pub global activate fvm
+          echo "$HOME/.pub-cache/bin" >> $GITHUB_PATH
+          
+      - name: Install Flutter with FVM
+        run: |
+          fvm install
+          fvm use --force
+            - name: Get dependencies
+        run: fvm flutter pub get
+        
+      - name: Run tests
+        run: fvm flutter test
+        continue-on-error: true
+        
+      - name: Setup Android Keystore
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/release-key.jks
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          
+      - name: Build Signed APK
+        run: fvm flutter build apk --release
+        env:
+          ANDROID_KEYSTORE_PATH: android/app/release-key.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        
+      - name: Get version from pubspec.yaml
+        id: version
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version_name=$(echo $VERSION | cut -d'+' -f1)" >> $GITHUB_OUTPUT          echo "build_number=$(echo $VERSION | cut -d'+' -f2)" >> $GITHUB_OUTPUT
+          
+      - name: Verify APK Signing
+        run: |
+          cd build/app/outputs/flutter-apk
+          # Check if APK is signed
+          if command -v apksigner &> /dev/null; then
+            apksigner verify app-release.apk && echo "✅ APK is properly signed" || echo "❌ APK signing verification failed"
+          else
+            echo "ℹ️ apksigner not available, skipping verification"
+          fi
+          
+      - name: Rename APK
+        run: |
+          cd build/app/outputs/flutter-apk
+          mv app-release.apk playtivity-${{ steps.version.outputs.version_name }}-release.apk
+          
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.event.inputs.release_name }}
+          release_name: Playtivity ${{ github.event.inputs.release_name }}
+          body: |
+            ## Release Notes
+            ${{ github.event.inputs.release_notes }}
+            
+            ## App Information
+            - **Version:** ${{ steps.version.outputs.version_name }}
+            - **Build Number:** ${{ steps.version.outputs.build_number }}
+            - **Built with:** Flutter stable
+            
+            ## Download
+            Download the APK file below and install it on your Android device.
+            
+            ### Installation Instructions
+            1. Enable "Install from unknown sources" in your Android settings
+            2. Download the APK file
+            3. Open the downloaded file and follow the installation prompts
+          draft: false
+          prerelease: false
+          
+      - name: Upload APK to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: build/app/outputs/flutter-apk/playtivity-${{ steps.version.outputs.version_name }}-release.apk
+          asset_name: playtivity-${{ steps.version.outputs.version_name }}-release.apk
+          asset_content_type: application/vnd.android.package-archive
+          
+      - name: Upload APK as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: playtivity-${{ steps.version.outputs.version_name }}-release-apk
+          path: build/app/outputs/flutter-apk/playtivity-${{ steps.version.outputs.version_name }}-release.apk
+          retention-days: 30

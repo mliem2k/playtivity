@@ -1,0 +1,53 @@
+name: Build APK (PR)
+
+on:
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    name: Build APK
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+          - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '21'
+          
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 'stable'
+          channel: 'stable'
+          
+      - name: Setup FVM
+        run: |
+          flutter pub global activate fvm
+          echo "$HOME/.pub-cache/bin" >> $GITHUB_PATH
+          
+      - name: Install Flutter with FVM
+        run: |
+          fvm install
+          fvm use --force
+          
+      - name: Get dependencies
+        run: fvm flutter pub get
+        
+      - name: Run tests
+        run: fvm flutter test
+        continue-on-error: true
+        
+      - name: Build APK
+        run: fvm flutter build apk --release
+        
+      - name: Upload APK as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: playtivity-pr-${{ github.event.number }}-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 7

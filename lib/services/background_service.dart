@@ -116,7 +116,7 @@ Future<void> _updateWidgetInBackground(Map<String, dynamic>? inputData) async {
     // Fetch friends' activities
     final friendsActivities = await buddyService.getFriendActivity();
     
-    if (friendsActivities != null && friendsActivities.isNotEmpty) {
+    if (friendsActivities.isNotEmpty) {
       print('📊 Background: Fetched ${friendsActivities.length} activities');
       
       // Update widget with new data
@@ -138,6 +138,6 @@ Future<void> _updateWidgetInBackground(Map<String, dynamic>? inputData) async {
     
   } catch (e) {
     print('❌ Error in background widget update: $e');
-    throw e;
+    rethrow;
   }
 } 
