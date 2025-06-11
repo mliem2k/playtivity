@@ -493,8 +493,14 @@ class SpotifyBuddyService {
           print('👤 Processing friend: ${userInfo?['name']} at timestamp $timestamp');
           
           // Create User object
+          // Extract user ID from URI (e.g., "spotify:user:214diupj3zah2rimagmv4wrgy" -> "214diupj3zah2rimagmv4wrgy")
+          final userUri = userInfo['uri'] ?? '';
+          final userId = userUri.startsWith('spotify:user:') 
+              ? userUri.substring('spotify:user:'.length)
+              : userUri;
+          
           final user = User(
-            id: userInfo['uri'] ?? '',
+            id: userId,
             displayName: userInfo['name'] ?? 'Unknown User',
             email: '', // Not available in buddy list API
             imageUrl: userInfo['imageUrl'],
@@ -565,6 +571,7 @@ class SpotifyBuddyService {
               name: trackInfo['name'] ?? 'Unknown Track',
               artists: [artistInfo['name'] ?? 'Unknown Artist'],
               album: albumInfo['name'] ?? 'Unknown Album',
+              albumUri: albumInfo['uri'],
               imageUrl: trackInfo['imageUrl'] ?? albumInfo['imageUrl'] ?? '',
               durationMs: durationMs ?? 0,
               uri: trackInfo['uri'] ?? '',
@@ -652,6 +659,7 @@ class SpotifyBuddyService {
                 name: oldActivity.track!.name,
                 artists: oldActivity.track!.artists,
                 album: oldActivity.track!.album,
+                albumUri: oldActivity.track!.albumUri,
                 imageUrl: oldActivity.track!.imageUrl,
                 durationMs: durationMs,
                 uri: oldActivity.track!.uri,
@@ -770,6 +778,7 @@ class SpotifyBuddyService {
           name: content['name']!,
           artists: [content['artist']!],
           album: '${content['artist']} - Greatest Hits',
+          albumUri: 'spotify:album:mock_album_$index',
           imageUrl: 'https://picsum.photos/64/64?random=$index',
           durationMs: durationMs,
           uri: 'spotify:track:mock_$index',
@@ -1046,6 +1055,7 @@ class SpotifyBuddyService {
             name: trackData['name'] ?? 'Unknown Track',
             artists: artistNames,
             album: albumData['name'] ?? 'Unknown Album',
+            albumUri: albumData['uri'],
             imageUrl: imageUrl ?? '',
             durationMs: trackData['duration']?['totalMilliseconds'] ?? 0,
             uri: trackData['uri'] ?? '',

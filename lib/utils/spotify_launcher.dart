@@ -103,6 +103,11 @@ class SpotifyLauncher {
     return await launchSpotifyUri('spotify:playlist:$playlistId');
   }
   
+  /// Launch a user profile in Spotify
+  static Future<bool> launchUser(String userId) async {
+    return await launchSpotifyUri('spotify:user:$userId');
+  }
+  
   /// Convert Spotify URI to web URL for fallback
   static String? _convertUriToWebUrl(String uri) {
     if (uri.startsWith('spotify:')) {

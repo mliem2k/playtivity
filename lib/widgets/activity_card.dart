@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:cached_network_image/cached_network_image.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import '../models/activity.dart';
+import '../models/track.dart';
 import '../utils/spotify_launcher.dart';
+import '../services/spotify_buddy_service.dart';
 
 class ActivityCard extends StatelessWidget {
   final Activity activity;
@@ -24,24 +28,31 @@ class ActivityCard extends StatelessWidget {
               // User Info Row
               Row(
                 children: [
-                  // User Avatar
-                  CircleAvatar(
-                    radius: 20,
-                    backgroundColor: Theme.of(context).primaryColor,
-                    backgroundImage: activity.user.imageUrl != null
-                        ? CachedNetworkImageProvider(activity.user.imageUrl!)
-                        : null,
-                    child: activity.user.imageUrl == null
-                        ? Text(
-                            activity.user.displayName.isNotEmpty
-                                ? activity.user.displayName[0].toUpperCase()
-                                : '?',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          )
-                        : null,
+                  // User Avatar - clickable
+                  InkWell(
+                    onTap: () async {
+                      // Launch the user profile when avatar is tapped
+                      await SpotifyLauncher.launchUser(activity.user.id);
+                    },
+                    borderRadius: BorderRadius.circular(20),
+                    child: CircleAvatar(
+                      radius: 20,
+                      backgroundColor: Theme.of(context).primaryColor,
+                      backgroundImage: activity.user.imageUrl != null
+                          ? CachedNetworkImageProvider(activity.user.imageUrl!)
+                          : null,
+                      child: activity.user.imageUrl == null
+                          ? Text(
+                              activity.user.displayName.isNotEmpty
+                                  ? activity.user.displayName[0].toUpperCase()
+                                  : '?',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            )
+                          : null,
+                    ),
                   ),
                   
                   const SizedBox(width: 12),
@@ -51,37 +62,56 @@ class ActivityCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          activity.user.displayName,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
-                        ),
-                        Row(
-                          children: [
-                            Icon(
-                              activity.isCurrentlyPlaying 
-                                  ? Icons.play_circle_filled 
-                                  : Icons.history,
-                              size: 16,
-                              color: activity.isCurrentlyPlaying 
-                                  ? Theme.of(context).primaryColor 
-                                  : Colors.grey,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              activity.isCurrentlyPlaying 
-                                  ? (activity.type == ActivityType.playlist ? 'Listening to playlist now' : 'Listening now')
-                                  : (activity.type == ActivityType.playlist ? 'Played playlist ${timeago.format(activity.timestamp)}' : 'Played ${timeago.format(activity.timestamp)}'),
+                        InkWell(
+                          onTap: () async {
+                            // Launch the user profile when name is tapped
+                            await SpotifyLauncher.launchUser(activity.user.id);
+                          },
+                          borderRadius: BorderRadius.circular(4),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+                            child: Text(
+                              activity.user.displayName,
                               style: TextStyle(
-                                color: activity.isCurrentlyPlaying 
-                                    ? Theme.of(context).primaryColor 
-                                    : Colors.grey,
-                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                color: Theme.of(context).primaryColor,
                               ),
                             ),
-                          ],
+                          ),
+                        ),
+                        InkWell(
+                          onTap: () async {
+                            // Launch the content (track or playlist) when status is tapped
+                            await SpotifyLauncher.launchSpotifyUri(activity.contentUri);
+                          },
+                          borderRadius: BorderRadius.circular(4),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  activity.isCurrentlyPlaying 
+                                      ? Icons.play_circle_filled 
+                                      : Icons.history,
+                                  size: 16,
+                                  color: activity.isCurrentlyPlaying 
+                                      ? Theme.of(context).primaryColor 
+                                      : Colors.grey,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  _getActivityStatusText(activity, context),
+                                  style: TextStyle(
+                                    color: activity.isCurrentlyPlaying || _isRecentActivity(activity)
+                                        ? Theme.of(context).primaryColor 
+                                        : Colors.grey,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -96,83 +126,105 @@ class ActivityCard extends StatelessWidget {
                 padding: const EdgeInsets.only(right: 48), // Space for play button
                 child: Row(
                   children: [
-                    // Content Image (Album Art or Playlist Cover)
-                    Container(
-                      width: 60,
-                      height: 60,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(8),
-                        color: Colors.grey[300],
-                      ),
-                      child: activity.contentImageUrl != null
-                          ? ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: CachedNetworkImage(
-                                imageUrl: activity.contentImageUrl!,
-                                fit: BoxFit.cover,
-                                placeholder: (context, url) => Container(
-                                  color: Colors.grey[300],
-                                  child: Icon(
-                                    activity.type == ActivityType.playlist 
-                                        ? Icons.queue_music 
-                                        : Icons.music_note,
+                    // Content Image (Album Art or Playlist Cover) - clickable
+                    InkWell(
+                      onTap: () async {
+                        if (activity.type == ActivityType.track && activity.track != null) {
+                          // For tracks, try to go to the album page
+                          await _launchAlbum(activity.track!);
+                        } else {
+                          // For playlists, go to the playlist page
+                          await SpotifyLauncher.launchSpotifyUri(activity.contentUri);
+                        }
+                      },
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        width: 60,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          color: Colors.grey[300],
+                        ),
+                        child: activity.contentImageUrl != null
+                            ? ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: CachedNetworkImage(
+                                  imageUrl: activity.contentImageUrl!,
+                                  fit: BoxFit.cover,
+                                  placeholder: (context, url) => Container(
+                                    color: Colors.grey[300],
+                                    child: Icon(
+                                      activity.type == ActivityType.playlist 
+                                          ? Icons.queue_music 
+                                          : Icons.music_note,
+                                    ),
+                                  ),
+                                  errorWidget: (context, url, error) => Container(
+                                    color: Colors.grey[300],
+                                    child: Icon(
+                                      activity.type == ActivityType.playlist 
+                                          ? Icons.queue_music 
+                                          : Icons.music_note,
+                                    ),
                                   ),
                                 ),
-                                errorWidget: (context, url, error) => Container(
-                                  color: Colors.grey[300],
-                                  child: Icon(
-                                    activity.type == ActivityType.playlist 
-                                        ? Icons.queue_music 
-                                        : Icons.music_note,
-                                  ),
-                                ),
+                              )
+                            : Icon(
+                                activity.type == ActivityType.playlist 
+                                    ? Icons.queue_music 
+                                    : Icons.music_note,
+                                color: Colors.grey,
                               ),
-                            )
-                          : Icon(
-                              activity.type == ActivityType.playlist 
-                                  ? Icons.queue_music 
-                                  : Icons.music_note,
-                              color: Colors.grey,
-                            ),
+                      ),
                     ),
                     
                     const SizedBox(width: 16),
                     
-                    // Content Details
+                    // Content Details - clickable
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            activity.contentName,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+                      child: InkWell(
+                        onTap: () async {
+                          // Launch the content (track or playlist) when content details are tapped
+                          await _launchAlbum(activity.track!);
+                        },
+                        borderRadius: BorderRadius.circular(4),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                activity.contentName,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                activity.contentSubtitle,
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 14,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                activity.contentDetails,
+                                style: TextStyle(
+                                  color: Colors.grey[500],
+                                  fontSize: 12,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            activity.contentSubtitle,
-                            style: TextStyle(
-                              color: Colors.grey[600],
-                              fontSize: 14,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            activity.contentDetails,
-                            style: TextStyle(
-                              color: Colors.grey[500],
-                              fontSize: 12,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
+                        ),
                       ),
                     ),
                   ],
@@ -213,4 +265,43 @@ class ActivityCard extends StatelessWidget {
       ),
     );
   }
+
+  String _getActivityStatusText(Activity activity, BuildContext context) {
+    if (activity.isCurrentlyPlaying || _isRecentActivity(activity)) {
+      if (activity.type == ActivityType.playlist) {
+        return 'Listening to playlist now';
+      } else {
+        return 'Listening now';
+      }
+    } else {
+      if (activity.type == ActivityType.playlist) {
+        return 'Played playlist ${timeago.format(activity.timestamp)}';
+      } else {
+        return 'Played ${timeago.format(activity.timestamp)}';
+      }
+    }
+  }
+
+  bool _isRecentActivity(Activity activity) {
+    final now = DateTime.now();
+    final timestamp = activity.timestamp.toLocal();
+    final difference = now.difference(timestamp);
+    return difference.inMinutes < 1;
+  }
+
+  Future<void> _launchAlbum(Track track) async {
+    try {
+      // Use the album URI directly from the track data
+      if (track.albumUri != null && track.albumUri!.isNotEmpty) {
+        await SpotifyLauncher.launchSpotifyUri(track.albumUri!);
+        print('✅ Launched album: ${track.albumUri}');
+      } else {
+        print('⚠️ No album URI available, not launching anything');
+      }
+    } catch (e) {
+      print('❌ Error launching album: $e');
+    }
+  }
+
+
 } 
