@@ -4,6 +4,18 @@ import Intents
 
 struct PlaytivityWidgetEntryView: View {
     var entry: Provider.Entry
+    @Environment(\.widgetFamily) var family
+    
+    private var maxFriendsToShow: Int {
+        switch family {
+        case .systemMedium:
+            return 3
+        case .systemLarge:
+            return 6
+        default:
+            return 3
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -79,7 +91,7 @@ struct PlaytivityWidgetEntryView: View {
                         .foregroundColor(.white.opacity(0.7))
                     
                     VStack(spacing: 3) {
-                        ForEach(Array(entry.friendsActivities.prefix(3).enumerated()), id: \.offset) { index, activity in
+                        ForEach(Array(entry.friendsActivities.prefix(maxFriendsToShow).enumerated()), id: \.offset) { index, activity in
                             HStack(spacing: 8) {
                                 Image(systemName: "person.circle.fill")
                                     .foregroundColor(.white.opacity(0.5))
@@ -95,6 +107,18 @@ struct PlaytivityWidgetEntryView: View {
                                         .font(.system(size: 10))
                                         .foregroundColor(.white.opacity(0.5))
                                         .lineLimit(1)
+                                    
+                                    // Add status row with icon and text
+                                    HStack(spacing: 2) {
+                                        Image(systemName: activity.isRecentOrPlaying() ? "play.circle.fill" : "clock")
+                                            .font(.system(size: 9))
+                                            .foregroundColor(activity.isRecentOrPlaying() ? Color(red: 29/255, green: 185/255, blue: 84/255) : .white.opacity(0.4))
+                                        
+                                        Text(activity.getStatusText())
+                                            .font(.system(size: 9))
+                                            .foregroundColor(activity.isRecentOrPlaying() ? Color(red: 29/255, green: 185/255, blue: 84/255) : .white.opacity(0.4))
+                                            .lineLimit(1)
+                                    }
                                 }
                                 
                                 Spacer()
@@ -141,13 +165,19 @@ struct PlaytivityWidget_Previews: PreviewProvider {
                     name: "Bad Habit",
                     artist: "Steve Lacy",
                     friendName: "Alice",
-                    albumArt: ""
+                    albumArt: "",
+                    timestamp: Int64(Date().timeIntervalSince1970 * 1000) - 120000, // 2 minutes ago
+                    isCurrentlyPlaying: false,
+                    activityType: "track"
                 ),
                 FriendActivity(
                     name: "As It Was",
                     artist: "Harry Styles",
                     friendName: "Bob",
-                    albumArt: ""
+                    albumArt: "",
+                    timestamp: Int64(Date().timeIntervalSince1970 * 1000) - 30000, // 30 seconds ago (recent)
+                    isCurrentlyPlaying: true,
+                    activityType: "track"
                 )
             ]
         ))

@@ -35,7 +35,8 @@ class ImageCacheService : IntentService("ImageCacheService") {
             val activitiesCount = prefs.getString("activities_count", "0")?.toIntOrNull() ?: 0
             
             runBlocking {
-                for (i in 0 until minOf(activitiesCount, 5)) {
+                // Cache images for all friends (no longer limited to 5)
+                for (i in 0 until activitiesCount) {
                     val friendImage = prefs.getString("friend_${i}_image", "") ?: ""
                     val friendName = prefs.getString("friend_${i}_name", "") ?: ""
                     
