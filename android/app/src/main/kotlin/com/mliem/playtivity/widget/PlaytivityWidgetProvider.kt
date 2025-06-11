@@ -212,7 +212,7 @@ class PlaytivityAppWidget : GlanceAppWidget() {
     private fun ActivitiesView(prefs: android.content.SharedPreferences, activitiesCount: Int) {
         android.util.Log.d("PlaytivityWidget", "ActivitiesView called with activitiesCount: $activitiesCount")
         
-        // Create a list of all valid activities (no longer limited to 5)
+        // Create a list of all valid activities
         val activities = (0 until activitiesCount).mapNotNull { index ->
             val friendName = prefs.getString("friend_${index}_name", "") ?: ""
             val friendTrack = prefs.getString("friend_${index}_track", "") ?: ""
@@ -262,7 +262,7 @@ class PlaytivityAppWidget : GlanceAppWidget() {
                 )
             }
         } else {
-            // Use LazyColumn to efficiently handle potentially large lists
+            // Use LazyColumn to efficiently handle the list
             LazyColumn(
                 modifier = GlanceModifier
                     .fillMaxSize()
@@ -298,7 +298,6 @@ class PlaytivityAppWidget : GlanceAppWidget() {
             modifier = GlanceModifier
                 .fillMaxWidth()
                 .background(GlanceTheme.colors.surfaceVariant)
-                .cornerRadius(12.dp)
                 .padding(12.dp)
                 .clickable(onClick)
         ) {
