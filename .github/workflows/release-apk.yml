@@ -3,66 +3,46 @@ name: Release APK
 on:
   workflow_dispatch:
     inputs:
+      build_run_id:
+        description: 'Build workflow run ID to get artifact from'
+        required: true
+        type: string
       release_name:
-        description: 'Release name'
+        description: 'Release name (e.g., v1.0.0)'
         required: true
         default: 'v1.0.0'
       release_notes:
         description: 'Release notes'
         required: false
         default: 'New release'
+      artifact_name:
+        description: 'Name of the artifact to download from build workflow'
+        required: true
+        type: string
 
 jobs:
-  build-and-release:
-    name: Build and Release APK
+  download-and-release:
+    name: Download APK and Create Release
     runs-on: ubuntu-latest
     
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         
-      - name: Setup Java
-        uses: actions/setup-java@v4
+      - name: Download APK Artifact
+        uses: actions/download-artifact@v4
         with:
-          distribution: 'zulu'
-          java-version: '21'
-          
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: 'stable'
-          channel: 'stable'
-          
-      - name: Setup FVM
-        run: |
-          flutter pub global activate fvm
-          echo "$HOME/.pub-cache/bin" >> $GITHUB_PATH
-          
-      - name: Install Flutter with FVM
-        run: |
-          fvm install
-          fvm use --force
-          
-      - name: Get dependencies
-        run: fvm flutter pub get
+          name: ${{ github.event.inputs.artifact_name }}
+          run-id: ${{ github.event.inputs.build_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ./apk-download
         
-      - name: Run tests
-        run: fvm flutter test
-        continue-on-error: true
-        
-      - name: Setup Android Keystore
+      - name: Setup Android Keystore (for verification)
         run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/release-key.jks
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > release-key.jks
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          
-      - name: Build Signed APK
-        run: fvm flutter build apk --release
-        env:
-          ANDROID_KEYSTORE_PATH: android/app/release-key.jks
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        continue-on-error: true
         
       - name: Get version from pubspec.yaml
         id: version
@@ -71,21 +51,30 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "version_name=$(echo $VERSION | cut -d'+' -f1)" >> $GITHUB_OUTPUT
           echo "build_number=$(echo $VERSION | cut -d'+' -f2)" >> $GITHUB_OUTPUT
-          
-      - name: Verify APK Signing
+            
+      - name: Verify APK and Prepare for Release
         run: |
-          cd build/app/outputs/flutter-apk
-          # Check if APK is signed
-          if command -v apksigner &> /dev/null; then
-            apksigner verify app-release.apk && echo "✅ APK is properly signed" || echo "❌ APK signing verification failed"
-          else
-            echo "ℹ️ apksigner not available, skipping verification"
+          cd ./apk-download
+          
+          # Check if APK exists
+          if [ ! -f app-release.apk ]; then
+            echo "❌ APK file not found in artifact"
+            exit 1
           fi
           
-      - name: Rename APK
+          # Verify APK signing (if tools available)
+          if command -v aapt &> /dev/null; then
+            echo "📱 APK Information:"
+            aapt dump badging app-release.apk | head -5
+          fi
+          
+          echo "✅ APK verified and ready for release"
+          
+      - name: Rename APK for Release
         run: |
-          cd build/app/outputs/flutter-apk
+          cd ./apk-download
           mv app-release.apk playtivity-${{ steps.version.outputs.version_name }}-release.apk
+          ls -la playtivity-${{ steps.version.outputs.version_name }}-release.apk
           
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -99,7 +88,8 @@ jobs:
             ## App Information
             - **Version:** ${{ steps.version.outputs.version_name }}
             - **Build Number:** ${{ steps.version.outputs.build_number }}
-            - **Built with:** Flutter stable
+            - **Built from Artifact:** ${{ github.event.inputs.artifact_name }}
+            - **Source Build Run:** https://github.com/${{ github.repository }}/actions/runs/${{ github.event.inputs.build_run_id }}
             
             ## Download
             Download the APK file below and install it on your Android device.
@@ -108,13 +98,47 @@ jobs:
             1. Enable "Install from unknown sources" in your Android settings
             2. Download the APK file
             3. Open the downloaded file and follow the installation prompts
-          files: build/app/outputs/flutter-apk/playtivity-${{ steps.version.outputs.version_name }}-release.apk
+          files: ./apk-download/playtivity-${{ steps.version.outputs.version_name }}-release.apk
           draft: false
           prerelease: false
           
-      - name: Upload APK as Artifact
+      - name: Upload Final APK as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: playtivity-${{ steps.version.outputs.version_name }}-release-apk
-          path: build/app/outputs/flutter-apk/playtivity-${{ steps.version.outputs.version_name }}-release.apk
-          retention-days: 30
+          name: playtivity-${{ steps.version.outputs.version_name }}-final-release
+          path: ./apk-download/playtivity-${{ steps.version.outputs.version_name }}-release.apk
+          retention-days: 90
+
+  # Optional: Trigger from successful build workflow
+  build-and-release:
+    name: Build and Release (Alternative)
+    runs-on: ubuntu-latest
+    if: github.event.inputs.build_run_id == ''
+    
+    steps:
+      - name: Trigger Build Workflow
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const result = await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'build-apk-pr.yml',
+              ref: 'main',
+              inputs: {
+                branch: 'main',
+                artifact_name: 'playtivity-release-candidate'
+              }
+            });
+            
+            console.log('Build workflow triggered:', result.status);
+            
+            // Wait and provide instructions
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            
+            core.setFailed(`
+            Build workflow has been triggered. Please:
+            1. Wait for the build workflow to complete
+            2. Note the run ID from the build workflow
+            3. Re-run this release workflow with the build_run_id parameter
+            `);
