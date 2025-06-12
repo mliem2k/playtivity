@@ -25,7 +25,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
   bool _isLoading = true;
   String? _error;
   Map<String, String> _extractedHeaders = {};
-  bool _spDcDetected = false;
+  final bool _spDcDetected = false;
   String _currentUrl = '';
   bool _showOverlay = true;
 
@@ -312,7 +312,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
       final cookieString = cookies.map((cookie) => '${cookie.name}=${cookie.value}').join('; ');
       
       print('🍪 Found ${cookies.length} cookies');
-      print('🍪 Initial cookie string: ${cookieString.isNotEmpty ? cookieString.substring(0, 100) + '...' : 'EMPTY'}');
+      print('🍪 Initial cookie string: ${cookieString.isNotEmpty ? '${cookieString.substring(0, 100)}...' : 'EMPTY'}');
       print('🍪 Cookie names: ${cookies.map((c) => c.name).join(', ')}');
       
       // Check if sp_dc cookie is present
@@ -342,7 +342,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
         'Upgrade-Insecure-Requests': '1',
       };
       
-      print('🔧 Initial _extractedHeaders Cookie: ${_extractedHeaders['Cookie']?.isNotEmpty == true ? _extractedHeaders['Cookie']!.substring(0, 100) + '...' : 'EMPTY'}');
+      print('🔧 Initial _extractedHeaders Cookie: ${_extractedHeaders['Cookie']?.isNotEmpty == true ? '${_extractedHeaders['Cookie']!.substring(0, 100)}...' : 'EMPTY'}');
       
       // Set up network request interception
       await _interceptTokenRequests(controller);

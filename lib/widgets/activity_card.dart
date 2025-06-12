@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:cached_network_image/cached_network_image.dart';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import '../models/activity.dart';
 import '../models/track.dart';
 import '../utils/spotify_launcher.dart';
-import '../services/spotify_buddy_service.dart';
 
 class ActivityCard extends StatelessWidget {
   final Activity activity;

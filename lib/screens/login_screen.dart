@@ -51,7 +51,7 @@ class LoginScreen extends StatelessWidget {
                 'Playtivity',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: theme.colorScheme.onBackground,
+                  color: theme.colorScheme.onSurface,
                   fontSize: 48,
                   fontWeight: FontWeight.bold,
                   letterSpacing: -1,

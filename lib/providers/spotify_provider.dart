@@ -6,7 +6,6 @@ import '../models/track.dart';
 import '../models/activity.dart';
 import '../models/artist.dart';
 import '../models/user.dart';
-import '../utils/auth_utils.dart';
 
 class SpotifyProvider extends ChangeNotifier {
   final SpotifyBuddyService _buddyService = SpotifyBuddyService();
