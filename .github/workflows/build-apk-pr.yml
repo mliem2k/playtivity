@@ -1,0 +1,92 @@
+name: Build APK
+
+on:
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build from'
+        required: true
+        default: 'main'
+        type: string
+      artifact_name:
+        description: 'Custom artifact name (optional)'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  build-apk:
+    name: Build APK
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-name: ${{ steps.artifact-info.outputs.name }}
+      version: ${{ steps.version.outputs.version }}
+      version-name: ${{ steps.version.outputs.version_name }}
+      build-number: ${{ steps.version.outputs.build_number }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref }}
+        
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '21'
+          
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.3'
+          channel: 'stable'
+          
+      - name: Setup FVM
+        run: |
+          flutter pub global activate fvm
+          echo "$HOME/.pub-cache/bin" >> $GITHUB_PATH
+          
+      - name: Install Flutter with FVM
+        run: |
+          fvm install
+          fvm use --force
+          
+      - name: Get dependencies
+        run: fvm flutter pub get
+        
+      - name: Run tests
+        run: fvm flutter test
+        continue-on-error: true
+        
+      - name: Get version from pubspec.yaml
+        id: version
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version_name=$(echo $VERSION | cut -d'+' -f1)" >> $GITHUB_OUTPUT
+          echo "build_number=$(echo $VERSION | cut -d'+' -f2)" >> $GITHUB_OUTPUT
+        
+      - name: Build APK
+        run: fvm flutter build apk --release
+        
+      - name: Set artifact info
+        id: artifact-info
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            ARTIFACT_NAME="playtivity-pr-${{ github.event.number }}-apk"
+          elif [ -n "${{ github.event.inputs.artifact_name }}" ]; then
+            ARTIFACT_NAME="${{ github.event.inputs.artifact_name }}"
+          else
+            ARTIFACT_NAME="playtivity-${{ steps.version.outputs.version_name }}-${{ github.event.inputs.branch || github.ref_name }}-apk"
+          fi
+          echo "name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
+        
+      - name: Upload APK as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact-info.outputs.name }}
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30 

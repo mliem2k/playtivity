@@ -48,5 +48,11 @@ app.*.map.json
 
 # Environment variables
 .env
-*.txt
+
+# Android Keystore files
 *.jks
+*.keystore
+*.base64.txt
+android/app/release-key.jks
+android/app/upload-keystore.jks
+*.txt

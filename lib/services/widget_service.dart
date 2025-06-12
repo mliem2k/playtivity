@@ -1,9 +1,7 @@
 import 'package:home_widget/home_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart';
-import 'dart:convert';
 import 'dart:async';
-import '../models/track.dart';
 import '../models/activity.dart';
 import '../models/user.dart';
 
