@@ -20,6 +20,10 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: write  # Required for creating releases
+  actions: read    # Required for downloading artifacts
+
 jobs:
   download-and-release:
     name: Download APK and Create Release
