@@ -1,11 +1,9 @@
 import 'dart:convert';
 import 'dart:async';
-import 'package:http/http.dart' as http;
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../models/user.dart';
 import '../models/track.dart';
-import '../models/artist.dart';
 import 'spotify_buddy_service.dart';
+import 'http_interceptor.dart';
 
 class SpotifyService {
   static const String baseUrl = 'https://api.spotify.com/v1';
@@ -48,7 +46,7 @@ class SpotifyService {
           'Authorization': 'Bearer $accessToken',
         };
 
-        final response = await http.get(
+        final response = await HttpInterceptor.get(
           Uri.parse(url),
           headers: headers,
         );
@@ -86,7 +84,7 @@ class SpotifyService {
         }
 
         try {
-        final response = await http.get(
+        final response = await HttpInterceptor.get(
           Uri.parse(url),
           headers: headers,
         );

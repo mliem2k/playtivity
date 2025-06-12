@@ -205,14 +205,18 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                           
                           String urlString = url.toString();
                           print('🌐 Page loaded: $urlString');
-                            // Update current URL and overlay logic
+                            // Update current URL and r logic
                           setState(() {
                             _currentUrl = urlString;
-                            // Hide overlay only for Spotify URLs that are NOT login or challenge pages
-                            // Show overlay for: non-Spotify sites OR Spotify login/challenge pages
-                            bool isSpotifyUrl = urlString.contains('spotify.com');
+                            // Show overlay only for spotify.com domain pages that are NOT /login or challenge
+                            // Don't show for non-spotify sites (facebook, etc) or login/challenge pages
+                            Uri uri = Uri.parse(urlString);
+                            bool isSpotifyDomain = uri.host.endsWith('spotify.com');
                             bool isLoginOrChallenge = urlString.contains('/login') || urlString.contains('challenge.spotify.com');
-                            _showOverlay = !isSpotifyUrl || isLoginOrChallenge;
+                            bool newShowOverlay = isSpotifyDomain && !isLoginOrChallenge;
+                            
+                            print('🎭 Overlay logic: host=${uri.host}, isSpotify=$isSpotifyDomain, isLogin=$isLoginOrChallenge, showOverlay=$newShowOverlay');
+                            _showOverlay = newShowOverlay;
                           });
                           
                           // Set up network interception to capture Bearer token
@@ -605,6 +609,22 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
       if (!mounted) {
         timer.cancel();
         return;
+      }
+      
+      // Check if current URL is still on Spotify domain
+      try {
+        final currentUrl = await controller.getUrl();
+        if (currentUrl != null) {
+          Uri uri = Uri.parse(currentUrl.toString());
+          bool isSpotifyDomain = uri.host.endsWith('spotify.com');
+          
+          if (!isSpotifyDomain) {
+            print('🚫 Not on Spotify domain (${uri.host}), skipping token polling...');
+            return; // Skip this polling cycle
+          }
+        }
+      } catch (e) {
+        print('❌ Error checking current URL for polling: $e');
       }
       
       try {
