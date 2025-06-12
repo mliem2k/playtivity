@@ -147,10 +147,36 @@ class PlaytivityAppWidget : GlanceAppWidget() {
         
         Scaffold(
             titleBar = {
-                TitleBar(
-                    startIcon = ImageProvider(R.drawable.ic_music_note),
-                    title = "Friends' Activities",
-                    actions = {
+                Box(
+                    modifier = GlanceModifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                        .clickable(actionStartActivity<MainActivity>())
+                ) {
+                    Row(
+                        modifier = GlanceModifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Image(
+                            provider = ImageProvider(R.drawable.ic_music_note),
+                            contentDescription = "App icon",
+                            modifier = GlanceModifier.size(24.dp)
+                        )
+                        Spacer(modifier = GlanceModifier.width(8.dp))
+                        Text(
+                            text = "Friends' Activities",
+                            style = TextStyle(
+                                color = GlanceTheme.colors.onSurface,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        )
+                    }
+                    // Position refresh button on the right using Box alignment
+                    Box(
+                        modifier = GlanceModifier.fillMaxWidth(),
+                        contentAlignment = Alignment.CenterEnd
+                    ) {
                         Image(
                             provider = ImageProvider(R.drawable.ic_refresh),
                             contentDescription = "Refresh",
@@ -159,12 +185,11 @@ class PlaytivityAppWidget : GlanceAppWidget() {
                                 .clickable(actionRunCallback<RefreshWidgetCallback>())
                         )
                     }
-                )
+                }
             },
             backgroundColor = GlanceTheme.colors.widgetBackground,
             modifier = GlanceModifier
                 .fillMaxSize()
-                .padding(12.dp)
         ) {
             if (activitiesCount > 0) {
                 ActivitiesView(prefs, activitiesCount)
@@ -262,7 +287,7 @@ class PlaytivityAppWidget : GlanceAppWidget() {
                 )
             }
         } else {
-            // Use LazyColumn to efficiently handle the list
+            // Use LazyColumn for scrolling functionality
             LazyColumn(
                 modifier = GlanceModifier
                     .fillMaxSize()
@@ -297,7 +322,6 @@ class PlaytivityAppWidget : GlanceAppWidget() {
         Box(
             modifier = GlanceModifier
                 .fillMaxWidth()
-                .background(GlanceTheme.colors.surfaceVariant)
                 .padding(12.dp)
                 .clickable(onClick)
         ) {
