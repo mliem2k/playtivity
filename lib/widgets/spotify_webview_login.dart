@@ -1,11 +1,6 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:http/http.dart' as http;
-import '../services/spotify_service.dart';
-import '../services/spotify_buddy_service.dart';
 
 class SpotifyWebViewLogin extends StatefulWidget {
   final Function(String, Map<String, String>) onAuthComplete; // Bearer access token and headers
@@ -25,9 +20,8 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
   bool _isLoading = true;
   String? _error;
   Map<String, String> _extractedHeaders = {};
-  final bool _spDcDetected = false;
-  String _currentUrl = '';
   bool _showOverlay = true;
+  String _currentUrl = '';
 
   @override
   Widget build(BuildContext context) {
@@ -148,8 +142,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                 : Stack(
                     children: [
                       // WebView (always present, loading in background when overlay is shown)
-                      InAppWebView(
-                        initialSettings: InAppWebViewSettings(
+                      InAppWebView(                        initialSettings: InAppWebViewSettings(
                           userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/537.36",
                           javaScriptEnabled: true,
                           domStorageEnabled: true,
@@ -223,12 +216,47 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                           if (urlString.contains('open.spotify.com')) {
                             await _setupNetworkInterception(controller, url);
                           }
-                        },
-                        onReceivedError: (controller, request, error) {
+                        },                        onReceivedError: (controller, request, error) {
                           setState(() {
                             _error = 'Failed to load page: ${error.description}';
                             _isLoading = false;
                           });
+                        },                        onConsoleMessage: (controller, consoleMessage) {
+                          // Filter out CSP and Google Analytics related console messages to reduce noise
+                          final message = consoleMessage.message.toLowerCase();
+                          if (message.contains('content security policy') ||
+                              message.contains('googletagmanager') ||
+                              message.contains('refused to execute inline script') ||
+                              message.contains('google-analytics') ||
+                              message.contains('gtm.js') ||
+                              message.contains('violates the following content security policy') ||
+                              message.contains('unsafe-inline') ||
+                              message.contains('unsafe-eval') ||
+                              message.contains('sha256-') ||
+                              message.contains('nonce-') ||
+                              message.contains('pixel.js') ||
+                              message.contains('analytics.twitter.com') ||
+                              message.contains('connect.facebook.net') ||
+                              message.contains('www.googleadservices.com') ||
+                              message.contains('analytics.tiktok.com') ||
+                              message.contains('redditstatic.com') ||
+                              message.contains('contentsquare.net') ||
+                              message.contains('microsoft.com') ||
+                              message.contains('scorecardresearch.com') ||
+                              message.contains('cookielaw.org') ||
+                              message.contains('onetrust.com') ||
+                              message.contains('hotjar.com') ||
+                              message.contains('ravenjs.com') ||
+                              message.contains('gstatic.com') ||
+                              message.contains('recaptcha') ||
+                              message.contains('spotifycdn.com') ||
+                              message.contains('fastly-insights.com')) {
+                            // Silently ignore CSP violations and analytics/tracking errors
+                            return;
+                          }
+                          
+                          // Only log other console messages for debugging
+                          print('🌐 WebView Console [${consoleMessage.messageLevel}]: ${consoleMessage.message}');
                         },
                       ),
                       
