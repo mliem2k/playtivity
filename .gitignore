@@ -55,3 +55,4 @@ app.*.map.json
 *.base64.txt
 android/app/release-key.jks
 android/app/upload-keystore.jks
+*.txt
