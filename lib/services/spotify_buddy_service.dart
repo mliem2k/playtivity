@@ -1,15 +1,13 @@
 import 'dart:convert';
 import 'dart:math';
-import 'dart:typed_data';
 import 'dart:async';
-import 'package:crypto/crypto.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:playtivity/models/activity.dart';
 import 'package:playtivity/models/user.dart';
 import 'package:playtivity/models/track.dart';
 import 'package:playtivity/models/playlist.dart';
 import 'package:playtivity/models/artist.dart';
+import 'http_interceptor.dart';
 // import 'package:playtivity/services/spotify_service.dart';
 
 class SpotifyBuddyService {
@@ -28,14 +26,11 @@ class SpotifyBuddyService {
   // Public factory constructor that returns the singleton
   factory SpotifyBuddyService() => instance;
   
-  // Cache for access token and complete cookie string to avoid repeated requests
-  String? _cachedAccessToken;
+  // Cache for complete cookie string to avoid repeated requests
   String? _completeCookieString;
-  DateTime? _tokenExpiry;
   
   // New: Direct Bearer token support (bypasses TOTP generation)
   String? _directBearerToken;
-  Map<String, String>? _savedHeaders;
     // Spotify service for fetching track details
   // final SpotifyService _spotifyService = SpotifyService();
   
@@ -166,7 +161,7 @@ class SpotifyBuddyService {
           'Authorization': 'Bearer $bearerToken',
         };
 
-        final response = await http.get(
+        final response = await HttpInterceptor.get(
           Uri.parse(url),
           headers: headers,
         );
@@ -182,8 +177,6 @@ class SpotifyBuddyService {
             print('✅ Fetched and cached duration for track $trackId: ${(durationMs/1000).toStringAsFixed(1)}s');
             return durationMs;
           }
-        } else if (response.statusCode == 401 || response.statusCode == 403) {
-          throw Exception('Authentication failed: ${response.statusCode} - Please login again');
         } else {
           throw Exception('Failed to fetch track duration: ${response.statusCode} - ${response.body}');
         }
@@ -201,7 +194,6 @@ class SpotifyBuddyService {
     print('   - headers keys: ${headers.keys.join(', ')}');
     
     _directBearerToken = bearerToken;
-    _savedHeaders = Map.from(headers);
     
     // Store the complete cookie string
     _completeCookieString = headers['Cookie'] ?? '';
@@ -241,10 +233,7 @@ class SpotifyBuddyService {
   /// Clears the stored Bearer token and headers
   void clearBearerToken() {
     _directBearerToken = null;
-    _savedHeaders = null;
-    _cachedAccessToken = null;
     _completeCookieString = null;
-    _tokenExpiry = null;
     print('🗑️ Cleared Bearer token and headers');
   }
 
@@ -388,7 +377,7 @@ class SpotifyBuddyService {
         };
 
         try {
-          final response = await http.get(
+          final response = await HttpInterceptor.get(
             Uri.parse(url),
             headers: headers,
           );
@@ -399,9 +388,7 @@ class SpotifyBuddyService {
           // Handle unauthorized response - clear cache and retry once
           if (response.statusCode == 401 || response.statusCode == 403) {
             print('🔄 Access token unauthorized, clearing cache and retrying...');
-            _cachedAccessToken = null;
             _completeCookieString = null;
-            _tokenExpiry = null;
             
             // Use the new buddylist endpoint for retry as well
             final retryUrl = '$_baseUrl/presence-view/v1/buddylist';
@@ -410,7 +397,7 @@ class SpotifyBuddyService {
             };
             
             try {
-              final retryResponse = await http.get(
+              final retryResponse = await HttpInterceptor.get(
                 Uri.parse(retryUrl),
                 headers: retryHeaders,
               );
@@ -427,18 +414,12 @@ class SpotifyBuddyService {
                 _cachedBuddyActivities = activities;
                 _lastBuddyListFetch = DateTime.now();
                 return activities;
-              } else if (retryResponse.statusCode == 401 || retryResponse.statusCode == 403) {
-                print('❌ Retry also failed with authentication error: ${retryResponse.statusCode}');
-                throw Exception('Authentication failed: ${retryResponse.statusCode} - Please login again');
               } else {
                 print('❌ Retry also failed with status: ${retryResponse.statusCode}');
                 throw Exception('Failed to fetch friend activity: ${retryResponse.statusCode}');
               }
             } catch (retryError) {
               print('❌ Error during retry request: $retryError');
-              if (retryError.toString().contains('Authentication failed')) {
-                rethrow; // Re-throw authentication errors
-              }
               throw Exception('Network error during retry: $retryError');
             }
           }
@@ -454,8 +435,6 @@ class SpotifyBuddyService {
             _lastBuddyListFetch = DateTime.now();
             print('💾 Cached buddy list data with ${activities.length} activities');
             return activities;
-          } else if (response.statusCode == 401 || response.statusCode == 403) {
-            throw Exception('Authentication failed: ${response.statusCode} - Please login again');
           } else {
             print('❌ Failed to fetch friend activity: ${response.statusCode} - ${response.body}');
             throw Exception('Failed to fetch friend activity: ${response.statusCode} - ${response.body}');
@@ -862,7 +841,7 @@ class SpotifyBuddyService {
           'Content-Type': 'application/json',
         };
 
-        final response = await http.get(
+        final response = await HttpInterceptor.get(
           Uri.parse(url),
           headers: headers,
         );
@@ -874,8 +853,6 @@ class SpotifyBuddyService {
           print('✅ Successfully fetched user profile: ${data['display_name']}');
           
           return User.fromSpotifyApi(data);
-        } else if (response.statusCode == 401 || response.statusCode == 403) {
-          throw Exception('Authentication failed: ${response.statusCode} - Please login again');
         } else {
           throw Exception('Failed to fetch user profile: ${response.statusCode} - ${response.body}');
         }
@@ -883,24 +860,6 @@ class SpotifyBuddyService {
       operation: 'Get User Profile with Bearer Token',
     );
   }
-
-  /// Helper method to get the best image URL from Spotify's images array
-  String? _getBestImageUrl(List? images) {
-    if (images == null || images.isEmpty) return null;
-    
-    // Look for a medium-sized image (around 64-300px)
-    for (final image in images) {
-      final height = image['height'] as int?;
-      if (height != null && height >= 64 && height <= 300) {
-        return image['url'] as String?;
-      }
-    }
-    
-    // Fallback to the first image if no medium size found
-    return images.first['url'] as String?;
-  }
-
-
 
   /// Gets user's top content (tracks and artists) using GraphQL API
   Future<Map<String, dynamic>?> getTopContent({
@@ -980,7 +939,7 @@ class SpotifyBuddyService {
             },
           };
 
-          final response = await http.post(
+          final response = await HttpInterceptor.post(
             Uri.parse(url),
             headers: headers,
             body: json.encode(requestBody),
@@ -992,8 +951,6 @@ class SpotifyBuddyService {
             final data = json.decode(response.body);
             print('✅ Successfully fetched top content');
             return data;
-          } else if (response.statusCode == 401 || response.statusCode == 403) {
-            throw Exception('Authentication failed: ${response.statusCode} - Please login again');
           } else {
             throw Exception('Failed to fetch top content: ${response.statusCode} - ${response.body}');
           }
@@ -1251,7 +1208,7 @@ class SpotifyBuddyService {
           'Authorization': 'Bearer $bearerToken',
         };
 
-        final response = await http.get(
+        final response = await HttpInterceptor.get(
           Uri.parse(url),
           headers: headers,
         );
@@ -1259,8 +1216,6 @@ class SpotifyBuddyService {
         if (response.statusCode == 200) {
           final data = json.decode(response.body);
           return data;
-        } else if (response.statusCode == 401 || response.statusCode == 403) {
-          throw Exception('Authentication failed: ${response.statusCode} - Please login again');
         } else {
           throw Exception('Failed to fetch artist details: ${response.statusCode} - ${response.body}');
         }

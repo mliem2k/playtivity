@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("kotlin-android")
+    id("org.jetbrains.kotlin.plugin.compose")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
@@ -17,6 +18,11 @@ android {
 
     kotlinOptions {
         jvmTarget = JavaVersion.VERSION_21.toString()
+    }
+
+    buildFeatures {
+        compose = true
+        viewBinding = true
     }
 
     defaultConfig {
@@ -41,4 +47,15 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // For Glance support
+    implementation("androidx.glance:glance:1.1.1")
+    // For AppWidgets support
+    implementation("androidx.glance:glance-appwidget:1.1.1")
+    // For Material3 theming support
+    implementation("androidx.glance:glance-material3:1.1.1")
+    // For coroutines support
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 }

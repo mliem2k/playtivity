@@ -48,3 +48,5 @@ app.*.map.json
 
 # Environment variables
 .env
+*.txt
+*.jks

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:ui';
 import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
@@ -10,13 +9,22 @@ import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/settings_screen.dart';
-import 'services/spotify_service.dart';
+import 'services/widget_service.dart';
+import 'services/background_service.dart';
+import 'services/http_interceptor.dart';
 import 'utils/theme.dart';
 import 'utils/auth_utils.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
+  
+  // Initialize widget service
+  await WidgetService.initialize();
+  
+  // Initialize background service
+  await BackgroundService.initialize();
+  
   runApp(MyApp(prefs: prefs));
 }
 
@@ -75,7 +83,17 @@ class AppWrapper extends StatefulWidget {
 
 class _AppWrapperState extends State<AppWrapper> {
   @override
+  void dispose() {
+    // Clear the context when the widget is disposed
+    HttpInterceptor.clearContext();
+    super.dispose();
+  }
+  
+  @override
   Widget build(BuildContext context) {
+    // Set the context for HttpInterceptor to handle 401 errors globally
+    HttpInterceptor.setContext(context);
+    
     return Consumer<AuthProvider>(
       builder: (context, authProvider, child) {
         // Debug logging for troubleshooting
@@ -141,6 +159,20 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   void initState() {
     super.initState();
     print('🏠 MainNavigationScreen initialized');
+    
+    // Register background widget updates when user is authenticated
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _registerBackgroundUpdates();
+    });
+  }
+  
+  Future<void> _registerBackgroundUpdates() async {
+    try {
+      await BackgroundService.registerWidgetUpdateTask();
+      print('✅ Background widget updates registered');
+    } catch (e) {
+      print('❌ Failed to register background updates: $e');
+    }
   }
 
   @override

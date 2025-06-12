@@ -57,13 +57,19 @@ dependencies:
   font_awesome_flutter: ^10.7.0
   
   # WebView for embedded Spotify login
-  flutter_inappwebview: ^6.0.0
+  flutter_inappwebview: ^6.1.3
   
   # Crypto for HMAC-SHA1 implementation
   crypto: ^3.0.3
   
   # Environment variables
   flutter_dotenv: ^5.1.0
+  
+  # Home screen widgets
+  home_widget: ^0.6.0
+  
+  # Background task execution
+  workmanager: ^0.6.0
 
 dev_dependencies:
   flutter_test:

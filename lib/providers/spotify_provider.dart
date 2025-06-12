@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import '../services/spotify_buddy_service.dart';
 import '../services/spotify_service.dart';
+import '../services/widget_service.dart';
 import '../models/track.dart';
 import '../models/activity.dart';
 import '../models/artist.dart';
+import '../models/user.dart';
 import '../utils/auth_utils.dart';
 
 class SpotifyProvider extends ChangeNotifier {
@@ -81,6 +83,9 @@ class SpotifyProvider extends ChangeNotifier {
         _isLoading = false;
       }
       notifyListeners();
+      
+      // Update widget with new currently playing data
+      await _updateWidget();
     } catch (e) {
       print('❌ Failed to load currently playing: $e');
       _currentlyPlaying = null;
@@ -208,6 +213,11 @@ class SpotifyProvider extends ChangeNotifier {
       }
       
       notifyListeners();
+      
+      // Update widget if we have activities data
+      if (activities.isNotEmpty) {
+        await _updateWidget();
+      }
     } catch (e) {
       _error = e.toString();
       _friendsActivities = [];
@@ -257,6 +267,9 @@ class SpotifyProvider extends ChangeNotifier {
     
     _lastUpdated = DateTime.now();
     notifyListeners();
+    
+    // Update widget after refreshing data
+    await _updateWidget();
   }
 
   /// Silent refresh - updates data without showing loading indicators
@@ -294,6 +307,9 @@ class SpotifyProvider extends ChangeNotifier {
       
       _lastUpdated = DateTime.now();
       notifyListeners();
+      
+      // Update widget after initial load
+      await _updateWidget();
     } catch (e) {
       print('❌ Error during fast initial load: $e');
       _error = e.toString();
@@ -344,5 +360,27 @@ class SpotifyProvider extends ChangeNotifier {
   /// Full refresh - shows loading indicators during data fetch
   Future<void> fullRefresh() async {
     await refreshData(showLoading: true);
+  }
+
+  /// Update home screen widget with current data
+  Future<void> _updateWidget({User? currentUser}) async {
+    try {
+      await WidgetService.updateWidget(
+        currentUser: currentUser,
+        friendsActivities: _friendsActivities,
+      );
+    } catch (e) {
+      print('❌ Failed to update widget: $e');
+    }
+  }
+
+  /// Public method to update widget with user data
+  Future<void> updateWidget({User? currentUser}) async {
+    await _updateWidget(currentUser: currentUser);
+  }
+  
+  /// Debug method for widget testing
+  Future<void> debugWidget() async {
+    await WidgetService.debugWidgetData();
   }
 } 

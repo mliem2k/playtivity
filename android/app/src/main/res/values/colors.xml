@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Widget colors -->
+    <color name="widget_background">#CC1A1A1A</color>
+    <color name="widget_text_primary">#FFFFFF</color>
+    <color name="widget_text_secondary">#B3FFFFFF</color>
+    <color name="widget_text_tertiary">#80FFFFFF</color>
+    <color name="widget_accent">#1DB954</color>
+    <color name="widget_item_background">#33FFFFFF</color>
+    <color name="widget_item_background_subtle">#1AFFFFFF</color>
+    <color name="light_blue_50">#FFE1F5FE</color>
+    <color name="light_blue_200">#FF81D4FA</color>
+    <color name="light_blue_600">#FF039BE5</color>
+    <color name="light_blue_900">#FF01579B</color>
+</resources> 
