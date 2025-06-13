@@ -170,14 +170,16 @@ class SpotifyProvider extends ChangeNotifier {
       print('🔄 Attempting to fetch friend activities with Bearer token...');
       try {
         // Use fast load when showing skeleton to avoid slow API calls
-        final useFastLoad = showSkeleton;
-        activities = await _buddyService.getFriendActivity(
+        final useFastLoad = showSkeleton;        activities = await _buddyService.getFriendActivity(
           fastLoad: useFastLoad,
           onActivitiesUpdate: (updatedActivities) {
             // Update activities progressively as track durations are fetched
             _friendsActivities = updatedActivities;
             notifyListeners();
-            print('🔄 Progressive update: ${updatedActivities.length} activities updated');
+            // Reduced logging frequency for progressive updates
+            if (updatedActivities.length <= 5 || updatedActivities.length % 10 == 0) {
+              print('🔄 Progressive update: ${updatedActivities.length} activities updated');
+            }
           },
         );
         if (activities.isNotEmpty) {
@@ -323,15 +325,17 @@ class SpotifyProvider extends ChangeNotifier {
     await Future.delayed(const Duration(milliseconds: 500));
     
     try {
-      print('🔄 Enhancing activities with detailed info...');
-      // Load detailed activities (with duration checks)
+      print('🔄 Enhancing activities with detailed info...');      // Load detailed activities (with duration checks)
       final detailedActivities = await _buddyService.getFriendActivity(
         fastLoad: false, // Full load with duration checks
         onActivitiesUpdate: (updatedActivities) {
           // Update activities progressively as track durations are fetched
           _friendsActivities = updatedActivities;
           notifyListeners();
-          print('🔄 Background enhancement update: ${updatedActivities.length} activities updated');
+          // Reduced logging frequency for background enhancements
+          if (updatedActivities.length <= 5 || updatedActivities.length % 10 == 0) {
+            print('🔄 Background enhancement update: ${updatedActivities.length} activities updated');
+          }
         },
       );
       

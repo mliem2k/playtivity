@@ -32,32 +32,25 @@ class MainActivity : FlutterActivity() {
                 }
             }
         }
-    }
-
-    private fun updateWidget() {
+    }    private fun updateWidget() {
         try {
             // Use direct Glance updateAll approach
             CoroutineScope(Dispatchers.Main).launch {
-                // Add a small delay to ensure SharedPreferences data is committed
-                delay(100)
+                // Reduced delay for faster widget updates
+                delay(50)
                 
-                // Log both SharedPreferences to see where data is being saved
+                // Reduced logging for better performance
                 val flutterPrefs = getSharedPreferences("FlutterSharedPreferences", MODE_PRIVATE)
-                val homeWidgetPrefs = getSharedPreferences("HomeWidgetPreferences", MODE_PRIVATE)
-                
                 val flutterActivitiesCount = flutterPrefs.getString("flutter.activities_count", "0")
-                val homeWidgetActivitiesCount = homeWidgetPrefs.getString("activities_count", "0")
                 
-                android.util.Log.d("PlaytivityWidget", "Before update - FlutterSharedPreferences activities_count: $flutterActivitiesCount")
-                android.util.Log.d("PlaytivityWidget", "Before update - HomeWidgetPreferences activities_count: $homeWidgetActivitiesCount")
+                android.util.Log.d("PlaytivityWidget", "Widget update triggered with $flutterActivitiesCount activities")
                 
                 // Start image caching service first
                 ImageCacheService.startImageCaching(this@MainActivity)
-                android.util.Log.d("PlaytivityWidget", "Image caching service started")
                 
                 // Update the widget using direct Glance updateAll
                 PlaytivityAppWidget().updateAll(this@MainActivity)
-                android.util.Log.d("PlaytivityWidget", "Direct Glance widget update triggered")
+                android.util.Log.d("PlaytivityWidget", "Widget update completed")
             }
         } catch (e: Exception) {
             android.util.Log.e("PlaytivityWidget", "Error updating widget", e)
