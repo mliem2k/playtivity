@@ -107,43 +107,21 @@ class PlaytivityAppWidget : GlanceAppWidget() {
     private fun PlaytivityContent(context: Context) {
         // Read widget data from home_widget SharedPreferences (without flutter. prefix)
         val prefs = context.getSharedPreferences("HomeWidgetPreferences", Context.MODE_PRIVATE)
-        
-        // Force a fresh read by logging timestamp
+          // Force a fresh read by logging timestamp
         val currentTime = System.currentTimeMillis()
         val lastUpdate = prefs.getString("last_update", "never") ?: "never"
         
         val activitiesCount = prefs.getString("activities_count", "0")?.toIntOrNull() ?: 0
         
-        // Debug: Log what data we're reading with timestamp
-        android.util.Log.d("PlaytivityWidget", "Reading widget data at $currentTime:")
-        android.util.Log.d("PlaytivityWidget", "  last_update: $lastUpdate")
-        android.util.Log.d("PlaytivityWidget", "  activities_count: $activitiesCount")
+        // Reduced logging for better performance
+        android.util.Log.d("PlaytivityWidget", "Reading widget data: activitiesCount=$activitiesCount, lastUpdate=$lastUpdate")
         
-        // Log all preferences keys for debugging
-        val allPrefs = prefs.all
-        android.util.Log.d("PlaytivityWidget", "All HomeWidget preferences keys: ${allPrefs.keys}")
-        
-        // Enhanced debugging: Check if we have data for more friends than activitiesCount suggests
-        for (i in 0 until activitiesCount) {
-            val friendName = prefs.getString("friend_${i}_name", "") ?: ""
-            val friendTrack = prefs.getString("friend_${i}_track", "") ?: ""
-            val friendArtist = prefs.getString("friend_${i}_artist", "") ?: ""
-            val friendImage = prefs.getString("friend_${i}_image", "") ?: ""
-            android.util.Log.d("PlaytivityWidget", "  friend_${i}: $friendName - $friendTrack by $friendArtist (image: $friendImage)")
+        // Only log if there are issues or in debug builds
+        if (activitiesCount == 0) {
+            android.util.Log.d("PlaytivityWidget", "No activities found")
+        } else if (activitiesCount > 0) {
+            android.util.Log.d("PlaytivityWidget", "Processing $activitiesCount activities")
         }
-        
-        // Additional debugging: Check if there are more friends beyond the activitiesCount
-        android.util.Log.d("PlaytivityWidget", "Checking for additional friends beyond activitiesCount...")
-        var foundAdditionalFriends = 0
-        for (i in activitiesCount until (activitiesCount + 10)) {
-            val friendName = prefs.getString("friend_${i}_name", "") ?: ""
-            val friendTrack = prefs.getString("friend_${i}_track", "") ?: ""
-            if (friendName.isNotEmpty() && friendTrack.isNotEmpty()) {
-                foundAdditionalFriends++
-                android.util.Log.d("PlaytivityWidget", "  EXTRA friend_${i}: $friendName - $friendTrack")
-            }
-        }
-        android.util.Log.d("PlaytivityWidget", "Found $foundAdditionalFriends additional friends beyond activitiesCount")
         
         Scaffold(
             titleBar = {
@@ -248,12 +226,16 @@ class PlaytivityAppWidget : GlanceAppWidget() {
             val timestampString = prefs.getString("friend_${index}_timestamp", "0") ?: "0"
             val isCurrentlyPlayingString = prefs.getString("friend_${index}_is_currently_playing", "false") ?: "false"
             val activityType = prefs.getString("friend_${index}_activity_type", "track") ?: "track"
-            
-            val timestamp = timestampString.toLongOrNull() ?: 0L
+              val timestamp = timestampString.toLongOrNull() ?: 0L
             val isCurrentlyPlaying = isCurrentlyPlayingString.toBoolean()
             
             val isValid = friendName.isNotEmpty() && friendTrack.isNotEmpty()
-            android.util.Log.d("PlaytivityWidget", "Activity $index: name='$friendName', track='$friendTrack', valid=$isValid, timestamp=$timestamp, playing=$isCurrentlyPlaying, type=$activityType")
+            // Only log invalid activities or first few activities to reduce noise
+            if (!isValid && index < 5) {
+                android.util.Log.d("PlaytivityWidget", "Activity $index: invalid data")
+            } else if (isValid && index < 2) {
+                android.util.Log.d("PlaytivityWidget", "Activity $index: $friendName - $friendTrack")
+            }
             
             if (isValid) {
                 FriendActivity(
