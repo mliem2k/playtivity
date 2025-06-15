@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../utils/auth_utils.dart';
+import 'app_logger.dart';
 
 /// HTTP interceptor that automatically handles 401/403 errors by redirecting to login
 class HttpInterceptor {
@@ -52,11 +53,10 @@ class HttpInterceptor {
       rethrow;
     }
   }
-  
-  /// Handle response and check for authentication errors
+    /// Handle response and check for authentication errors
   static Future<void> _handleResponse(http.Response response) async {
     if ((response.statusCode == 401 || response.statusCode == 403) && _currentContext != null) {
-      print('🚨 HTTP ${response.statusCode} detected - redirecting to login');
+      AppLogger.http('HTTP ${response.statusCode} detected - redirecting to login');
       
       // Use the AuthUtils to handle the authentication error
       // This will log out the user and navigate to login screen
