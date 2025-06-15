@@ -1,11 +1,12 @@
 import 'package:url_launcher/url_launcher.dart';
+import '../services/app_logger.dart';
 
 class SpotifyLauncher {
   /// Launch a Spotify URI in the Spotify app with play action
   /// This will attempt to start playing the content immediately
   static Future<bool> launchSpotifyUriAndPlay(String uri) async {
     try {
-      print('🎵 Attempting to PLAY: $uri');
+      AppLogger.spotify('Attempting to PLAY: $uri');
       
       // For play action, always try the Spotify app first with the native URI
       final spotifyUri = Uri.parse(uri);
@@ -15,7 +16,7 @@ class SpotifyLauncher {
           mode: LaunchMode.externalApplication,
         );
         if (success) {
-          print('✅ Successfully launched and played Spotify URI: $uri');
+          AppLogger.spotify('Successfully launched and played Spotify URI: $uri');
         }
         return success;
       }
@@ -29,14 +30,14 @@ class SpotifyLauncher {
           mode: LaunchMode.externalApplication,
         );
         if (success) {
-          print('✅ Successfully launched Spotify web URL for play: $webUrl');
+          AppLogger.spotify('Successfully launched Spotify web URL for play: $webUrl');
         }
         return success;
       }
       
       return false;
     } catch (e) {
-      print('❌ Error launching Spotify URI with play: $e');
+      AppLogger.error('Error launching Spotify URI with play', e);
       return false;
     }
   }
@@ -45,7 +46,7 @@ class SpotifyLauncher {
   /// Uses web URLs to avoid auto-play behavior in the Spotify app
   static Future<bool> launchSpotifyUri(String uri) async {
     try {
-      print('🔗 Attempting to NAVIGATE to: $uri');
+      AppLogger.spotify('Attempting to NAVIGATE to: $uri');
       
       // For navigation, prefer web URLs to avoid auto-play behavior
       final webUrl = _convertUriToWebUrl(uri);
@@ -57,7 +58,7 @@ class SpotifyLauncher {
             mode: LaunchMode.externalApplication,
           );
           if (success) {
-            print('✅ Successfully navigated to Spotify web URL: $webUrl');
+            AppLogger.spotify('Successfully navigated to Spotify web URL: $webUrl');
             return success;
           }
         }
@@ -71,14 +72,14 @@ class SpotifyLauncher {
           mode: LaunchMode.externalApplication,
         );
         if (success) {
-          print('✅ Successfully navigated to Spotify URI: $uri');
+          AppLogger.spotify('Successfully navigated to Spotify URI: $uri');
         }
         return success;
       }
       
       return false;
     } catch (e) {
-      print('❌ Error launching Spotify URI: $e');
+      AppLogger.error('Error launching Spotify URI', e);
       return false;
     }
   }
@@ -120,4 +121,4 @@ class SpotifyLauncher {
     }
     return null;
   }
-} 
+}

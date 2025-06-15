@@ -1,0 +1,41 @@
+{
+  "name": "playtivity-build-tools",
+  "version": "1.0.0",
+  "description": "Local build tools for Playtivity APK with Node.js scripts",
+  "scripts": {
+    "build": "node build-apk.js",
+    "build:patch": "node build-apk.js patch",
+    "build:minor": "node build-apk.js minor",
+    "build:major": "node build-apk.js major",
+    "release": "node release-apk.js",    "release:patch": "node release-apk.js patch",
+    "release:minor": "node release-apk.js minor",
+    "release:major": "node release-apk.js major",
+    "release:apk-only": "node release-apk.js --no-bundle",
+    "nightly": "node nightly-apk.js",
+    "nightly:keep-10": "node nightly-apk.js --keep-builds 10",
+    "nightly:promote": "node nightly-release.js",
+    "nightly:promote-patch": "node nightly-release.js patch",
+    "nightly:promote-minor": "node nightly-release.js minor",
+    "nightly:promote-major": "node nightly-release.js major",    "nightly:github": "node nightly-github-release.js",
+    "nightly:github-stable": "node nightly-github-release.js --stable",
+    "list": "node list-commands.js",
+    "help": "node build-apk.js --help",
+    "help:release": "node release-apk.js --help",
+    "help:nightly": "node nightly-apk.js --help",
+    "help:nightly-promote": "node nightly-release.js --help",
+    "help:nightly-github": "node nightly-github-release.js --help"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },  "author": "Playtivity Team",
+  "license": "MIT",
+  "keywords": [
+    "android",
+    "apk",
+    "flutter",
+    "build",
+    "release",
+    "nightly",
+    "github"
+  ]
+}
