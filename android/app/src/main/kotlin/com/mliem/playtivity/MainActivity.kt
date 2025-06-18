@@ -15,17 +15,35 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-class MainActivity : FlutterActivity() {
-    private val CHANNEL = "playtivity_widget"
+class MainActivity : FlutterActivity() {    private val WIDGET_CHANNEL = "playtivity_widget"
+    private val UPDATE_CHANNEL = "com.mliem.playtivity/update_launcher"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
+        // Widget channel for home screen widget updates
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, WIDGET_CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "updateWidget" -> {
                     updateWidget()
                     result.success("Widget update triggered")
+                }
+                else -> {
+                    result.notImplemented()
+                }
+            }
+        }
+        
+        // Update channel for APK installation
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, UPDATE_CHANNEL).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "installApk" -> {
+                    val filePath = call.argument<String>("filePath")
+                    if (filePath != null) {
+                        installApk(filePath, result)
+                    } else {
+                        result.error("INVALID_ARGUMENTS", "File path is required", null)
+                    }
                 }
                 else -> {
                     result.notImplemented()
@@ -54,6 +72,38 @@ class MainActivity : FlutterActivity() {
             }
         } catch (e: Exception) {
             android.util.Log.e("PlaytivityWidget", "Error updating widget", e)
+        }
+    }
+    
+    // Handle APK installation using FileProvider
+    private fun installApk(filePath: String, result: MethodChannel.Result) {
+        try {
+            val file = java.io.File(filePath)
+            if (!file.exists()) {
+                result.error("FILE_NOT_FOUND", "APK file not found at $filePath", null)
+                return
+            }
+            
+            android.util.Log.d("Playtivity", "Installing APK from $filePath")
+              // Create content URI using FileProvider
+            val contentUri = androidx.core.content.FileProvider.getUriForFile(
+                this,
+                "${packageName}.fileprovider",
+                file
+            )
+            
+            // Create intent to install the APK
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(contentUri, "application/vnd.android.package-archive")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+            }
+            
+            // Start the installation activity
+            startActivity(intent)
+            result.success(true)
+        } catch (e: Exception) {
+            android.util.Log.e("Playtivity", "Error installing APK", e)
+            result.error("INSTALLATION_ERROR", "Error installing APK: ${e.message}", null)
         }
     }
 }

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/spotify_provider.dart';
+import '../services/update_service.dart';
+import '../utils/version_utils.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -15,11 +18,11 @@ class SettingsScreen extends StatelessWidget {
           'Settings',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
-      ),
-      body: Consumer2<ThemeProvider, AuthProvider>(
-        builder: (context, themeProvider, authProvider, child) {
-          return ListView(
-            padding: const EdgeInsets.all(16),
+      ),      body: SafeArea(
+        child: Consumer2<ThemeProvider, AuthProvider>(
+          builder: (context, themeProvider, authProvider, child) {
+            return ListView(
+              padding: const EdgeInsets.all(16),
             children: [
               // Appearance Section
               Card(
@@ -106,6 +109,27 @@ class SettingsScreen extends StatelessWidget {
               ),
               
               const SizedBox(height: 16),
+                // Updates Section
+              Card(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                        'Updates',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    _buildUpdatePreferencesTile(context),
+                    _buildCheckForUpdatesTile(context),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 16),
               
               // About Section
               Card(
@@ -120,14 +144,23 @@ class SettingsScreen extends StatelessWidget {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                    ),                    ListTile(
-                      leading: Image.asset(
-                        'assets/images/playtivity_logo_small_icon.png',
-                        width: 24,
-                        height: 24,
-                      ),
-                      title: const Text('Playtivity'),
-                      subtitle: const Text('Version 0.0.1'),
+                    ),
+                    FutureBuilder<PackageInfo>(
+                      future: PackageInfo.fromPlatform(),
+                      builder: (context, snapshot) {
+                        final version = snapshot.hasData
+                            ? VersionUtils.formatVersion(snapshot.data!.version)
+                            : 'Loading...';
+                        return ListTile(
+                          leading: Image.asset(
+                            'assets/images/playtivity_logo_small_icon.png',
+                            width: 24,
+                            height: 24,
+                          ),
+                          title: const Text('Playtivity'),
+                          subtitle: Text('Version $version'),
+                        );
+                      },
                     ),
                     const ListTile(
                       leading: Icon(Icons.info_outline),
@@ -136,13 +169,113 @@ class SettingsScreen extends StatelessWidget {
                     ),
                   ],
                 ),
-              ),
-            ],
+              ),            ],
           );
         },
+        ),
       ),
     );
-  }  void _showLogoutDialog(BuildContext context) {
+  } 
+    // Build widget for update preferences
+  Widget _buildUpdatePreferencesTile(BuildContext context) {
+    return FutureBuilder<bool>(
+      future: UpdateService.getNightlyBuildPreference(),
+      builder: (context, snapshot) {
+        final isNightlyEnabled = snapshot.data ?? false;
+        
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return ListTile(
+              leading: Icon(
+                isNightlyEnabled ? Icons.science : Icons.update,
+                color: isNightlyEnabled ? Colors.orange : null,
+              ),
+              title: const Text('Nightly Builds'),
+              subtitle: const Text(
+                'Get early access to new features (may be unstable)'
+              ),
+              trailing: Switch(
+                value: isNightlyEnabled,
+                activeColor: Colors.orange,
+                onChanged: (value) async {
+                  await UpdateService.setNightlyBuildPreference(value);
+                  setState(() {}); // Refresh the widget
+                  
+                  if (value && context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Nightly builds enabled. Check for updates to get the latest version.'))
+                    );
+                  }
+                },
+              ),
+            );
+          }
+        );
+      },
+    );
+  }
+  
+  // Build widget for checking updates
+  Widget _buildCheckForUpdatesTile(BuildContext context) {
+    return ListTile(
+      leading: const Icon(Icons.system_update),
+      title: const Text('Check for Updates'),
+      subtitle: const Text('Look for new versions of the app'),
+      onTap: () => _checkForUpdates(context),
+    );
+  }
+  
+  // Handle the update check process
+  Future<void> _checkForUpdates(BuildContext context) async {
+    // Show loading indicator
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    
+    scaffoldMessenger.showSnackBar(
+      const SnackBar(content: Text('Checking for updates...'))
+    );
+    
+    // Check for updates
+    final updateResult = await UpdateService.checkForUpdates(forceCheck: true);
+    
+    // Hide the loading snackbar
+    scaffoldMessenger.hideCurrentSnackBar();
+    
+    if (!context.mounted) return;
+    
+    // Handle the update result
+    if (updateResult.hasUpdate && updateResult.updateInfo != null) {
+      // Show the update dialog
+      final shouldDownload = await UpdateService.showUpdateDialog(
+        context,
+        updateResult.updateInfo!,
+      );
+      
+      if (shouldDownload && context.mounted) {
+        // Show download dialog and get the downloaded file path
+        final filePath = await UpdateService.showDownloadDialog(
+          context,
+          updateResult.updateInfo!,
+        );
+        
+        if (filePath != null && context.mounted) {
+          // Show installation dialog
+          await UpdateService.showInstallDialog(context, filePath);
+        }
+      }
+    } else if (updateResult.error != null) {
+      // Show error
+      scaffoldMessenger.showSnackBar(
+        SnackBar(content: Text('Error: ${updateResult.error}'))
+      );
+    } else {
+      // No updates available
+      scaffoldMessenger.showSnackBar(
+        const SnackBar(content: Text('You are already on the latest version!'))
+      );
+    }
+  }
+
+  void _showLogoutDialog(BuildContext context) {
     showDialog(
       context: context,
       builder: (BuildContext dialogContext) {
@@ -171,7 +304,9 @@ class SettingsScreen extends StatelessWidget {
         );
       },
     );
-  }  Future<void> _performLogout(BuildContext context) async {
+  }  
+  
+  Future<void> _performLogout(BuildContext context) async {
     print('🚪 Starting logout process...');
     
     final authProvider = context.read<AuthProvider>();
@@ -196,4 +331,4 @@ class SettingsScreen extends StatelessWidget {
       print('⚠️ Navigation skipped - context not valid or already on login');
     }
   }
-} 
+}

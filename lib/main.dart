@@ -12,6 +12,7 @@ import 'screens/settings_screen.dart';
 import 'services/widget_service.dart';
 import 'services/background_service.dart';
 import 'services/http_interceptor.dart';
+import 'services/update_service.dart';
 import 'utils/theme.dart';
 import 'utils/auth_utils.dart';
 
@@ -25,14 +26,36 @@ void main() async {
   // Initialize background service
   await BackgroundService.initialize();
   
+  // Check for updates on startup if needed
+  _checkForUpdatesOnStartup();
+  
   runApp(MyApp(prefs: prefs));
+}
+
+// Check for updates on app startup if enough time has passed
+Future<void> _checkForUpdatesOnStartup() async {
+  // Check if we should check for updates 
+  if (await UpdateService.shouldCheckForUpdates()) {
+    try {
+      // Check for updates in the background
+      final updateResult = await UpdateService.checkForUpdates();
+      
+      // Store the result for later use
+      if (updateResult.hasUpdate) {
+        // We'll handle the update notification in the app UI later
+        print('Update available: ${updateResult.updateInfo?.version}');
+      }
+    } catch (e) {
+      // Ignore errors during startup, we don't want to block app launch
+      print('Error checking for updates on startup: $e');
+    }
+  }
 }
 
 class MyApp extends StatelessWidget {
   final SharedPreferences prefs;
   
   const MyApp({super.key, required this.prefs});
-
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
@@ -48,6 +71,8 @@ class MyApp extends StatelessWidget {
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,
             themeMode: themeProvider.themeMode,
+            // Add the update checker wrapper
+            builder: (context, child) => _UpdateCheckerWrapper(child: child!),
             home: const AppWrapper(),
             routes: {
               '/login': (context) {
@@ -103,22 +128,23 @@ class _AppWrapperState extends State<AppWrapper> {
         print('   - isAuthenticated: ${authProvider.isAuthenticated}');
         print('   - currentUser: ${authProvider.currentUser?.displayName ?? 'null'}');
         print('   - bearerToken exists: ${authProvider.bearerToken != null}');
-        
-        // Show loading screen while authentication is being initialized or in progress
+          // Show loading screen while authentication is being initialized or in progress
         if (!authProvider.isInitialized || authProvider.isLoading) {
           print('📱 Showing loading screen...');
           return const Scaffold(
-            body: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text(
-                    'Loading...',
-                    style: TextStyle(fontSize: 16),
-                  ),
-                ],
+            body: SafeArea(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text(
+                      'Loading...',
+                      style: TextStyle(fontSize: 16),
+                    ),
+                  ],
+                ),
               ),
             ),
           );
@@ -234,6 +260,143 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+// Widget wrapper to check for updates and show notifications
+class _UpdateCheckerWrapper extends StatefulWidget {
+  final Widget child;
+  
+  const _UpdateCheckerWrapper({
+    required this.child,
+  });
+
+  @override
+  State<_UpdateCheckerWrapper> createState() => _UpdateCheckerWrapperState();
+}
+
+class _UpdateCheckerWrapperState extends State<_UpdateCheckerWrapper> {
+  UpdateInfo? _updateInfo;
+  bool _hasCheckedForUpdates = false;
+  
+  @override
+  void initState() {
+    super.initState();
+    // Delay the update check to avoid affecting app startup performance
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkForUpdates();
+    });
+  }
+  
+  Future<void> _checkForUpdates() async {
+    try {
+      // Only check once per app session
+      if (_hasCheckedForUpdates) return;
+      _hasCheckedForUpdates = true;
+      
+      // Check if auto-download is enabled
+      final autoDownload = await UpdateService.getAutoDownloadPreference();
+      
+      // Check for updates
+      final updateResult = await UpdateService.checkForUpdates();
+      
+      // If update available, show banner
+      if (updateResult.hasUpdate && updateResult.updateInfo != null) {
+        setState(() {
+          _updateInfo = updateResult.updateInfo;
+        });
+        
+        // If auto-download is enabled, download immediately
+        if (autoDownload && mounted) {
+          _handleUpdateDownload();
+        }
+      }
+    } catch (e) {
+      print('Error checking for updates: $e');
+    }
+  }
+  
+  // Handle downloading an update
+  Future<void> _handleUpdateDownload() async {
+    if (_updateInfo == null || !mounted) return;
+    
+    // Show download dialog and get the downloaded file path
+    final filePath = await UpdateService.showDownloadDialog(
+      context,
+      _updateInfo!,
+    );
+    
+    if (filePath != null && mounted) {
+      // Show installation dialog
+      await UpdateService.showInstallDialog(context, filePath);
+      
+      // Clear update info if user cancels installation
+      setState(() {
+        _updateInfo = null;
+      });
+    }
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    // If no update available, just return the child
+    if (_updateInfo == null) {
+      return widget.child;
+    }
+    
+    // If update is available, show a notification banner
+    return Material(
+      child: Column(
+        children: [
+          // Update notification banner at the top
+          Container(
+            color: _updateInfo!.isNightly ? Colors.orange.shade700 : Theme.of(context).primaryColor,
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+            child: SafeArea(
+              bottom: false,
+              child: Row(
+                children: [
+                  Icon(
+                    _updateInfo!.isNightly ? Icons.science : Icons.system_update,
+                    color: Colors.white,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _updateInfo!.isNightly
+                          ? 'New nightly build available: ${_updateInfo!.version}'
+                          : 'Update available: ${_updateInfo!.version}',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _handleUpdateDownload,
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      backgroundColor: Colors.white.withOpacity(0.2),
+                    ),
+                    child: const Text('Update'),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    onPressed: () {
+                      setState(() {
+                        _updateInfo = null;
+                      });
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          
+          // Main app content
+          Expanded(
+            child: widget.child,
+          ),
+        ],
       ),
     );
   }

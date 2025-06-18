@@ -17,12 +17,23 @@
         </intent>
         <!-- Allow launching Spotify app -->
         <package android:name="com.spotify.music" />
-    </queries>
-
-    <application
+    </queries>    <application
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:label="Playtivity"        android:usesCleartextTraffic="true">
+        android:label="Playtivity"
+        android:usesCleartextTraffic="true">
+        
+        <!-- FileProvider for APK installation -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+        
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"

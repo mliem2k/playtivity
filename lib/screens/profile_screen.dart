@@ -51,26 +51,7 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
       final showLoading = spotifyProvider.topTracks.isEmpty && spotifyProvider.topArtists.isEmpty;
       await spotifyProvider.refreshData(showLoading: showLoading);
     } else {
-      print('⚠️ No authentication available - cannot load profile data');
-    }
-  }
-
-  Future<void> _refreshData() async {
-    final authProvider = context.read<AuthProvider>();
-    final spotifyProvider = context.read<SpotifyProvider>();
-    
-    // Ensure authentication is initialized before refreshing data
-    if (!authProvider.isInitialized) {
-      print('⚠️ Authentication not yet initialized, skipping data refresh');
-      return;
-    }
-    
-    if (authProvider.isAuthenticated) {
-      // Silent refresh - don't show loading spinner
-      await spotifyProvider.silentRefresh();
-    } else {
-      print('⚠️ No authentication available - cannot refresh profile data');
-    }
+      print('⚠️ No authentication available - cannot load profile data');    }
   }
 
   @override
@@ -101,26 +82,26 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
             ),
           ),
         ),
-      ),
-      body: Consumer2<AuthProvider, SpotifyProvider>(
-        builder: (context, authProvider, spotifyProvider, child) {
-          final user = authProvider.currentUser;
-          
-          return Column(
-            children: [
-              // Refresh indicator bar
-              RefreshIndicatorBar(
-                isRefreshing: spotifyProvider.isRefreshing,
-                message: 'Updating profile data...',
-              ),
-              // User Profile Header
-              Container(
-                padding: EdgeInsets.only(
-                  left: 24,
-                  right: 24,
-                  top: MediaQuery.of(context).padding.top,
-                  bottom: 24,
+      ),      body: SafeArea(
+        child: Consumer2<AuthProvider, SpotifyProvider>(
+          builder: (context, authProvider, spotifyProvider, child) {
+            final user = authProvider.currentUser;
+            
+            return Column(
+              children: [
+                // Refresh indicator bar
+                RefreshIndicatorBar(
+                  isRefreshing: spotifyProvider.isRefreshing,
+                  message: 'Updating profile data...',
                 ),
+                // User Profile Header
+                Container(
+                  padding: const EdgeInsets.only(
+                    left: 24,
+                    right: 24,
+                    top: 24,
+                    bottom: 24,
+                  ),
                 child: Column(
                   children: [
                     // Profile Picture
@@ -199,10 +180,10 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
                     _buildTopArtistsTab(spotifyProvider),
                   ],
                 ),
-              ),
-            ],
+              ),            ],
           );
         },
+        ),
       ),
     );
   }
@@ -223,10 +204,8 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
           ],
         ),
       );
-    }
-
-    return ListView.builder(
-      padding: EdgeInsets.only(top: 16, left: 16, right: 16, bottom: MediaQuery.of(context).padding.bottom),
+    }    return ListView.builder(
+      padding: const EdgeInsets.only(top: 16, left: 16, right: 16, bottom: 16),
       itemCount: spotifyProvider.topTracks.length,
       itemBuilder: (context, index) {
         final track = spotifyProvider.topTracks[index];
@@ -254,10 +233,8 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
           ],
         ),
       );
-    }
-
-    return ListView.builder(
-      padding: EdgeInsets.only(top: 16, left: 16, right: 16, bottom: MediaQuery.of(context).padding.bottom),
+    }    return ListView.builder(
+      padding: const EdgeInsets.only(top: 16, left: 16, right: 16, bottom: 16),
       itemCount: spotifyProvider.topArtists.length,
       itemBuilder: (context, index) {
         final artist = spotifyProvider.topArtists[index];
