@@ -43,31 +43,31 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
               ),
             ),
         ],
-      ),
-      body: Column(
-        children: [
-          // Info banner
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            color: Theme.of(context).primaryColor.withOpacity(0.1),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.security,
-                  color: Theme.of(context).primaryColor,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: const Text(
-                    'Login with your Spotify account to access friend activities',
-                    style: TextStyle(fontSize: 12),
+      ),      body: SafeArea(
+        child: Column(
+          children: [
+            // Info banner
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              color: Theme.of(context).primaryColor.withOpacity(0.1),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.security,
+                    color: Theme.of(context).primaryColor,
+                    size: 20,
                   ),
-                ),
-              ],
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: const Text(
+                      'Login with your Spotify account to access friend activities',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
           
           // Error display
           if (_error != null)
@@ -322,11 +322,11 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                               ],
                             ),
                           ),
-                        ),
-                    ],
+                        ),                    ],
                   ),
           ),
         ],
+        ),
       ),
     );
   }
