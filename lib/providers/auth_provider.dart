@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:provider/provider.dart';
 import '../services/spotify_buddy_service.dart';
 import '../models/user.dart';
 import '../services/spotify_service.dart';
+import 'spotify_provider.dart';
 
 class AuthProvider extends ChangeNotifier {
   static const String _bearerTokenKey = 'spotify_bearer_token';
@@ -227,7 +229,7 @@ class AuthProvider extends ChangeNotifier {
     
     await _clearStoredData();
     
-    // Clean up buddy service
+    // Clean up buddy service (this now clears all cached data)
     _buddyService.clearBearerToken();
     
     // Ensure all state is properly reset
@@ -322,6 +324,50 @@ class AuthProvider extends ChangeNotifier {
     print('=================================');
   }
 
+  /// Global method to reset authentication state after 401 errors
+  /// This can be called from anywhere in the app to recover from auth failures
+  Future<void> resetAuthenticationState() async {
+    print('🔄 Resetting authentication state after error...');
+    
+    try {
+      // Clear all stored authentication data
+      await _clearStoredData();
+      
+      // Clear buddy service state and caches
+      _buddyService.clearBearerToken();
+      
+      // Reset internal state variables
+      _bearerToken = null;
+      _headers = null;
+      _currentUser = null;
+      _isLoading = false;
+      // Keep _isInitialized = true so the app doesn't show loading screen
+      
+      print('✅ Authentication state reset completed');
+      print('🔍 Post-reset state:');
+      print('   - isAuthenticated: $isAuthenticated');
+      print('   - isInitialized: $_isInitialized');
+      print('   - bearerToken: ${_bearerToken ?? 'null'}');
+      print('   - currentUser: ${_currentUser?.displayName ?? 'null'}');
+      
+      // Notify all listeners that auth state has changed
+      notifyListeners();
+      
+      // Additional notification to ensure all UI components update
+      await Future.delayed(const Duration(milliseconds: 50));
+      notifyListeners();
+      
+    } catch (e) {
+      print('❌ Error during authentication state reset: $e');
+      // Even if there's an error, ensure we're in a clean state
+      _bearerToken = null;
+      _headers = null;
+      _currentUser = null;
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   /// Force logout with complete state reset and navigation
   Future<void> forceLogoutAndNavigate(BuildContext context) async {
     print('🚪 Force logout initiated...');
@@ -333,6 +379,17 @@ class AuthProvider extends ChangeNotifier {
     // Clear all authentication data
     await _clearStoredData();
     _buddyService.clearBearerToken();
+    
+    // Clear any SpotifyProvider state that might have cached data
+    try {
+      final spotifyProvider = Provider.of<SpotifyProvider>(context, listen: false);
+      spotifyProvider.clearData();
+      spotifyProvider.clearError();
+      spotifyProvider.clearAuthError();
+      print('✅ Cleared SpotifyProvider cached state');
+    } catch (e) {
+      print('⚠️ Could not clear SpotifyProvider state: $e');
+    }
     
     // Reset all state variables
     _isLoading = false;

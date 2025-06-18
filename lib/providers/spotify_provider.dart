@@ -51,6 +51,14 @@ class SpotifyProvider extends ChangeNotifier {
     print('🚨 Authentication error detected in provider: $error');
     _hasAuthError = true;
     _authErrorMessage = error;
+    
+    // Clear all cached data in this provider since authentication failed
+    _topTracks = [];
+    _topArtists = [];
+    _friendsActivities = [];
+    _currentlyPlaying = null;
+    _error = 'Authentication expired. Please login again.';
+    
     notifyListeners();
   }
 
