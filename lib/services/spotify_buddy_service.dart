@@ -222,7 +222,7 @@ class SpotifyBuddyService {
     }
     
     print('❌ No Bearer token available');
-    throw Exception('No Bearer token available - must authenticate first');
+    return null; // Return null instead of throwing exception
   }
 
   /// Gets the complete cookie string
@@ -232,9 +232,20 @@ class SpotifyBuddyService {
 
   /// Clears the stored Bearer token and headers
   void clearBearerToken() {
+    print('🗑️ Clearing all SpotifyBuddyService state...');
+    
+    // Clear authentication tokens
     _directBearerToken = null;
     _completeCookieString = null;
-    print('🗑️ Cleared Bearer token and headers');
+    
+    // Clear all cached data to prevent stale state
+    clearBuddyListCache();
+    _trackDurationCache.clear();
+    _artistDetailsCache.clear();
+    _cacheModified = false;
+    _artistCacheModified = false;
+    
+    print('✅ Cleared Bearer token, headers, and all cached data');
   }
 
 

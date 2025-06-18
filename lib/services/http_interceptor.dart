@@ -55,15 +55,25 @@ class HttpInterceptor {
   }
     /// Handle response and check for authentication errors
   static Future<void> _handleResponse(http.Response response) async {
-    if ((response.statusCode == 401 || response.statusCode == 403) && _currentContext != null) {
-      AppLogger.http('HTTP ${response.statusCode} detected - redirecting to login');
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      AppLogger.http('HTTP ${response.statusCode} detected - authentication error');
       
-      // Use the AuthUtils to handle the authentication error
-      // This will log out the user and navigate to login screen
-      await AuthUtils.handleAuthenticationError(
-        _currentContext!,
-        errorMessage: 'Session expired (${response.statusCode})',
-      );
+      if (_currentContext != null && _currentContext!.mounted) {
+        AppLogger.http('Context available - redirecting to login');
+        
+        // Use the AuthUtils to handle the authentication error
+        // This will log out the user and navigate to login screen
+        await AuthUtils.handleAuthenticationError(
+          _currentContext!,
+          errorMessage: 'Session expired (${response.statusCode})',
+        );
+      } else {
+        AppLogger.http('No context available - throwing authentication error');
+        
+        // No context available, just throw an error that can be caught
+        // by the calling code and handled appropriately
+        throw Exception('Authentication failed: HTTP ${response.statusCode}');
+      }
     }
   }
 }

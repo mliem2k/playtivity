@@ -103,7 +103,7 @@ class AuthUtils {
     return true;
   }
 
-  /// Handles 401/403 errors by immediately navigating to login screen  /// Handles 401/403 errors by immediately navigating to login screen
+  /// Handles 401/403 errors by immediately navigating to login screen
   /// This should be called when authentication errors are detected
   static Future<void> handleAuthenticationError(BuildContext context, {String? errorMessage}) async {
     AppLogger.auth('Authentication error detected: ${errorMessage ?? "401/403 error"}');
@@ -111,8 +111,14 @@ class AuthUtils {
     try {
       final authProvider = context.read<AuthProvider>();
       
-      // Force logout and navigate to login screen
-      await authProvider.forceLogoutAndNavigate(context);
+      // First, try to reset authentication state without navigation
+      // This clears all cached data and tokens but keeps the user in the app
+      await authProvider.resetAuthenticationState();
+      
+      // If we're in a context where we can navigate, force logout and navigate
+      if (context.mounted) {
+        await authProvider.forceLogoutAndNavigate(context);
+      }
       
       // Show a brief message about the authentication error
       if (context.mounted && errorMessage != null) {
@@ -123,7 +129,8 @@ class AuthUtils {
             duration: const Duration(seconds: 2),
           ),
         );
-      }    } catch (e) {
+      }
+    } catch (e) {
       AppLogger.error('Error handling authentication error', e);
       
       // Fallback: try to navigate directly

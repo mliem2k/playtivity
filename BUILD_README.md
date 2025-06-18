@@ -498,6 +498,7 @@ adb install "nightly/playtivity-nightly-20250614-143022-a1b2c3d.apk"
 - Node.js 14.0.0 or higher
 - Flutter SDK (or FVM)
 - Android SDK (for release signing verification)
+- **Java 21** (required for Android builds - configured in `android/app/build.gradle.kts`)
 
 ### For Release Builds (Additional):
 - Valid Android keystore (`release-key.jks` or `keystore.base64.txt`)

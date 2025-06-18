@@ -11,8 +11,8 @@ import 'app_logger.dart';
 
 class UpdateService {
   // The base URL for checking updates
-  static const String _baseUrl = 'https://raw.githubusercontent.com/mliem/playtivity/main';
-  static const String _githubReleasesApi = 'https://api.github.com/repos/mliem/playtivity/releases';
+  static const String _baseUrl = 'https://raw.githubusercontent.com/mliem2k/playtivity/main';
+  static const String _githubReleasesApi = 'https://api.github.com/repos/mliem2k/playtivity/releases';
   static const String _nightlyInfoPath = 'nightly/latest-nightly-info.json';
   
   // Preference keys
@@ -187,14 +187,23 @@ class UpdateService {
 
       final List<dynamic> releasesJson = json.decode(response.body);
       
-      // Find the latest release (first one in the list is the latest)
-      final latestReleaseJson = releasesJson.isNotEmpty ? releasesJson[0] : null;
+      // Find the latest stable release (exclude nightly releases)
+      Map<String, dynamic>? latestReleaseJson;
+      for (final releaseJson in releasesJson) {
+        final tagName = releaseJson['tag_name'] as String? ?? '';
+        // Skip nightly releases - we only want stable releases here
+        if (!tagName.startsWith('nightly-')) {
+          latestReleaseJson = releaseJson as Map<String, dynamic>;
+          break; // First non-nightly release is the latest stable
+        }
+      }
+      
       if (latestReleaseJson == null) {
         return UpdateCheckResult(
           hasUpdate: false,
           isNightly: false,
           updateInfo: null,
-          error: 'No releases found',
+          error: 'No stable releases found',
         );
       }
       
@@ -227,28 +236,44 @@ class UpdateService {
     // Check for nightly updates
   static Future<UpdateCheckResult> _checkNightlyUpdates(AppVersionInfo currentVersion) async {
     try {
-      // Fetch the nightly information
-      final response = await http.get(Uri.parse('$_baseUrl/$_nightlyInfoPath'));
+      // Fetch nightly releases from GitHub API
+      final response = await http.get(Uri.parse(_githubReleasesApi));
       
       if (response.statusCode != 200) {
         return UpdateCheckResult(
           hasUpdate: false,
           isNightly: true,
           updateInfo: null,
-          error: 'Failed to fetch nightly info: HTTP ${response.statusCode}',
+          error: 'Failed to fetch nightly releases: HTTP ${response.statusCode}',
         );
       }
 
-      final nightlyJson = json.decode(response.body);
-      final nightlyInfo = UpdateInfo.fromJson(nightlyJson, isNightly: true);
+      final List<dynamic> releasesJson = json.decode(response.body);
+      
+      // Find the latest nightly release (tagged with 'nightly-' prefix)
+      Map<String, dynamic>? latestNightlyJson;
+      for (final releaseJson in releasesJson) {
+        final tagName = releaseJson['tag_name'] as String? ?? '';
+        if (tagName.startsWith('nightly-')) {
+          latestNightlyJson = releaseJson as Map<String, dynamic>;
+          break; // First one is the latest since releases are sorted by date
+        }
+      }
+      
+      if (latestNightlyJson == null) {
+        return UpdateCheckResult(
+          hasUpdate: false,
+          isNightly: true,
+          updateInfo: null,
+          error: 'No nightly releases found',
+        );
+      }
+
+      final nightlyInfo = UpdateInfo.fromGithubJson(latestNightlyJson, isNightly: true);
       _latestNightlyInfo = nightlyInfo;
 
-      // For nightlies, we compare build dates - nightlies have a buildDate field
-      final hasUpdate = VersionUtils.isNewerNightly(
-        currentVersion: currentVersion.version, 
-        newVersion: nightlyInfo.version,
-        newBuildTime: nightlyInfo.buildDate,
-      );
+      // For nightlies, we compare build dates or if current version doesn't contain nightly
+      final hasUpdate = _shouldUpdateToNightly(currentVersion.version, nightlyInfo);
       
       AppLogger.info('Nightly check: Latest=${nightlyInfo.version}, hasUpdate=$hasUpdate');
       
@@ -266,6 +291,22 @@ class UpdateService {
         error: 'Error checking nightly updates: ${e.toString()}',
       );
     }
+  }
+  
+  // Helper method to determine if we should update to a nightly build
+  static bool _shouldUpdateToNightly(String currentVersion, UpdateInfo nightlyInfo) {
+    // If current version is not a nightly, always offer nightly update
+    if (!currentVersion.contains('nightly')) {
+      AppLogger.info('Current version is not nightly, offering nightly update');
+      return true;
+    }
+    
+    // If both are nightly, compare build dates
+    return VersionUtils.isNewerNightly(
+      currentVersion: currentVersion,
+      newVersion: nightlyInfo.version,
+      newBuildTime: nightlyInfo.buildDate,
+    );
   }
   
   // Download an update file
@@ -527,7 +568,12 @@ class UpdateInfo {
   }
     factory UpdateInfo.fromGithubJson(Map<String, dynamic> json, {required bool isNightly}) {
     // JSON structure for GitHub releases API
-    final version = json['tag_name'] as String;
+    final tagName = json['tag_name'] as String;
+    final releaseName = json['name'] as String? ?? tagName;
+    final body = json['body'] as String? ?? '';
+    
+    AppLogger.info('Parsing GitHub release: tag=$tagName, name=$releaseName, isNightly=$isNightly');
+    AppLogger.info('Release body preview: ${body.length > 100 ? body.substring(0, 100) + '...' : body}');
     
     // Find APK asset
     Map<String, dynamic>? apkAsset;
@@ -542,6 +588,8 @@ class UpdateInfo {
     final apkFileName = apkUrl.isNotEmpty ? Uri.parse(apkUrl).pathSegments.last : '';
     final fileSizeBytes = apkAsset?['size'] as int? ?? 0;
     
+    AppLogger.info('Found APK asset: $apkFileName (${fileSizeBytes} bytes)');
+    
     // Parse release date
     DateTime buildDate;
     try {
@@ -550,16 +598,81 @@ class UpdateInfo {
       buildDate = DateTime.now();
     }
     
-    // Extract build number from release name if possible
+    // For nightly builds, extract version and build number from the tag name or release body
+    String version;
     String buildNumber = '';
-    final name = json['name'] as String? ?? version;
-    final buildMatch = RegExp(r'build\s*(\d+)').firstMatch(name);
-    if (buildMatch != null) {
-      buildNumber = buildMatch.group(1) ?? '';
+    
+    if (isNightly && tagName.startsWith('nightly-')) {
+      AppLogger.info('Processing nightly release...');
+      
+      // Look for version information in the release body with improved regex patterns
+      RegExp versionRegex = RegExp(r'\*\*Version\*\*:\s*([^\s\n]+)', caseSensitive: false);
+      RegExpMatch? versionMatch = versionRegex.firstMatch(body);
+      
+      // Try alternative patterns if the first one doesn't match
+      if (versionMatch == null) {
+        versionRegex = RegExp(r'Version[:\s]*([^\s\n]+)', caseSensitive: false);
+        versionMatch = versionRegex.firstMatch(body);
+      }
+      
+      if (versionMatch != null) {
+        version = versionMatch.group(1)!.trim();
+        AppLogger.info('Parsed nightly version from release body: $version');
+        
+        // Extract build number from version string (after +)
+        final buildMatch = RegExp(r'\+(\d+)').firstMatch(version);
+        if (buildMatch != null) {
+          buildNumber = buildMatch.group(1) ?? '';
+          AppLogger.info('Extracted build number: $buildNumber');
+        }
+      } else {
+        // Fallback: use tag name as version
+        version = tagName;
+        AppLogger.info('Using tag name as version fallback: $version');
+      }
+    } else {
+      // For regular/stable releases
+      AppLogger.info('Processing stable release...');
+      version = tagName.startsWith('v') ? tagName.substring(1) : tagName;
+      AppLogger.info('Initial version from tag: $version');
+      
+      // Look for version information in the release body
+      RegExp versionRegex = RegExp(r'Version[:\s]*([^\s\n]+)', caseSensitive: false);
+      RegExpMatch? versionMatch = versionRegex.firstMatch(body);
+      
+      if (versionMatch != null) {
+        final bodyVersion = versionMatch.group(1)!.trim();
+        AppLogger.info('Found version in release body: $bodyVersion');
+        // Use body version if it's more detailed than tag name
+        if (bodyVersion.length > version.length) {
+          version = bodyVersion;
+          AppLogger.info('Using body version instead of tag: $version');
+        }
+      }
+      
+      // Look for build number in the release body
+      RegExp buildRegex = RegExp(r'Build Number[:\s]*(\d+)', caseSensitive: false);
+      RegExpMatch? buildMatch = buildRegex.firstMatch(body);
+      
+      if (buildMatch != null) {
+        buildNumber = buildMatch.group(1) ?? '';
+        AppLogger.info('Found build number in release body: $buildNumber');
+      } else {
+        // Fallback: try to extract from release name
+        final fallbackBuildMatch = RegExp(r'build\s*(\d+)', caseSensitive: false).firstMatch(releaseName);
+        if (fallbackBuildMatch != null) {
+          buildNumber = fallbackBuildMatch.group(1) ?? '';
+          AppLogger.info('Found build number in release name: $buildNumber');
+        } else {
+          AppLogger.info('No build number found, using empty string');
+        }
+      }
+      
+      AppLogger.info('Parsed stable release: version=$version, buildNumber=$buildNumber');
     }
     
     return UpdateInfo(
-      version: version.startsWith('v') ? version.substring(1) : version, // Remove 'v' prefix if present
+      version: version,
       buildNumber: buildNumber,
       buildDate: buildDate,
       apkUrl: apkUrl,
