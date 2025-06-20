@@ -9,6 +9,7 @@ import '../widgets/activity_skeleton.dart';
 import '../widgets/last_updated_indicator.dart';
 import '../utils/auth_utils.dart';
 
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -84,6 +85,8 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -101,7 +104,8 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
-      ),      body: SafeArea(
+      ),
+      body: SafeArea(
         child: Consumer2<AuthProvider, SpotifyProvider>(
           builder: (context, authProvider, spotifyProvider, child) {
             return Column(

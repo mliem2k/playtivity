@@ -15,6 +15,7 @@ class WidgetService {
   static const MethodChannel _channel = MethodChannel('playtivity_widget');
   
   // Initialize the widget
+  @pragma('vm:entry-point')
   static Future<void> initialize() async {
     await HomeWidget.setAppGroupId('group.com.mliem.playtivity');
     // Register interactive callback for widget clicks
@@ -45,7 +46,10 @@ class WidgetService {
   static Future<void> _saveToSharedPreferences(String key, String value) async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      // Save to both flutter prefix and regular HomeWidget prefix for maximum compatibility
       await prefs.setString('flutter.$key', value);
+      await prefs.setString(key, value); // Also save without flutter prefix
+      
       // Only log key operations to reduce noise
       if (key == 'activities_count' || key == 'last_update') {
         print('📊 Widget data saved: flutter.$key = $value');
@@ -56,6 +60,7 @@ class WidgetService {
   }
   
   // Update widget with friends' activities only
+  @pragma('vm:entry-point')
   static Future<void> updateWidget({
     User? currentUser,
     List<Activity>? friendsActivities,
@@ -171,13 +176,27 @@ class WidgetService {
       print('📊 Widget: About to call updateWidget()');
       print('📊 Widget: Using androidName: $_androidWidgetName');
       
-      // Trigger widget update via method channel
+      // Trigger simple widget update
       try {
-        final result = await _channel.invokeMethod('updateWidget');
-        print('📱 Widget update triggered via method channel: $result');
-      } catch (channelError) {
-        print('❌ Method channel widget update failed: $channelError');
-        // Fallback: data is still saved, widget may update on next system refresh
+        await HomeWidget.updateWidget(
+          qualifiedAndroidName: _androidWidgetName,
+          iOSName: _iOSWidgetName,
+        );
+        print('📱 Widget updated successfully');
+        
+        // Force image caching after a short delay
+        Future.delayed(const Duration(milliseconds: 500), () async {
+          try {
+            await _channel.invokeMethod('cacheImages');
+            print('📸 Image caching triggered');
+          } catch (e) {
+            print('❌ Image caching failed: $e');
+          }
+        });
+        
+      } catch (e) {
+        print('❌ Widget update failed: $e');
+        // Data is still saved, widget may update on next system refresh
         print('📱 Data saved to SharedPreferences - widget will update on next refresh');
       }
     } catch (e) {
@@ -220,7 +239,7 @@ class WidgetService {
       }
       
       await HomeWidget.updateWidget(
-        androidName: _androidWidgetName,
+        qualifiedAndroidName: _androidWidgetName,
         iOSName: _iOSWidgetName,
       );
     } catch (e) {
@@ -265,5 +284,69 @@ class WidgetService {
     } catch (e) {
       print('❌ Error in widget debug: $e');
     }
+  }
+
+  // Comprehensive debug for release builds
+  static Future<Map<String, dynamic>> debugReleaseWidget() async {
+    final debugInfo = <String, dynamic>{};
+    
+    try {
+      print('🐞 === RELEASE WIDGET DEBUG ===');
+      
+      // 1. Check SharedPreferences data
+      final prefs = await SharedPreferences.getInstance();
+      final allKeys = prefs.getKeys().toList();
+      final widgetKeys = allKeys.where((key) => 
+        key.contains('activities') || key.contains('friend_') || key.contains('last_update')
+      ).toList();
+      
+      debugInfo['total_keys'] = allKeys.length;
+      debugInfo['widget_keys'] = widgetKeys.length;
+      debugInfo['widget_key_list'] = widgetKeys;
+      
+      print('🐞 Total keys in SharedPreferences: ${allKeys.length}');
+      print('🐞 Widget-related keys: ${widgetKeys.length}');
+      
+      // 2. Check activities data
+      final flutterActivitiesCount = prefs.getString('flutter.activities_count');
+      final homeWidgetActivitiesCount = prefs.getString('activities_count');
+      
+      debugInfo['flutter_activities_count'] = flutterActivitiesCount;
+      debugInfo['home_widget_activities_count'] = homeWidgetActivitiesCount;
+      
+      print('🐞 Flutter activities count: $flutterActivitiesCount');
+      print('🐞 HomeWidget activities count: $homeWidgetActivitiesCount');
+      
+      // 3. Test method channel
+      debugInfo['method_channel_available'] = false;
+      try {
+        final result = await _channel.invokeMethod('updateWidget');
+        debugInfo['method_channel_available'] = true;
+        debugInfo['method_channel_result'] = result;
+        print('🐞 Method channel works: $result');
+      } catch (e) {
+        debugInfo['method_channel_error'] = e.toString();
+        print('🐞 Method channel failed: $e');
+      }
+      
+      // 4. Test HomeWidget integration
+      debugInfo['home_widget_available'] = false;
+      try {
+        await HomeWidget.setAppGroupId('group.com.mliem.playtivity');
+        debugInfo['home_widget_available'] = true;
+        print('🐞 HomeWidget integration works');
+      } catch (e) {
+        debugInfo['home_widget_error'] = e.toString();
+        print('🐞 HomeWidget integration failed: $e');
+      }
+      
+      print('🐞 === END RELEASE DEBUG ===');
+      
+    } catch (e) {
+      debugInfo['debug_error'] = e.toString();
+      print('❌ Debug error: $e');
+    }
+    
+    return debugInfo;
   }
 } 

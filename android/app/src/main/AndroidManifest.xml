@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Permission required for installing APKs on Android 8.0+ -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!--
  Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
@@ -21,7 +23,8 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:label="Playtivity"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config">
         
         <!-- FileProvider for APK installation -->
         <provider
@@ -99,6 +102,12 @@
         <!-- Image caching service for widget -->
         <service
             android:name=".widget.ImageCacheService"
+            android:exported="false" />
+            
+        <!-- Widget ListView service -->
+        <service
+            android:name=".widget.PlaytivityWidgetService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
             android:exported="false" />
     </application>
 

@@ -40,3 +40,23 @@
 
 # Keep model classes for serialization
 -keep class com.mliem.playtivity.models.** { *; }
+
+# Keep widget classes and methods
+-keep class com.mliem.playtivity.widget.** { *; }
+-keep class es.antonborri.home_widget.** { *; }
+
+# Keep widget receiver and service
+-keep class * extends android.appwidget.AppWidgetProvider
+-keep class * extends android.app.Service
+
+# Keep SharedPreferences methods
+-keep class android.content.SharedPreferences { *; }
+-keep class android.content.SharedPreferences$Editor { *; }
+
+# Keep method channel classes
+-keep class io.flutter.plugin.common.MethodChannel { *; }
+-keep class io.flutter.plugin.common.MethodChannel$MethodCallHandler { *; }
+
+# Keep Glance widget classes
+-keep class androidx.glance.** { *; }
+-dontwarn androidx.glance.**
