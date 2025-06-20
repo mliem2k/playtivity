@@ -14,7 +14,7 @@ class BackgroundService {
   static Future<void> initialize() async {
     await Workmanager().initialize(
       callbackDispatcher,
-      isInDebugMode: true, // Set to false in production
+      isInDebugMode: false, // Set to false in production
     );
   }
   

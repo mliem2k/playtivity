@@ -66,6 +66,19 @@ class NightlyBuilder {
         };
     }
 
+    extractBaseVersion(versionName) {
+        // Extract the base version by removing any existing nightly suffixes
+        // Handle versions like: "1.0.0-nightly-20250619-032135-nightly-20250620-050418"
+        // Should return: "1.0.0"
+        
+        if (versionName.includes('-nightly-')) {
+            const parts = versionName.split('-nightly-');
+            return parts[0]; // Return everything before the first nightly suffix
+        }
+        
+        return versionName;
+    }
+
     createNightlyVersion() {
         this.log('Creating nightly version from current pubspec.yaml', 'nightly');
         
@@ -87,15 +100,26 @@ class NightlyBuilder {
             throw new Error('Version line not found in pubspec.yaml');
         }
 
-        this.log(`Base version: ${currentVersion.fullVersion}`);
-
-        // Create nightly version with date and time
-        const now = new Date();
-        const dateStr = now.toISOString().split('T')[0].replace(/-/g, ''); // YYYYMMDD
-        const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, ''); // HHMMSS
+        this.log(`Current version: ${currentVersion.fullVersion}`);
         
-        // Format: base-version-nightly-YYYYMMDD-HHMMSS+build
-        const nightlyVersionName = `${currentVersion.versionName}-nightly-${dateStr}-${timeStr}`;
+        // Extract base version to prevent nightly stacking
+        const baseVersionName = this.extractBaseVersion(currentVersion.versionName);
+        this.log(`Base version (cleaned): ${baseVersionName}`);
+
+        // Create nightly version with date and time (local timezone)
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const hour = String(now.getHours()).padStart(2, '0');
+        const minute = String(now.getMinutes()).padStart(2, '0');
+        const second = String(now.getSeconds()).padStart(2, '0');
+        
+        const dateStr = `${year}${month}${day}`; // YYYYMMDD in local timezone
+        const timeStr = `${hour}${minute}${second}`; // HHMMSS in local timezone
+        
+        // Format: base-version-nightly-YYYYMMDD-HHMMSS+build (using cleaned base version)
+        const nightlyVersionName = `${baseVersionName}-nightly-${dateStr}-${timeStr}`;
         const nightlyBuildNumber = Math.floor(Date.now() / 1000); // Unix timestamp for uniqueness
         
         const nightlyFullVersion = `${nightlyVersionName}+${nightlyBuildNumber}`;
@@ -118,7 +142,8 @@ class NightlyBuilder {
             },
             backup: backupContent,
             dateStr,
-            timeStr
+            timeStr,
+            baseVersion: baseVersionName
         };
     }
 
@@ -341,13 +366,18 @@ class NightlyBuilder {
             buildType: 'nightly',
             buildDate: new Date().toISOString(),
             version: versionInfo.nightly,
-            baseVersion: versionInfo.original,
+            baseVersion: {
+                versionName: versionInfo.baseVersion,
+                fullVersion: versionInfo.baseVersion,
+                originalFullVersion: versionInfo.original.fullVersion
+            },
             git: gitInfo,
             apk: {
                 fileName: apkInfo.fileName,
                 size: apkInfo.size,
                 sizeBytes: apkInfo.sizeBytes
-            },            environment: this.getBuildEnvironmentInfo()
+            },
+            environment: this.getBuildEnvironmentInfo()
         };
         
         fs.writeFileSync(infoPath, JSON.stringify(nightlyInfo, null, 2));

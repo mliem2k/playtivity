@@ -34,9 +34,12 @@ void main() async {
 
 // Check for updates on app startup if enough time has passed
 Future<void> _checkForUpdatesOnStartup() async {
-  // Check if we should check for updates 
-  if (await UpdateService.shouldCheckForUpdates()) {
-    try {
+  try {
+    // First, auto-enable nightly builds if applicable
+    await UpdateService.autoEnableNightlyIfApplicable();
+    
+    // Check if we should check for updates 
+    if (await UpdateService.shouldCheckForUpdates()) {
       // Check for updates in the background
       final updateResult = await UpdateService.checkForUpdates();
       
@@ -45,10 +48,10 @@ Future<void> _checkForUpdatesOnStartup() async {
         // We'll handle the update notification in the app UI later
         print('Update available: ${updateResult.updateInfo?.version}');
       }
-    } catch (e) {
-      // Ignore errors during startup, we don't want to block app launch
-      print('Error checking for updates on startup: $e');
     }
+  } catch (e) {
+    // Ignore errors during startup, we don't want to block app launch
+    print('Error checking for updates on startup: $e');
   }
 }
 
@@ -107,6 +110,8 @@ class AppWrapper extends StatefulWidget {
 }
 
 class _AppWrapperState extends State<AppWrapper> {
+  bool _hasVerifiedAuth = false;
+
   @override
   void dispose() {
     // Clear the context when the widget is disposed
@@ -128,7 +133,22 @@ class _AppWrapperState extends State<AppWrapper> {
         print('   - isAuthenticated: ${authProvider.isAuthenticated}');
         print('   - currentUser: ${authProvider.currentUser?.displayName ?? 'null'}');
         print('   - bearerToken exists: ${authProvider.bearerToken != null}');
-          // Show loading screen while authentication is being initialized or in progress
+        
+        // Verify authentication state once when the app is fully initialized and not during loading
+        if (authProvider.isInitialized && !authProvider.isLoading && !_hasVerifiedAuth) {
+          _hasVerifiedAuth = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) async {
+            print('🔍 Performing one-time authentication verification...');
+            final isValid = await authProvider.verifyAndRefreshAuth();
+            if (!isValid && authProvider.bearerToken != null) {
+              print('⚠️ Authentication was invalid, clearing state...');
+              // Authentication was invalid, the provider already cleared the state
+              // No need to do anything else as the UI will rebuild automatically
+            }
+          });
+        }
+        
+        // Show loading screen while authentication is being initialized or in progress
         if (!authProvider.isInitialized || authProvider.isLoading) {
           print('📱 Showing loading screen...');
           return const Scaffold(
@@ -173,7 +193,7 @@ class MainNavigationScreen extends StatefulWidget {
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
 }
 
-class _MainNavigationScreenState extends State<MainNavigationScreen> {
+class _MainNavigationScreenState extends State<MainNavigationScreen> with WidgetsBindingObserver {
   int _currentIndex = 0;
   
   final List<Widget> _screens = [
@@ -186,10 +206,39 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     super.initState();
     print('🏠 MainNavigationScreen initialized');
     
+    // Add lifecycle observer
+    WidgetsBinding.instance.addObserver(this);
+    
     // Register background widget updates when user is authenticated
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _registerBackgroundUpdates();
     });
+  }
+  
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+  
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    
+    if (state == AppLifecycleState.resumed) {
+      print('📱 App resumed, verifying authentication...');
+      // Verify authentication when app resumes
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (mounted) {
+          final authProvider = Provider.of<AuthProvider>(context, listen: false);
+          final isValid = await authProvider.verifyAndRefreshAuth();
+          if (!isValid) {
+            print('⚠️ Authentication invalid after app resume');
+            // The auth provider will handle clearing state and the UI will rebuild
+          }
+        }
+      });
+    }
   }
   
   Future<void> _registerBackgroundUpdates() async {

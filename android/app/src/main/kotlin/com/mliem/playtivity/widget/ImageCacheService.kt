@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
-import androidx.glance.appwidget.updateAll
 import kotlinx.coroutines.runBlocking
 
 class ImageCacheService : IntentService("ImageCacheService") {
@@ -48,11 +47,21 @@ class ImageCacheService : IntentService("ImageCacheService") {
                         val cachedPath = ImageDownloader.downloadAndCacheImage(this@ImageCacheService, friendImage, i)
                         
                         if (cachedPath != null) {
-                            // Save the cached path to preferences for the widget to use
+                            // Save the cached path to both preference sources for the widget to use
                             prefs.edit()
                                 .putString("friend_${i}_cached_image", cachedPath)
                                 .apply()
+                            
+                            // Also save to Flutter preferences as backup
+                            val flutterPrefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+                            flutterPrefs.edit()
+                                .putString("flutter.friend_${i}_cached_image", cachedPath)
+                                .apply()
+                            
+                            android.util.Log.d("ImageCacheService", "Saved cached image path for $friendName: $cachedPath")
                             cachedCount++
+                        } else {
+                            android.util.Log.w("ImageCacheService", "Failed to cache image for $friendName")
                         }
                     }                }
                 
@@ -61,10 +70,15 @@ class ImageCacheService : IntentService("ImageCacheService") {
                 }
             }
             
-            // Update the widget after caching images
-            runBlocking {
-                PlaytivityAppWidget().updateAll(this@ImageCacheService)
+            // Update all widgets after caching images
+            val appWidgetManager = AppWidgetManager.getInstance(this)
+            val componentName = ComponentName(this, PlaytivityWidgetReceiver::class.java)
+            val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
+            
+            for (appWidgetId in appWidgetIds) {
+                PlaytivityWidgetProvider.updateAppWidget(this, appWidgetManager, appWidgetId)
             }
+            
             android.util.Log.d("ImageCacheService", "Image caching completed, widget updated")
             
         } catch (e: Exception) {

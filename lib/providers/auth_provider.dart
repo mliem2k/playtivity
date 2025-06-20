@@ -136,6 +136,11 @@ class AuthProvider extends ChangeNotifier {
 
       print('🔄 Processing Bearer token authentication...');
       
+      // Validate the bearer token
+      if (bearerToken.isEmpty || bearerToken.length < 50) {
+        throw Exception('Invalid bearer token provided');
+      }
+      
       // Store Bearer token and headers
       _bearerToken = bearerToken;
       _headers = headers;
@@ -143,22 +148,44 @@ class AuthProvider extends ChangeNotifier {
       // Set the Bearer token directly in buddy service
       _buddyService.setBearerToken(bearerToken, headers);
       
-      // Fetch user profile using Bearer token
+      // Fetch user profile using Bearer token with retry logic
       print('🔄 Fetching user profile with Bearer token...');
-      _currentUser = await _buddyService.getCurrentUserProfileWithToken(_bearerToken!);
-      if (_currentUser != null) {
-        print('✅ Successfully loaded user profile: ${_currentUser!.displayName}');
-      } else {
-        print('⚠️ Failed to load user profile');
+      User? userProfile;
+      
+      // Try multiple times to get user profile (sometimes the token needs a moment to propagate)
+      // Extended retry logic for long idle scenarios
+      for (int attempt = 1; attempt <= 5; attempt++) {
+        try {
+          userProfile = await _buddyService.getCurrentUserProfileWithToken(_bearerToken!);
+          if (userProfile != null) {
+            print('✅ Successfully loaded user profile on attempt $attempt: ${userProfile.displayName}');
+            break;
+          }
+        } catch (e) {
+          print('⚠️ Failed to load user profile on attempt $attempt: $e');
+          if (attempt < 5) {
+            // Increase delay for later attempts to handle network issues
+            final delayMs = attempt <= 2 ? 1000 : 2000;
+            print('🔄 Retrying in ${delayMs}ms...');
+            await Future.delayed(Duration(milliseconds: delayMs));
+          }
+        }
       }
-
+      
+      if (userProfile == null) {
+        throw Exception('Failed to load user profile after multiple attempts');
+      }
+      
+      _currentUser = userProfile;
+      
+      // Save the data to persistent storage
       await _saveStoredData();
       
       print('✅ Bearer token authentication complete - token and user profile stored');
       
-      // Clear loading state and ensure initialization is complete
-      _isLoading = false;
+      // Ensure initialization is complete and clear loading state
       _isInitialized = true;
+      _isLoading = false;
       
       print('🔄 AuthProvider state after completion:');
       print('   - isAuthenticated: $isAuthenticated');
@@ -166,20 +193,69 @@ class AuthProvider extends ChangeNotifier {
       print('   - isLoading: $_isLoading');
       print('   - currentUser: ${_currentUser?.displayName ?? 'null'}');
       
-      // Force UI update with multiple notifications to ensure state propagation
+      // Notify listeners with a series of notifications to ensure state propagation
       notifyListeners();
       
-      // Add a short delay and notify again to handle any race conditions
-      await Future.delayed(const Duration(milliseconds: 50));
-      notifyListeners();
-      
-      // Final notification after a longer delay to ensure all consumers are updated
+      // Add multiple delayed notifications to handle any race conditions
       await Future.delayed(const Duration(milliseconds: 100));
       notifyListeners();
       
+      await Future.delayed(const Duration(milliseconds: 200));
+      notifyListeners();
+      
+      // Final verification with retry logic for long idle scenarios
+      bool verificationSuccess = false;
+      for (int verifyAttempt = 1; verifyAttempt <= 3; verifyAttempt++) {
+        print('🔍 Final verification attempt $verifyAttempt/3...');
+        
+        if (isAuthenticated) {
+          verificationSuccess = true;
+          print('✅ Authentication verification successful on attempt $verifyAttempt');
+          break;
+        } else {
+          print('⚠️ Authentication verification failed on attempt $verifyAttempt');
+          if (verifyAttempt < 3) {
+            print('🔄 Waiting 500ms before retry...');
+            await Future.delayed(const Duration(milliseconds: 500));
+            // Re-notify listeners to ensure state is properly updated
+            notifyListeners();
+          }
+        }
+      }
+      
+      if (!verificationSuccess) {
+        // Final check: manually verify the authentication state
+        final hasToken = _bearerToken != null && _bearerToken!.isNotEmpty;
+        final hasUser = _currentUser != null;
+        final isInitComplete = _isInitialized;
+        
+        print('🔍 Manual verification check:');
+        print('   - hasToken: $hasToken');
+        print('   - hasUser: $hasUser');
+        print('   - isInitialized: $isInitComplete');
+        
+        if (hasToken && hasUser && isInitComplete) {
+          print('✅ Manual verification passed - authentication is valid');
+          verificationSuccess = true;
+        } else {
+          throw Exception('Authentication verification failed after completion - Token: $hasToken, User: $hasUser, Init: $isInitComplete');
+        }
+      }
+      
+      print('✅ Authentication flow completed successfully');
+      
     } catch (e) {
       print('❌ Error in handleAuthComplete: $e');
+      
+      // Clean up on error
+      _bearerToken = null;
+      _headers = null;
+      _currentUser = null;
       _isLoading = false;
+      
+      // Ensure we clear any potentially corrupted stored data
+      await _clearStoredData();
+      
       notifyListeners();
       rethrow;
     }
@@ -414,5 +490,63 @@ class AuthProvider extends ChangeNotifier {
     // Additional notifications after navigation
     await Future.delayed(const Duration(milliseconds: 100));
     notifyListeners();
+  }
+
+  /// Verify authentication state and refresh if needed
+  /// This can be called when app resumes or when we need to verify auth status
+  Future<bool> verifyAndRefreshAuth() async {
+    print('🔍 Verifying and refreshing authentication state...');
+    
+    if (!_isInitialized) {
+      print('⚠️ Auth not initialized yet, skipping verification');
+      return false;
+    }
+    
+    // If we don't have basic auth data, we're not authenticated
+    if (_bearerToken == null || _currentUser == null) {
+      print('⚠️ Missing basic auth data (token or user)');
+      return false;
+    }
+    
+    try {
+      // Test the current token by making an API call
+      print('🔄 Testing current authentication with API call...');
+      final testUser = await _buddyService.getCurrentUserProfileWithToken(_bearerToken!);
+      
+      if (testUser != null && testUser.id == _currentUser!.id) {
+        print('✅ Authentication verified successfully');
+        
+        // Update user info in case anything changed
+        _currentUser = testUser;
+        await _saveStoredData();
+        
+        // Ensure state is properly set
+        _isLoading = false;
+        _isInitialized = true;
+        notifyListeners();
+        
+        return true;
+      } else {
+        print('⚠️ Authentication test failed - user mismatch or null');
+        await _clearStoredData();
+        _bearerToken = null;
+        _headers = null;
+        _currentUser = null;
+        notifyListeners();
+        return false;
+      }
+    } catch (e) {
+      print('❌ Authentication verification failed: $e');
+      
+      // Clear invalid auth data
+      await _clearStoredData();
+      _bearerToken = null;
+      _headers = null;
+      _currentUser = null;
+      _isLoading = false;
+      notifyListeners();
+      
+      return false;
+    }
   }
 }

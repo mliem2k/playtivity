@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import '../services/app_logger.dart';
 
 class SpotifyWebViewLogin extends StatefulWidget {
-  final Function(String, Map<String, String>) onAuthComplete; // Bearer access token and headers
+  final Future<void> Function(String, Map<String, String>) onAuthComplete; // Bearer access token and headers
   final VoidCallback? onCancel;
 
   const SpotifyWebViewLogin({
@@ -197,18 +198,18 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                           if (url == null) return;
                           
                           String urlString = url.toString();
-                          print('🌐 Page loaded: $urlString');
+                          AppLogger.auth('Page loaded: $urlString');
                             // Update current URL and r logic
                           setState(() {
                             _currentUrl = urlString;
-                            // Show overlay only for spotify.com domain pages that are NOT /login or challenge
+                            // Show overlay for spotify.com domain pages that are NOT /login or challenge pages
                             // Don't show for non-spotify sites (facebook, etc) or login/challenge pages
                             Uri uri = Uri.parse(urlString);
                             bool isSpotifyDomain = uri.host.endsWith('spotify.com');
                             bool isLoginOrChallenge = urlString.contains('/login') || urlString.contains('challenge.spotify.com');
                             bool newShowOverlay = isSpotifyDomain && !isLoginOrChallenge;
                             
-                            print('🎭 Overlay logic: host=${uri.host}, isSpotify=$isSpotifyDomain, isLogin=$isLoginOrChallenge, showOverlay=$newShowOverlay');
+                            AppLogger.debug('Overlay logic: host=${uri.host}, isSpotify=$isSpotifyDomain, isLogin=$isLoginOrChallenge, showOverlay=$newShowOverlay');
                             _showOverlay = newShowOverlay;
                           });
                           
@@ -256,7 +257,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                           }
                           
                           // Only log other console messages for debugging
-                          print('🌐 WebView Console [${consoleMessage.messageLevel}]: ${consoleMessage.message}');
+                          AppLogger.debug('WebView Console [${consoleMessage.messageLevel}]: ${consoleMessage.message}');
                         },
                       ),
                       
@@ -333,23 +334,23 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
 
   Future<void> _setupNetworkInterception(InAppWebViewController controller, WebUri url) async {
     try {
-      print('🌐 Setting up network interception for Bearer token capture...');
+      AppLogger.auth('Setting up network interception for Bearer token capture...');
       
       // Get all cookies for building complete header context
       final cookies = await CookieManager.instance().getCookies(url: url);
       final cookieString = cookies.map((cookie) => '${cookie.name}=${cookie.value}').join('; ');
       
-      print('🍪 Found ${cookies.length} cookies');
-      print('🍪 Initial cookie string: ${cookieString.isNotEmpty ? '${cookieString.substring(0, 100)}...' : 'EMPTY'}');
-      print('🍪 Cookie names: ${cookies.map((c) => c.name).join(', ')}');
+      AppLogger.debug('Found ${cookies.length} cookies');
+      AppLogger.debug('Initial cookie string: ${cookieString.isNotEmpty ? '${cookieString.substring(0, 100)}...' : 'EMPTY'}');
+      AppLogger.debug('Cookie names: ${cookies.map((c) => c.name).join(', ')}');
       
       // Check if sp_dc cookie is present
       bool hasSpDc = cookies.any((cookie) => cookie.name == 'sp_dc');
-      print('🍪 sp_dc cookie present in initial request: $hasSpDc');
+      AppLogger.debug('sp_dc cookie present in initial request: $hasSpDc');
       
       // Log sp_dc detection
       if (hasSpDc) {
-        print('🔄 sp_dc detected');
+        AppLogger.auth('sp_dc detected');
       }
       
       // Build headers that will be saved and reused
@@ -370,13 +371,13 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
         'Upgrade-Insecure-Requests': '1',
       };
       
-      print('🔧 Initial _extractedHeaders Cookie: ${_extractedHeaders['Cookie']?.isNotEmpty == true ? '${_extractedHeaders['Cookie']!.substring(0, 100)}...' : 'EMPTY'}');
+      AppLogger.debug('Initial _extractedHeaders Cookie: ${_extractedHeaders['Cookie']?.isNotEmpty == true ? '${_extractedHeaders['Cookie']!.substring(0, 100)}...' : 'EMPTY'}');
       
       // Set up network request interception
       await _interceptTokenRequests(controller);
       
     } catch (e) {
-      print('❌ Failed to setup network interception: $e');
+      AppLogger.error('Failed to setup network interception', e);
       setState(() {
         _error = 'Failed to setup authentication monitoring: $e';
       });
@@ -385,7 +386,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
 
   Future<void> _interceptTokenRequests(InAppWebViewController controller) async {
     try {
-      print('🕸️ Setting up network request interception...');
+      AppLogger.auth('Setting up network request interception...');
       
              final interceptScript = '''
          (function() {
@@ -526,7 +527,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
              if (window.capturedBearerToken) {
                clearInterval(cookieCheckInterval);
                return;
-             }
+            }
              
              // Look for tokens in cookies (sometimes Spotify stores them there)
              const cookies = document.cookie.split(';');
@@ -620,18 +621,18 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
       ''';
       
       await controller.evaluateJavascript(source: interceptScript);
-      print('✅ Network interception script injected');
+      AppLogger.auth('Network interception script injected');
       
       // Set up periodic checking for captured tokens
       _startTokenPolling(controller);
       
     } catch (e) {
-      print('❌ Error setting up network interception: $e');
+      AppLogger.error('Error setting up network interception', e);
     }
   }
 
   void _startTokenPolling(InAppWebViewController controller) {
-    print('⏰ Starting token polling...');
+    AppLogger.auth('Starting token polling...');
     
     Timer.periodic(const Duration(seconds: 1), (timer) async {
       if (!mounted) {
@@ -647,16 +648,16 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
           bool isSpotifyDomain = uri.host.endsWith('spotify.com');
           
           if (!isSpotifyDomain) {
-            print('🚫 Not on Spotify domain (${uri.host}), skipping token polling...');
+            AppLogger.debug('Not on Spotify domain (${uri.host}), skipping token polling...');
             return; // Skip this polling cycle
           }
         }
       } catch (e) {
-        print('❌ Error checking current URL for polling: $e');
+        AppLogger.error('Error checking current URL for polling', e);
       }
       
       try {
-        print('🔍 Polling for captured token...');
+        AppLogger.debug('Polling for captured token...');
         final result = await controller.evaluateJavascript(source: '''
           (function() {
             console.log('🔍 Polling check - capturedBearerToken:', window.capturedBearerToken ? 'EXISTS' : 'null');
@@ -700,16 +701,16 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
         // Also check for sp_dc cookie updates even if no token yet
         await _checkForSpDcCookie(controller);
         
-        print('🔍 Polling result: ${result != null ? 'DATA FOUND' : 'null'}');
+        AppLogger.debug('Polling result: ${result != null ? 'DATA FOUND' : 'null'}');
         
         if (result != null) {
           final Map<String, dynamic> tokenInfo = Map<String, dynamic>.from(result);
           final bearerToken = tokenInfo['token'] as String?;
           final capturedCookie = tokenInfo['cookie'] as String?;
           
-          print('🔍 Parsed result:');
-          print('   - bearerToken: ${bearerToken != null ? 'EXISTS (${bearerToken.length} chars)' : 'null'}');
-          print('   - capturedCookie: ${capturedCookie != null ? 'EXISTS (${capturedCookie.length} chars)' : 'null'}');
+          AppLogger.debug('Parsed result:');
+          AppLogger.debug('   - bearerToken: ${bearerToken != null ? 'EXISTS (${bearerToken.length} chars)' : 'null'}');
+          AppLogger.debug('   - capturedCookie: ${capturedCookie != null ? 'EXISTS (${capturedCookie.length} chars)' : 'null'}');
           
           // Handle cookie updates (even without token)
           if (capturedCookie != null && capturedCookie.isNotEmpty) {
@@ -717,12 +718,12 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
             bool hasSpDcNow = capturedCookie.contains('sp_dc=');
             
             if (!hadSpDcBefore && hasSpDcNow) {
-              print('🍪 Found new sp_dc cookie! Updating headers...');
+              AppLogger.auth('Found new sp_dc cookie! Updating headers...');
               _extractedHeaders['Cookie'] = capturedCookie;
-              print('✅ Updated headers with sp_dc cookie');
-              print('🍪 New cookie header: ${capturedCookie.substring(0, 100)}...');
+              AppLogger.auth('Updated headers with sp_dc cookie');
+              AppLogger.debug('New cookie header: ${capturedCookie.substring(0, 100)}...');
               
-              print('🔄 sp_dc detected in cookie update');
+              AppLogger.auth('sp_dc detected in cookie update');
             } else if (hasSpDcNow) {
               // Update with latest cookie info
               _extractedHeaders['Cookie'] = capturedCookie;
@@ -730,55 +731,69 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
           }
           
           if (bearerToken != null && bearerToken.isNotEmpty) {
-            print('🎯 Token polling found complete result!');
+            AppLogger.auth('Token polling found complete result!');
             timer.cancel();
             
-            print('🎉 Successfully captured Bearer token: ${bearerToken.substring(0, 20)}...');
-            print('📋 Token length: ${bearerToken.length} characters');
-            print('🍪 Final captured cookie: ${capturedCookie?.substring(0, 50) ?? 'none'}...');
-            print('📊 Token data: ${tokenInfo['data']}');
+            AppLogger.auth('Successfully captured Bearer token: ${bearerToken.substring(0, 20)}...');
+            AppLogger.debug('Token length: ${bearerToken.length} characters');
+            AppLogger.debug('Final captured cookie: ${capturedCookie?.substring(0, 50) ?? 'none'}...');
+            AppLogger.debug('Token data: ${tokenInfo['data']}');
             
-            print('🔄 Bearer token found');
+            AppLogger.auth('Bearer token found');
             
-            // Complete authentication with the Bearer token and headers
+            // Complete authentication but don't navigate immediately
             if (mounted) {
-              print('🔄 Calling onAuthComplete with Bearer token and updated headers...');
-              print('📋 Final headers: ${_extractedHeaders.keys.join(', ')}');
-              print('📋 Cookie header length: ${_extractedHeaders['Cookie']?.length ?? 0}');
+              AppLogger.auth('Calling onAuthComplete with Bearer token and updated headers...');
+              AppLogger.debug('Final headers: ${_extractedHeaders.keys.join(', ')}');
+              AppLogger.debug('Cookie header length: ${_extractedHeaders['Cookie']?.length ?? 0}');
               
               // Add debug logging for the callback
               try {
-                widget.onAuthComplete(bearerToken, _extractedHeaders);
-                print('✅ onAuthComplete callback executed successfully');
+                // Call the callback and wait for it to complete
+                await widget.onAuthComplete(bearerToken, _extractedHeaders);
+                AppLogger.auth('onAuthComplete callback executed successfully');
+                
+                // Add a longer delay to ensure all auth processing is complete
+                await Future.delayed(const Duration(milliseconds: 500));
+                
+                // Only close the WebView after ensuring the callback completed successfully
+                if (mounted && Navigator.canPop(context)) {
+                  AppLogger.auth('Closing WebView after successful authentication');
+                  // Don't return true/false, let the parent handle navigation
+                  Navigator.of(context).pop();
+                }
               } catch (e) {
-                print('❌ Error in onAuthComplete callback: $e');
-              }
-              
-              // Add a small delay to ensure the callback is processed
-              await Future.delayed(const Duration(milliseconds: 100));
-              
-              // Close the WebView after authentication
-              if (mounted && Navigator.canPop(context)) {
-                Navigator.of(context).pop(true);
+                AppLogger.error('Error in onAuthComplete callback', e);
+                // If there's an error, stay on the WebView and let the user retry
+                if (mounted) {
+                  String errorMessage = e.toString();
+                  // Make authentication timeout errors more user-friendly
+                  if (errorMessage.contains('Authentication verification failed after completion')) {
+                    errorMessage = 'Authentication took too long to complete. Please try again or check your internet connection.';
+                  }
+                  setState(() {
+                    _error = 'Authentication failed: $errorMessage';
+                  });
+                }
               }
             }
           } else {
-            print('🍪 Cookie update received (no token yet)');
+            AppLogger.debug('Cookie update received (no token yet)');
           }
         } else {
           // Only log every 5 seconds to reduce spam
           if (DateTime.now().millisecondsSinceEpoch % 5000 < 1000) {
-            print('🔍 No token data found yet...');
+            AppLogger.debug('No token data found yet...');
           }
         }
       } catch (e) {
-        print('❌ Error checking for captured token: $e');
+        AppLogger.error('Error checking for captured token', e);
       }
     });
     
-    // Set a timeout to stop polling after 30 seconds
-    Timer(const Duration(seconds: 30), () {
-      print('⏰ Token polling timeout - stopping...');
+    // Set a timeout to stop polling after 60 seconds (extended for long idle scenarios)
+    Timer(const Duration(seconds: 60), () {
+      AppLogger.auth('Token polling timeout - stopping...');
     });
   }
 
@@ -800,20 +815,20 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
         );
 
         if (spDcCookie.name.isNotEmpty && spDcCookie.value.isNotEmpty) {
-          print('🍪 Found sp_dc cookie: ${spDcCookie.value.substring(0, 20)}...');
+          AppLogger.auth('Found sp_dc cookie: ${spDcCookie.value.substring(0, 20)}...');
           
-          print('🔄 sp_dc detected in cookie check');
+          AppLogger.auth('sp_dc detected in cookie check');
           
           // Update the cookie string in headers with the complete set including sp_dc
           final allCookies = cookies.map((cookie) => '${cookie.name}=${cookie.value}').join('; ');
           _extractedHeaders['Cookie'] = allCookies;
           
-          print('✅ Updated headers with sp_dc cookie');
-          print('🍪 New cookie header: ${allCookies.substring(0, 100)}...');
+          AppLogger.auth('Updated headers with sp_dc cookie');
+          AppLogger.debug('New cookie header: ${allCookies.substring(0, 100)}...');
         }
       }
     } catch (e) {
-      print('❌ Error checking for sp_dc cookie: $e');
+      AppLogger.error('Error checking for sp_dc cookie', e);
     }
   }
 } 

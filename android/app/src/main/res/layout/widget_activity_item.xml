@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:background="@drawable/widget_item_background"
+    android:padding="8dp">
+
+    <!-- Friend Image -->
+    <ImageView
+        android:id="@+id/friend_image"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:src="@drawable/ic_person"
+        android:background="@drawable/rounded_corner_bg"
+        android:scaleType="centerCrop"
+        android:layout_marginEnd="8dp" />
+
+    <!-- Activity Info -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <!-- Track Name with Status -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/track_name"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Track Name"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textColor="@color/widget_text_primary"
+                android:maxLines="1"
+                android:ellipsize="end" />
+
+            <TextView
+                android:id="@+id/status_indicator"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🎵"
+                android:textSize="10sp"
+                android:layout_marginStart="4dp"
+                android:visibility="gone" />
+
+        </LinearLayout>
+
+        <!-- Friend and Artist -->
+        <TextView
+            android:id="@+id/friend_artist"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Friend • Artist"
+            android:textSize="10sp"
+            android:textColor="@color/widget_text_secondary"
+            android:layout_marginTop="1dp"
+            android:maxLines="1"
+            android:ellipsize="end" />
+
+        <!-- Timestamp -->
+        <TextView
+            android:id="@+id/timestamp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="2 minutes ago"
+            android:textSize="9sp"
+            android:textColor="@color/widget_text_tertiary"
+            android:layout_marginTop="2dp" />
+
+    </LinearLayout>
+
+</LinearLayout> 

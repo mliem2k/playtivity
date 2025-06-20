@@ -196,15 +196,19 @@ This build contains the latest development code and may be unstable. Use at your
 
 ## Version Information
 `;        if (buildInfo) {
+            // Clean version display - show nightly version properly formatted
+            const nightlyVersion = buildInfo.version?.fullVersion || buildInfo.version?.versionName || 'Unknown';
+            const baseVersion = buildInfo.baseVersion || this.extractBaseVersionFromBuildInfo(buildInfo) || 'Unknown';
+            
             releaseNotes += `
-- **Version**: ${buildInfo.version?.fullVersion || buildInfo.version?.versionName || 'Unknown'}
-- **Base Version**: ${buildInfo.baseVersion?.fullVersion || buildInfo.baseVersion?.versionName || 'Unknown'}
+- **Version**: \`${nightlyVersion}\`
+- **Base Version**: \`${baseVersion}\`
 
 ## Git Information
 
-- **Branch**: ${buildInfo.git?.branch || 'unknown'}
-- **Commit**: ${buildInfo.git?.commit || 'unknown'}
-- **Commit Message**: ${buildInfo.git?.commitMessage || 'Unknown'}
+- **Branch**: \`${buildInfo.git?.branch || 'unknown'}\`
+- **Commit**: \`${buildInfo.git?.commit || 'unknown'}\`
+- **Commit Message**: "${buildInfo.git?.commitMessage || 'Unknown'}"
 - **Author**: ${buildInfo.git?.author || 'unknown'}
 - **Date**: ${buildInfo.git?.date || 'unknown'}
 
@@ -224,21 +228,52 @@ This build contains the latest development code and may be unstable. Use at your
 
 ## Installation
 
+### Android
 1. Download the APK file from the assets below
 2. Enable "Install from unknown sources" in your Android settings
 3. Install the APK file
 
+### Using ADB
+\`\`\`bash
+adb install ${build.fileName}
+\`\`\`
+
+## ⚠️ Important Notes
+
+- **Unstable**: This build may contain bugs, crashes, or incomplete features
+- **Testing Only**: Not recommended for daily use
+- **Data Loss Risk**: Always backup your data before installing nightly builds
+- **No Support**: Limited support provided for nightly builds
+
 ## What's New in This Nightly
 
-This nightly build includes all commits up to ${buildInfo?.git?.commit?.substring(0, 7) || 'unknown'}.
+This nightly build includes all development changes up to commit **${buildInfo?.git?.commit?.substring(0, 7) || 'unknown'}**.
 
-**Note**: This is an automated nightly release. For stable releases, please see the main releases page.
+For detailed changes, check the [commit history](https://github.com/${this.githubRepo}/commits/${buildInfo?.git?.branch || 'main'}).
 
 ---
-*Built automatically from the latest development code*
+*🤖 This is an automated nightly release built from the latest development code*
 `;
 
         return releaseNotes;
+    }
+
+    extractBaseVersionFromBuildInfo(buildInfo) {
+        // Helper to extract base version from build info if available
+        if (buildInfo.baseVersion) {
+            if (typeof buildInfo.baseVersion === 'string') {
+                return buildInfo.baseVersion;
+            }
+            return buildInfo.baseVersion.fullVersion || buildInfo.baseVersion.versionName;
+        }
+        
+        // Fallback: try to extract from nightly version
+        const nightlyVersion = buildInfo.version?.versionName || buildInfo.version?.fullVersion;
+        if (nightlyVersion && nightlyVersion.includes('-nightly-')) {
+            return nightlyVersion.split('-nightly-')[0];
+        }
+        
+        return null;
     }
 
     async releaseNightly(buildId = null, prerelease = true) {
