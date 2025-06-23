@@ -110,7 +110,6 @@ class AppWrapper extends StatefulWidget {
 }
 
 class _AppWrapperState extends State<AppWrapper> {
-  bool _hasVerifiedAuth = false;
 
   @override
   void dispose() {
@@ -134,19 +133,9 @@ class _AppWrapperState extends State<AppWrapper> {
         print('   - currentUser: ${authProvider.currentUser?.displayName ?? 'null'}');
         print('   - bearerToken exists: ${authProvider.bearerToken != null}');
         
-        // Verify authentication state once when the app is fully initialized and not during loading
-        if (authProvider.isInitialized && !authProvider.isLoading && !_hasVerifiedAuth) {
-          _hasVerifiedAuth = true;
-          WidgetsBinding.instance.addPostFrameCallback((_) async {
-            print('🔍 Performing one-time authentication verification...');
-            final isValid = await authProvider.verifyAndRefreshAuth();
-            if (!isValid && authProvider.bearerToken != null) {
-              print('⚠️ Authentication was invalid, clearing state...');
-              // Authentication was invalid, the provider already cleared the state
-              // No need to do anything else as the UI will rebuild automatically
-            }
-          });
-        }
+        // Only verify authentication state on app resume, not immediately after login
+        // This prevents the user from being kicked out right after successful login
+        // The verification will happen when the app is resumed from background
         
         // Show loading screen while authentication is being initialized or in progress
         if (!authProvider.isInitialized || authProvider.isLoading) {
@@ -227,14 +216,31 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Widget
     
     if (state == AppLifecycleState.resumed) {
       print('📱 App resumed, verifying authentication...');
-      // Verify authentication when app resumes
+      // Verify authentication when app resumes, but only if we're not in an active login flow
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (mounted) {
           final authProvider = Provider.of<AuthProvider>(context, listen: false);
-          final isValid = await authProvider.verifyAndRefreshAuth();
-          if (!isValid) {
-            print('⚠️ Authentication invalid after app resume');
-            // The auth provider will handle clearing state and the UI will rebuild
+          
+          // Skip verification if user is actively logging in or if auth provider is not initialized
+          if (authProvider.isLoading || !authProvider.isInitialized) {
+            print('⚠️ Skipping auth verification - login in progress or not initialized');
+            return;
+          }
+          
+          // Only verify if we think we should be authenticated
+          if (authProvider.isAuthenticated) {
+            print('🔄 Verifying existing authentication...');
+            final isValid = await authProvider.verifyAndRefreshAuth();
+            if (!isValid) {
+              print('⚠️ Authentication invalid after app resume - clearing state');
+              // Clear the authentication state but don't force logout
+              // This allows the user to login again if needed
+              await authProvider.resetAuthenticationState();
+            } else {
+              print('✅ Authentication verified successfully after app resume');
+            }
+          } else {
+            print('ℹ️ No authentication to verify - user not logged in');
           }
         }
       });
