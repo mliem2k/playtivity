@@ -730,7 +730,7 @@ class UpdateService {
                     content: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        CircularProgressIndicator(),
+                        Center(child: CircularProgressIndicator()),
                         SizedBox(height: 16),
                         Text('Starting installation...'),
                       ],
@@ -1141,10 +1141,9 @@ class _DownloadProgressDialogState extends State<_DownloadProgressDialog> {
   }
 
   String _formatSpeed(double bytesPerSecond) {
-    if (bytesPerSecond < 1024) return '${bytesPerSecond.toStringAsFixed(0)} B/s';
-    if (bytesPerSecond < 1024 * 1024) return '${(bytesPerSecond / 1024).toStringAsFixed(1)} KB/s';
-    if (bytesPerSecond < 1024 * 1024 * 1024) return '${(bytesPerSecond / (1024 * 1024)).toStringAsFixed(1)} MB/s';
-    return '${(bytesPerSecond / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB/s';
+    // Convert bytes/s to megabits/s (1 byte = 8 bits, then divide by 1,000,000 for mega)
+    final megabitsPerSecond = (bytesPerSecond * 8) / 1000000;
+    return '${megabitsPerSecond.toStringAsFixed(1)} Mbps';
   }
 
   String _formatTime(double seconds) {
@@ -1192,9 +1191,9 @@ class _DownloadProgressDialogState extends State<_DownloadProgressDialog> {
                 if (_currentProgress == null) {
                   return Column(
                     children: [
-                      const CircularProgressIndicator(),
+                      const Center(child: CircularProgressIndicator()),
                       const SizedBox(height: 16),
-                      Text('Initializing download...'),
+                      const Center(child: Text('Initializing download...')),
                     ],
                   );
                 }
