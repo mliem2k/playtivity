@@ -15,6 +15,7 @@ struct FriendActivity {
     let timestamp: Int64
     let isCurrentlyPlaying: Bool
     let activityType: String
+    let userId: String
     
     func getStatusText() -> String {
         let currentTime = Int64(Date().timeIntervalSince1970 * 1000) // Current time in milliseconds
@@ -138,6 +139,7 @@ struct Provider: TimelineProvider {
             let timestampString = userDefaults?.string(forKey: "friend_\(i)_timestamp") ?? "0"
             let isCurrentlyPlayingString = userDefaults?.string(forKey: "friend_\(i)_is_currently_playing") ?? "false"
             let activityType = userDefaults?.string(forKey: "friend_\(i)_activity_type") ?? "track"
+            let userId = userDefaults?.string(forKey: "friend_\(i)_user_id") ?? ""
             
             let timestamp = Int64(timestampString) ?? 0
             let isCurrentlyPlaying = Bool(isCurrentlyPlayingString) ?? false
@@ -150,7 +152,8 @@ struct Provider: TimelineProvider {
                     albumArt: friendAlbumArt,
                     timestamp: timestamp,
                     isCurrentlyPlaying: isCurrentlyPlaying,
-                    activityType: activityType
+                    activityType: activityType,
+                    userId: userId
                 ))
             }
         }

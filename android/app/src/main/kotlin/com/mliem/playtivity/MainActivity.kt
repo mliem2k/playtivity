@@ -13,6 +13,7 @@ import io.flutter.plugin.common.MethodChannel
 import com.mliem.playtivity.widget.PlaytivityWidgetReceiver
 import com.mliem.playtivity.widget.PlaytivityWidgetProvider
 import com.mliem.playtivity.widget.ImageCacheService
+import android.app.PendingIntent
 
 class MainActivity : FlutterActivity() {    private val WIDGET_CHANNEL = "playtivity_widget"
     private val UPDATE_CHANNEL = "com.mliem.playtivity/update_launcher"
@@ -30,6 +31,16 @@ class MainActivity : FlutterActivity() {    private val WIDGET_CHANNEL = "playti
                 "cacheImages" -> {
                     ImageCacheService.startImageCaching(this)
                     result.success("Image caching started")
+                }
+                "openFriendProfile" -> {
+                    val userId = call.argument<String>("userId")
+                    val friendName = call.argument<String>("friendName")
+                    if (userId != null) {
+                        openSpotifyProfile(userId, friendName)
+                        result.success("Profile opened")
+                    } else {
+                        result.error("INVALID_ARGUMENTS", "User ID is required", null)
+                    }
                 }
                 else -> {
                     result.notImplemented()
@@ -67,7 +78,82 @@ class MainActivity : FlutterActivity() {    private val WIDGET_CHANNEL = "playti
                 }
             }
         }
-    }    private fun updateWidget() {
+    }
+    
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleWidgetIntent(intent)
+    }
+    
+    override fun onResume() {
+        super.onResume()
+        handleWidgetIntent(intent)
+    }
+    
+    private fun handleWidgetIntent(intent: Intent?) {
+        android.util.Log.d("PlaytivityWidget", "handleWidgetIntent called with intent: $intent")
+        intent?.let {
+            android.util.Log.d("PlaytivityWidget", "Intent action: ${it.action}")
+            android.util.Log.d("PlaytivityWidget", "Intent extras: ${it.extras}")
+            
+            when (it.action) {
+                "OPEN_FRIEND_PROFILE" -> {
+                    val friendUserId = it.getStringExtra("friendUserId")
+                    val friendName = it.getStringExtra("friendName")
+                    
+                    android.util.Log.d("PlaytivityWidget", "Opening friend profile: $friendName (ID: $friendUserId)")
+                    
+                    if (!friendUserId.isNullOrEmpty()) {
+                        // Try to open Spotify profile
+                        openSpotifyProfile(friendUserId, friendName)
+                    } else {
+                        android.util.Log.w("PlaytivityWidget", "Friend user ID is null or empty!")
+                    }
+                }
+                "REFRESH_WIDGET" -> {
+                    android.util.Log.d("PlaytivityWidget", "Refresh widget requested")
+                    updateWidget()
+                }
+                else -> {
+                    android.util.Log.d("PlaytivityWidget", "Unknown action: ${it.action}")
+                }
+            }
+        }
+    }
+    
+    private fun openSpotifyProfile(userId: String, friendName: String?) {
+        try {
+            // Create Spotify user URI
+            val spotifyUri = "spotify:user:$userId"
+            val spotifyIntent = Intent(Intent.ACTION_VIEW, Uri.parse(spotifyUri))
+            
+            android.util.Log.d("PlaytivityWidget", "Attempting to open Spotify profile: $spotifyUri")
+            
+            // Try to open in Spotify app first
+            spotifyIntent.setPackage("com.spotify.music")
+            if (spotifyIntent.resolveActivity(packageManager) != null) {
+                startActivity(spotifyIntent)
+                android.util.Log.d("PlaytivityWidget", "Opened in Spotify app")
+                return
+            }
+            
+            // Fallback to web browser
+            val webUrl = "https://open.spotify.com/user/$userId"
+            val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse(webUrl))
+            
+            if (webIntent.resolveActivity(packageManager) != null) {
+                startActivity(webIntent)
+                android.util.Log.d("PlaytivityWidget", "Opened in web browser: $webUrl")
+            } else {
+                android.util.Log.w("PlaytivityWidget", "No app found to open Spotify profile")
+            }
+            
+        } catch (e: Exception) {
+            android.util.Log.e("PlaytivityWidget", "Error opening Spotify profile for $userId", e)
+        }
+    }
+
+    private fun updateWidget() {
         try {
             // Check both SharedPreferences sources
             val flutterPrefs = getSharedPreferences("FlutterSharedPreferences", MODE_PRIVATE)

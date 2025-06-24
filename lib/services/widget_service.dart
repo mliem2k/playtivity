@@ -101,7 +101,7 @@ class WidgetService {
           final activity = activities[i];
           // Reduce individual activity logging
           if (i < 3) { // Only log first 3 activities to reduce noise
-            print('📊 Widget: Activity $i - ${activity.user.displayName}: ${activity.contentName}');
+            print('📊 Widget: Activity $i - ${activity.user.displayName} (ID: ${activity.user.id}): ${activity.contentName}');
           }
           
           // Save via HomeWidget - batch operations for better performance
@@ -265,7 +265,8 @@ class WidgetService {
         final name = prefs.getString('flutter.friend_${i}_name') ?? 'null';
         final track = prefs.getString('flutter.friend_${i}_track') ?? 'null';
         final artist = prefs.getString('flutter.friend_${i}_artist') ?? 'null';
-        print('📊   friend_$i: $name - $track by $artist');
+        final userId = prefs.getString('flutter.friend_${i}_user_id') ?? 'null';
+        print('📊   friend_$i: $name - $track by $artist (ID: $userId)');
       }
       if (count > 5) {
         print('📊   ... and ${count - 5} more activities');

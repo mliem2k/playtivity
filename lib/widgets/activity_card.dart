@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../models/activity.dart';
 import '../models/track.dart';
 import '../utils/spotify_launcher.dart';
+import '../utils/friend_profile_launcher.dart';
 
 class ActivityCard extends StatelessWidget {
   final Activity activity;
@@ -29,7 +30,10 @@ class ActivityCard extends StatelessWidget {
                   InkWell(
                     onTap: () async {
                       // Launch the user profile when avatar is tapped
-                      await SpotifyLauncher.launchUser(activity.user.id);
+                      await FriendProfileLauncher.openFriendProfile(
+                        activity.user.id,
+                        friendName: activity.user.displayName,
+                      );
                     },
                     borderRadius: BorderRadius.circular(20),
                     child: CircleAvatar(
@@ -62,7 +66,10 @@ class ActivityCard extends StatelessWidget {
                         InkWell(
                           onTap: () async {
                             // Launch the user profile when name is tapped
-                            await SpotifyLauncher.launchUser(activity.user.id);
+                            await FriendProfileLauncher.openFriendProfile(
+                              activity.user.id,
+                              friendName: activity.user.displayName,
+                            );
                           },
                           borderRadius: BorderRadius.circular(4),
                           child: Padding(

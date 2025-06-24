@@ -424,9 +424,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(),
+              Center(child: CircularProgressIndicator()),
               SizedBox(height: 16),
-              Text('Checking for updates...'),
+              Center(child: Text('Checking for updates...')),
             ],
           ),
         );

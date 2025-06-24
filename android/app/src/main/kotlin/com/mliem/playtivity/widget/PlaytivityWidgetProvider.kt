@@ -23,7 +23,8 @@ data class ActivityItem(
     val cachedImagePath: String,
     val timestamp: Long,
     val isCurrentlyPlaying: Boolean,
-    val activityType: String
+    val activityType: String,
+    val userId: String = ""
 ) {
     fun getTimeAgoText(): String {
         if (isCurrentlyPlaying) {
@@ -102,6 +103,10 @@ class PlaytivityWidgetProvider : AppWidgetProvider() {
                         ?: flutterPrefs.getString("flutter.friend_${i}_is_currently_playing", "false") ?: "false"
                     val activityType = prefs.getString("friend_${i}_activity_type", "track") 
                         ?: flutterPrefs.getString("flutter.friend_${i}_activity_type", "track") ?: "track"
+                    val userId = prefs.getString("friend_${i}_user_id", "") 
+                        ?: flutterPrefs.getString("flutter.friend_${i}_user_id", "") ?: ""
+                    
+                    android.util.Log.d("PlaytivityWidget", "Loading activity $i - Name: $friendName, Track: $trackName, UserId: $userId")
                     
                     val timestamp = try {
                         timestampString.toLongOrNull() ?: System.currentTimeMillis()
@@ -124,7 +129,8 @@ class PlaytivityWidgetProvider : AppWidgetProvider() {
                                 cachedImagePath = cachedImagePath,
                                 timestamp = timestamp,
                                 isCurrentlyPlaying = isCurrentlyPlaying,
-                                activityType = activityType
+                                activityType = activityType,
+                                userId = userId
                             )
                         )
                     }
@@ -145,6 +151,17 @@ class PlaytivityWidgetProvider : AppWidgetProvider() {
                     intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
                     views.setRemoteAdapter(R.id.activities_list, intent)
                     
+                    // Set up click template for individual items
+                    val clickTemplate = Intent(context, MainActivity::class.java)
+                    clickTemplate.action = "OPEN_FRIEND_PROFILE"
+                    clickTemplate.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    val clickPendingTemplate = PendingIntent.getActivity(
+                        context, 0, clickTemplate,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+                    )
+                    views.setPendingIntentTemplate(R.id.activities_list, clickPendingTemplate)
+                    android.util.Log.d("PlaytivityWidget", "Set pending intent template for ListView")
+                    
                     // Set empty view
                     views.setEmptyView(R.id.activities_list, R.id.empty_state)
                     
@@ -152,15 +169,11 @@ class PlaytivityWidgetProvider : AppWidgetProvider() {
                     views.setViewVisibility(R.id.activities_list, View.VISIBLE)
                     views.setViewVisibility(R.id.empty_state, View.GONE)
                     
-                    // Update activity count in header
+                    // Update currently playing count
                     val currentlyPlayingCount = sortedActivities.count { it.isCurrentlyPlaying }
-                    val countText = if (currentlyPlayingCount > 0) {
-                        "$currentlyPlayingCount live"
-                    } else {
-                        "${sortedActivities.size} total"
+                    if (currentlyPlayingCount > 0) {
+                        android.util.Log.d("PlaytivityWidget", "Showing $currentlyPlayingCount live activities")
                     }
-                    views.setTextViewText(R.id.activity_count, countText)
-                    views.setViewVisibility(R.id.activity_count, View.VISIBLE)
                     
                     android.util.Log.d("PlaytivityWidget", "Showing ${sortedActivities.size} activities, $currentlyPlayingCount currently playing")
                 } else {
@@ -170,13 +183,25 @@ class PlaytivityWidgetProvider : AppWidgetProvider() {
                 showEmptyState(views)
             }
             
-            // Set click intent to open main app
-            val intent = Intent(context, MainActivity::class.java)
-            val pendingIntent = PendingIntent.getActivity(
-                context, 0, intent, 
+            // Set click intent to open main app only for header area
+            val mainIntent = Intent(context, MainActivity::class.java)
+            val mainPendingIntent = PendingIntent.getActivity(
+                context, 0, mainIntent, 
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            views.setOnClickPendingIntent(R.id.widget_container, pendingIntent)
+            views.setOnClickPendingIntent(R.id.widget_title, mainPendingIntent)
+            android.util.Log.d("PlaytivityWidget", "Set main app click on header title")
+            
+            // Set refresh button click intent
+            val refreshIntent = Intent(context, MainActivity::class.java)
+            refreshIntent.action = "REFRESH_WIDGET"
+            refreshIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            val refreshPendingIntent = PendingIntent.getActivity(
+                context, 1, refreshIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+            )
+            views.setOnClickPendingIntent(R.id.refresh_button, refreshPendingIntent)
+            android.util.Log.d("PlaytivityWidget", "Set refresh button click handler")
             
             // Update the widget
             appWidgetManager.updateAppWidget(appWidgetId, views)
@@ -187,7 +212,6 @@ class PlaytivityWidgetProvider : AppWidgetProvider() {
         private fun showEmptyState(views: RemoteViews) {
             views.setViewVisibility(R.id.activities_list, View.GONE)
             views.setViewVisibility(R.id.empty_state, View.VISIBLE)
-            views.setViewVisibility(R.id.activity_count, View.GONE)
         }
     }
 }
@@ -248,15 +272,27 @@ class PlaytivityWidgetRemoteViewsFactory(
         // Load friend image
         loadFriendImage(views, activity.cachedImagePath, activity.friendName)
         
-        // Set click intent
-        val clickIntent = Intent(context, MainActivity::class.java)
-        val pendingIntent = PendingIntent.getActivity(
-            context, 
-            position, 
-            clickIntent, 
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        views.setOnClickFillInIntent(R.id.friend_image, clickIntent)
+        // Set click intent to open friend profile only if we have a valid user ID
+        if (activity.userId.isNotEmpty()) {
+            val clickIntent = Intent()
+            clickIntent.action = "OPEN_FRIEND_PROFILE"
+            clickIntent.putExtra("friendUserId", activity.userId)
+            clickIntent.putExtra("friendName", activity.friendName)
+            android.util.Log.d("PlaytivityWidget", "Setting click intent for ${activity.friendName} with userId: ${activity.userId}")
+            
+            // Make multiple elements clickable for better UX
+            views.setOnClickFillInIntent(R.id.friend_image, clickIntent)
+            views.setOnClickFillInIntent(R.id.track_name, clickIntent)
+            views.setOnClickFillInIntent(R.id.friend_artist, clickIntent)
+            views.setOnClickFillInIntent(R.id.timestamp, clickIntent)
+            
+            // Make the entire item clickable
+            views.setOnClickFillInIntent(R.id.widget_activity_item, clickIntent)
+            
+            android.util.Log.d("PlaytivityWidget", "Made all elements clickable for ${activity.friendName}")
+        } else {
+            android.util.Log.w("PlaytivityWidget", "No userId for ${activity.friendName} - item will not be clickable")
+        }
         
         return views
     }
@@ -298,6 +334,10 @@ class PlaytivityWidgetRemoteViewsFactory(
                 ?: flutterPrefs.getString("flutter.friend_${i}_is_currently_playing", "false") ?: "false"
             val activityType = prefs.getString("friend_${i}_activity_type", "track") 
                 ?: flutterPrefs.getString("flutter.friend_${i}_activity_type", "track") ?: "track"
+            val userId = prefs.getString("friend_${i}_user_id", "") 
+                ?: flutterPrefs.getString("flutter.friend_${i}_user_id", "") ?: ""
+            
+            android.util.Log.d("PlaytivityWidget", "Loading activity $i - Name: $friendName, Track: $trackName, UserId: $userId")
             
             val timestamp = try {
                 timestampString.toLongOrNull() ?: System.currentTimeMillis()
@@ -312,7 +352,10 @@ class PlaytivityWidgetRemoteViewsFactory(
             }
             
             if (friendName.isNotEmpty() && trackName.isNotEmpty()) {
-                android.util.Log.d("PlaytivityWidget", "Activity $i: $friendName, cached image: $cachedImagePath")
+                android.util.Log.d("PlaytivityWidget", "Activity $i: $friendName (ID: '$userId'), track: $trackName, cached image: $cachedImagePath")
+                if (userId.isEmpty()) {
+                    android.util.Log.w("PlaytivityWidget", "WARNING: Empty userId for friend $friendName at position $i")
+                }
                 activities.add(
                     ActivityItem(
                         friendName = friendName,
@@ -321,7 +364,8 @@ class PlaytivityWidgetRemoteViewsFactory(
                         cachedImagePath = cachedImagePath,
                         timestamp = timestamp,
                         isCurrentlyPlaying = isCurrentlyPlaying,
-                        activityType = activityType
+                        activityType = activityType,
+                        userId = userId
                     )
                 )
             }
