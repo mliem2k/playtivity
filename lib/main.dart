@@ -15,6 +15,8 @@ import 'services/http_interceptor.dart';
 import 'services/update_service.dart';
 import 'utils/theme.dart';
 import 'utils/auth_utils.dart';
+import 'dart:async';
+import 'services/app_logger.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -46,12 +48,12 @@ Future<void> _checkForUpdatesOnStartup() async {
       // Store the result for later use
       if (updateResult.hasUpdate) {
         // We'll handle the update notification in the app UI later
-        print('Update available: ${updateResult.updateInfo?.version}');
+        AppLogger.info('Update available: ${updateResult.updateInfo?.version}');
       }
     }
   } catch (e) {
     // Ignore errors during startup, we don't want to block app launch
-    print('Error checking for updates on startup: $e');
+    AppLogger.error('Error checking for updates on startup', e);
   }
 }
 
@@ -79,19 +81,19 @@ class MyApp extends StatelessWidget {
             home: const AppWrapper(),
             routes: {
               '/login': (context) {
-                print('🔗 Navigating to LoginScreen via route');
+                AppLogger.info('🔗 Navigating to LoginScreen via route');
                 return const LoginScreen();
               },
               '/home': (context) {
-                print('🔗 Navigating to HomeScreen via route');
+                AppLogger.info('🔗 Navigating to HomeScreen via route');
                 return const HomeScreen();
               },
               '/profile': (context) {
-                print('🔗 Navigating to ProfileScreen via route');
+                AppLogger.info('🔗 Navigating to ProfileScreen via route');
                 return const ProfileScreen();
               },
               '/settings': (context) {
-                print('🔗 Navigating to SettingsScreen via route');
+                AppLogger.info('🔗 Navigating to SettingsScreen via route');
                 return const SettingsScreen();
               },
             },
@@ -126,12 +128,12 @@ class _AppWrapperState extends State<AppWrapper> {
     return Consumer<AuthProvider>(
       builder: (context, authProvider, child) {
         // Debug logging for troubleshooting
-        print('🔍 AppWrapper rebuild - AuthProvider state:');
-        print('   - isInitialized: ${authProvider.isInitialized}');
-        print('   - isLoading: ${authProvider.isLoading}');
-        print('   - isAuthenticated: ${authProvider.isAuthenticated}');
-        print('   - currentUser: ${authProvider.currentUser?.displayName ?? 'null'}');
-        print('   - bearerToken exists: ${authProvider.bearerToken != null}');
+        AppLogger.debug('🔍 AppWrapper rebuild - AuthProvider state:');
+        AppLogger.debug('   - isInitialized: ${authProvider.isInitialized}');
+        AppLogger.debug('   - isLoading: ${authProvider.isLoading}');
+        AppLogger.debug('   - isAuthenticated: ${authProvider.isAuthenticated}');
+        AppLogger.debug('   - currentUser: ${authProvider.currentUser?.displayName ?? 'null'}');
+        AppLogger.debug('   - bearerToken exists: ${authProvider.bearerToken != null}');
         
         // Only verify authentication state on app resume, not immediately after login
         // This prevents the user from being kicked out right after successful login
@@ -139,7 +141,7 @@ class _AppWrapperState extends State<AppWrapper> {
         
         // Show loading screen while authentication is being initialized or in progress
         if (!authProvider.isInitialized || authProvider.isLoading) {
-          print('📱 Showing loading screen...');
+          AppLogger.info('📱 Showing loading screen...');
           return const Scaffold(
             body: SafeArea(
               child: Center(
@@ -161,13 +163,13 @@ class _AppWrapperState extends State<AppWrapper> {
         
         // Add explicit check with fallback
         final isAuth = authProvider.isAuthenticated;
-        print('📊 Final authentication decision: $isAuth');
+        AppLogger.debug('📊 Final authentication decision: $isAuth');
         
         if (isAuth) {
-          print('📱 Showing MainNavigationScreen...');
+          AppLogger.info('📱 Showing MainNavigationScreen...');
           return const MainNavigationScreen();
         } else {
-          print('📱 Showing LoginScreen...');
+          AppLogger.info('📱 Showing LoginScreen...');
           return const LoginScreen();
         }
       },
@@ -193,7 +195,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Widget
   @override
   void initState() {
     super.initState();
-    print('🏠 MainNavigationScreen initialized');
+    AppLogger.info('🏠 MainNavigationScreen initialized');
     
     // Add lifecycle observer
     WidgetsBinding.instance.addObserver(this);
@@ -215,7 +217,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Widget
     super.didChangeAppLifecycleState(state);
     
     if (state == AppLifecycleState.resumed) {
-      print('📱 App resumed, verifying authentication...');
+      AppLogger.info('📱 App resumed, verifying authentication...');
       // Verify authentication when app resumes, but only if we're not in an active login flow
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (mounted) {
@@ -223,24 +225,24 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Widget
           
           // Skip verification if user is actively logging in or if auth provider is not initialized
           if (authProvider.isLoading || !authProvider.isInitialized) {
-            print('⚠️ Skipping auth verification - login in progress or not initialized');
+            AppLogger.info('⚠️ Skipping auth verification - login in progress or not initialized');
             return;
           }
           
           // Only verify if we think we should be authenticated
           if (authProvider.isAuthenticated) {
-            print('🔄 Verifying existing authentication...');
+            AppLogger.info('🔄 Verifying existing authentication...');
             final isValid = await authProvider.verifyAndRefreshAuth();
             if (!isValid) {
-              print('⚠️ Authentication invalid after app resume - clearing state');
+              AppLogger.info('⚠️ Authentication invalid after app resume - clearing state');
               // Clear the authentication state but don't force logout
               // This allows the user to login again if needed
               await authProvider.resetAuthenticationState();
             } else {
-              print('✅ Authentication verified successfully after app resume');
+              AppLogger.info('✅ Authentication verified successfully after app resume');
             }
           } else {
-            print('ℹ️ No authentication to verify - user not logged in');
+            AppLogger.info('ℹ️ No authentication to verify - user not logged in');
           }
         }
       });
@@ -250,15 +252,15 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Widget
   Future<void> _registerBackgroundUpdates() async {
     try {
       await BackgroundService.registerWidgetUpdateTask();
-      print('✅ Background widget updates registered');
+      AppLogger.info('✅ Background widget updates registered');
     } catch (e) {
-      print('❌ Failed to register background updates: $e');
+      AppLogger.error('❌ Failed to register background updates', e);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    print('🏠 MainNavigationScreen building with tab index: $_currentIndex');
+    AppLogger.debug('🏠 MainNavigationScreen building with tab index: $_currentIndex');
     
     return Consumer<SpotifyProvider>(
       builder: (context, spotifyProvider, child) {
@@ -359,17 +361,19 @@ class _UpdateCheckerWrapperState extends State<_UpdateCheckerWrapper> {
       
       // If update available, show banner
       if (updateResult.hasUpdate && updateResult.updateInfo != null) {
+        AppLogger.info('Update available: ${updateResult.updateInfo?.version}');
         setState(() {
           _updateInfo = updateResult.updateInfo;
         });
         
         // If auto-download is enabled, download immediately
         if (autoDownload && mounted) {
+          AppLogger.info('Auto-download enabled, starting download...');
           _handleUpdateDownload();
         }
       }
     } catch (e) {
-      print('Error checking for updates: $e');
+      AppLogger.error('Error checking for updates', e);
     }
   }
   

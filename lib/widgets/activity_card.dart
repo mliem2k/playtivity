@@ -5,6 +5,7 @@ import '../models/activity.dart';
 import '../models/track.dart';
 import '../utils/spotify_launcher.dart';
 import '../utils/friend_profile_launcher.dart';
+import 'package:playtivity/services/app_logger.dart';
 
 class ActivityCard extends StatelessWidget {
   final Activity activity;
@@ -254,7 +255,7 @@ class ActivityCard extends StatelessWidget {
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Theme.of(context).primaryColor.withOpacity(0.1),
+                    color: Theme.of(context).primaryColor.withAlpha(26), // 0.1 * 255 ≈ 26
                   ),
                   child: Icon(
                     Icons.play_arrow,
@@ -298,12 +299,12 @@ class ActivityCard extends StatelessWidget {
       // Use the album URI directly from the track data
       if (track.albumUri != null && track.albumUri!.isNotEmpty) {
         await SpotifyLauncher.launchSpotifyUri(track.albumUri!);
-        print('✅ Launched album: ${track.albumUri}');
+        AppLogger.spotify('Launched album: ${track.albumUri}');
       } else {
-        print('⚠️ No album URI available, not launching anything');
+        AppLogger.warning('No album URI available, not launching anything');
       }
     } catch (e) {
-      print('❌ Error launching album: $e');
+      AppLogger.error('Error launching album', e);
     }
   }
 

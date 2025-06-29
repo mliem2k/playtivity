@@ -73,8 +73,12 @@ class VersionUtils {
     final v2BaseParts = v2Parts[0].split('.');
     
     // Normalize to have at least 3 parts (x.y.z)
-    while (v1BaseParts.length < 3) v1BaseParts.add('0');
-    while (v2BaseParts.length < 3) v2BaseParts.add('0');
+    while (v1BaseParts.length < 3) {
+      v1BaseParts.add('0');
+    }
+    while (v2BaseParts.length < 3) {
+      v2BaseParts.add('0');
+    }
     
     // Compare major.minor.patch parts
     for (int i = 0; i < 3; i++) {
@@ -112,54 +116,61 @@ class VersionUtils {
     debugPrint('  New: $newVersion');
     debugPrint('  New build time: $newBuildTime');
     
-    // First, check if the versions are exactly the same (ignoring build metadata after +)
-    final currentClean = currentVersion.split('+')[0];
-    final newClean = newVersion.split('+')[0];
-    
-    if (currentClean == newClean) {
-      debugPrint('  Versions are identical (ignoring build metadata), no update needed');
-      return false;
-    }
-    
-    // Extract the build timestamp from the current version string if possible
+    // Extract the build timestamp from both versions
     DateTime? currentBuildTime;
+    DateTime? newVersionBuildTime;
     
     try {
-      if (currentVersion.contains('nightly')) {
-        // Handle complex nightly version strings that may have multiple nightly parts
-        final nightlyRegex = RegExp(r'nightly-(\d{8})-(\d{6})');
-        final matches = nightlyRegex.allMatches(currentVersion);
+      // Extract timestamps using regex
+      final nightlyRegex = RegExp(r'nightly-(\d{8})-(\d{6})');
+      
+      // Extract current version timestamp
+      final currentMatches = nightlyRegex.allMatches(currentVersion);
+      if (currentMatches.isNotEmpty) {
+        final lastMatch = currentMatches.last;
+        final datePart = lastMatch.group(1)!; // YYYYMMDD
+        final timePart = lastMatch.group(2)!; // HHMMSS
         
-        if (matches.isNotEmpty) {
-          // Use the last (most recent) nightly timestamp in the version string
-          final lastMatch = matches.last;
-          final datePart = lastMatch.group(1)!; // YYYYMMDD
-          final timePart = lastMatch.group(2)!; // HHMMSS
-          
-          final year = int.parse(datePart.substring(0, 4));
-          final month = int.parse(datePart.substring(4, 6));
-          final day = int.parse(datePart.substring(6, 8));
-          final hour = int.parse(timePart.substring(0, 2));
-          final minute = int.parse(timePart.substring(2, 4));
-          final second = int.parse(timePart.substring(4, 6));
-          
-          currentBuildTime = DateTime(year, month, day, hour, minute, second);
-          debugPrint('  Parsed current build time: $currentBuildTime');
-        }
+        final year = int.parse(datePart.substring(0, 4));
+        final month = int.parse(datePart.substring(4, 6));
+        final day = int.parse(datePart.substring(6, 8));
+        final hour = int.parse(timePart.substring(0, 2));
+        final minute = int.parse(timePart.substring(2, 4));
+        final second = int.parse(timePart.substring(4, 6));
+        
+        currentBuildTime = DateTime(year, month, day, hour, minute, second);
+        debugPrint('  Parsed current build time: $currentBuildTime');
+      }
+      
+      // Extract new version timestamp
+      final newMatches = nightlyRegex.allMatches(newVersion);
+      if (newMatches.isNotEmpty) {
+        final lastMatch = newMatches.last;
+        final datePart = lastMatch.group(1)!; // YYYYMMDD
+        final timePart = lastMatch.group(2)!; // HHMMSS
+        
+        final year = int.parse(datePart.substring(0, 4));
+        final month = int.parse(datePart.substring(4, 6));
+        final day = int.parse(datePart.substring(6, 8));
+        final hour = int.parse(timePart.substring(0, 2));
+        final minute = int.parse(timePart.substring(2, 4));
+        final second = int.parse(timePart.substring(4, 6));
+        
+        newVersionBuildTime = DateTime(year, month, day, hour, minute, second);
+        debugPrint('  Parsed new version build time: $newVersionBuildTime');
       }
     } catch (e) {
-      debugPrint('Error parsing current nightly version: $e');
+      debugPrint('Error parsing nightly version timestamps: $e');
     }
     
-    // If we can't determine build time from version string or they're too close, 
-    // use a more lenient comparison
-    if (currentBuildTime == null) {
-      debugPrint('  Could not parse current build time, using version string comparison');
+    // If we can't parse either timestamp, fall back to string comparison
+    if (currentBuildTime == null || newVersionBuildTime == null) {
+      debugPrint('  Could not parse build times, using string comparison');
       return isNewerVersion(currentVersion: currentVersion, newVersion: newVersion);
     }
     
     // Compare build times with a threshold to avoid updates for very recent builds
-    final timeDifference = newBuildTime.difference(currentBuildTime);
+    final timeDifference = newVersionBuildTime.difference(currentBuildTime);
     const minimumUpdateThreshold = Duration(minutes: 5); // Minimum 5 minutes difference
     
     final isNewer = timeDifference > minimumUpdateThreshold;

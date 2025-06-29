@@ -41,6 +41,7 @@ class AuthUtils {
       await authProvider.logout();
       
       // Show WebView login
+      if (!context.mounted) return false;
       final result = await Navigator.of(context).push<bool>(
         MaterialPageRoute(
           builder: (context) => SpotifyWebViewLogin(

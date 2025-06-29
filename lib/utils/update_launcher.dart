@@ -60,10 +60,10 @@ class UpdateLauncher {
       
       // Check file size to ensure it's not corrupted
       final fileSize = await file.length();
-      AppLogger.info('Installing APK from: $filePath (${fileSize} bytes)');
+      AppLogger.info('Installing APK from: $filePath ($fileSize bytes)');
       
       if (fileSize < 1024 * 1024) { // Less than 1MB is suspicious for an APK
-        AppLogger.warning('APK file seems too small: ${fileSize} bytes');
+        AppLogger.warning('APK file seems too small: $fileSize bytes');
       }
       
       // Check file permissions
@@ -81,8 +81,8 @@ class UpdateLauncher {
         return true;
       } on PlatformException catch (e) {
         lastException = e;
-        AppLogger.warning('Platform channel failed: ${e.message} (Code: ${e.code})');
-        AppLogger.info('Details: ${e.details}');
+        AppLogger.warning('Platform channel failed: $e.message (Code: $e.code)');
+        AppLogger.info('Details: $e.details');
       } catch (e) {
         lastException = Exception('Platform channel error: $e');
         AppLogger.error('Unexpected platform channel error', e);

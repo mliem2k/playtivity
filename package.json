@@ -11,6 +11,7 @@
     "release:minor": "node release-apk.js minor",
     "release:major": "node release-apk.js major",
     "release:apk-only": "node release-apk.js --no-bundle",
+    "release:delete-all": "node delete-releases.js",
     "nightly": "node nightly-apk.js",
     "nightly:keep-10": "node nightly-apk.js --keep-builds 10",
     "nightly:promote": "node nightly-release.js",
