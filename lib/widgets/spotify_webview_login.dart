@@ -50,7 +50,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(12),
-              color: Theme.of(context).primaryColor.withValues(alpha: 26), // 0.1 * 255 ≈ 26
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
               child: Row(
                 children: [
                   Icon(

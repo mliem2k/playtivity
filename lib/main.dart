@@ -288,7 +288,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Widget
         decoration: BoxDecoration(
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.1),
+              color: Colors.black.withValues(alpha: 0.1),
               blurRadius: 10,
               offset: const Offset(0, -2),
             ),
@@ -434,7 +434,7 @@ class _UpdateCheckerWrapperState extends State<_UpdateCheckerWrapper> {
                     onPressed: _handleUpdateDownload,
                     style: TextButton.styleFrom(
                       foregroundColor: Colors.white,
-                      backgroundColor: Colors.white.withOpacity(0.2),
+                      backgroundColor: Colors.white.withValues(alpha: 0.2),
                     ),
                     child: const Text('Update'),
                   ),
