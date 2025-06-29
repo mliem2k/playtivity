@@ -6,6 +6,7 @@ import '../providers/theme_provider.dart';
 import '../providers/spotify_provider.dart';
 import '../services/update_service.dart';
 import '../utils/version_utils.dart';
+import '../services/app_logger.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -415,23 +416,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
   
   // Handle the update check process with modal dialog
   Future<void> _checkForUpdates(BuildContext context) async {
+    // Store context.mounted in a local variable
+    final isContextMounted = context.mounted;
+    
     // Show loading modal
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext dialogContext) {
-        return const AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Center(child: CircularProgressIndicator()),
-              SizedBox(height: 16),
-              Center(child: Text('Checking for updates...')),
-            ],
-          ),
-        );
-      },
-    );
+    if (isContextMounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext dialogContext) {
+          return const AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Center(child: CircularProgressIndicator()),
+                SizedBox(height: 16),
+                Center(child: Text('Checking for updates...')),
+              ],
+            ),
+          );
+        },
+      );
+    }
     
     try {
       // Get current version info
@@ -470,30 +476,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
         }
       } else if (updateResult.error != null) {
         // Show error modal with version info
-        _showUpdateResultDialog(
-          context,
-          'Update Check Failed',
-          'Error: ${updateResult.error}',
-          Icons.error,
-          Colors.red,
-          currentVersion: currentVersion,
-        );
+        if (context.mounted) {
+          _showUpdateResultDialog(
+            context,
+            'Update Check Failed',
+            'Error: ${updateResult.error}',
+            Icons.error,
+            Colors.red,
+            currentVersion: currentVersion,
+          );
+        }
       } else {
         // No updates available modal - show current and latest version info
-        final isNightly = await UpdateService.getNightlyBuildPreference();
-        final latestInfo = isNightly 
-            ? UpdateService.getLatestNightlyInfo() 
-            : UpdateService.getLatestReleaseInfo();
-        
-        _showUpdateResultDialog(
-          context,
-          'No Updates Available',
-          'You are already on the latest version!',
-          Icons.check_circle,
-          Colors.green,
-          currentVersion: currentVersion,
-          latestVersion: latestInfo,
-        );
+        if (context.mounted) {
+          final isNightly = await UpdateService.getNightlyBuildPreference();
+          if (!context.mounted) return;
+          
+          final latestInfo = isNightly 
+              ? UpdateService.getLatestNightlyInfo() 
+              : UpdateService.getLatestReleaseInfo();
+          
+          _showUpdateResultDialog(
+            context,
+            'No Updates Available',
+            'You are already on the latest version!',
+            Icons.check_circle,
+            Colors.green,
+            currentVersion: currentVersion,
+            latestVersion: latestInfo,
+          );
+        }
       }
     } catch (e) {
       // Close loading dialog if still open
@@ -505,6 +517,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (context.mounted) {
         // Get current version for error display
         final currentVersion = await UpdateService.getCurrentAppVersion();
+        if (!context.mounted) return;
+        
         _showUpdateResultDialog(
           context,
           'Update Check Failed',
@@ -542,8 +556,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       versionInfo += 'Checked: GitHub Repository\n';
       versionInfo += 'No newer version found';
     }
-
-
 
     showDialog(
       context: context,
@@ -620,12 +632,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: const Text('Cancel'),
             ),
             TextButton(
-              onPressed: () async {
+              onPressed: () {
+                // Store context before async gap
+                final settingsContext = context;
+                
                 // Close the confirmation dialog first
                 Navigator.of(dialogContext).pop();
                 
-                // Perform logout with the settings screen context, not dialog context
-                await _performLogout(context);
+                // Perform logout with the stored context
+                _performLogout(settingsContext);
               },
               style: TextButton.styleFrom(
                 foregroundColor: Colors.red,
@@ -639,8 +654,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }  
   
   Future<void> _performLogout(BuildContext context) async {
-    print('🚪 Starting logout process...');
+    AppLogger.auth('Starting logout process...');
     
+    // Store route name at the start, before any async operations
+    final currentRoute = ModalRoute.of(context)?.settings.name;
     final authProvider = context.read<AuthProvider>();
     final spotifyProvider = context.read<SpotifyProvider>();
     
@@ -648,19 +665,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await authProvider.logout();
     spotifyProvider.clearData();
     
-    print('🔍 Checking navigation context...');
-    print('   - context.mounted: ${context.mounted}');
-    print('   - Current route: ${ModalRoute.of(context)?.settings.name}');
+    AppLogger.auth('Checking navigation context...');
+    AppLogger.auth('   - context.mounted: ${context.mounted}');
+    AppLogger.auth('   - Current route: $currentRoute');
     
     // Check if still in valid context and not already on login screen
-    if (context.mounted && ModalRoute.of(context)?.settings.name != '/login') {
-      print('✅ Navigating to login screen...');
+    if (context.mounted && currentRoute != '/login') {
+      AppLogger.auth('Navigating to login screen...');
       Navigator.of(context).pushNamedAndRemoveUntil(
         '/login',
         (route) => false,
       );
     } else {
-      print('⚠️ Navigation skipped - context not valid or already on login');
+      AppLogger.auth('Navigation skipped - context not valid or already on login');
     }
   }
 }

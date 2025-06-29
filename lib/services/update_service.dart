@@ -12,9 +12,9 @@ import 'app_logger.dart';
 
 class UpdateService {
   // The base URL for checking updates
-  static const String _baseUrl = 'https://raw.githubusercontent.com/mliem2k/playtivity/main';
+  // static const String _baseUrl = 'https://raw.githubusercontent.com/mliem2k/playtivity/main';
   static const String _githubReleasesApi = 'https://api.github.com/repos/mliem2k/playtivity/releases';
-  static const String _nightlyInfoPath = 'nightly/latest-nightly-info.json';
+  // static const String _nightlyInfoPath = 'nightly/latest-nightly-info.json';
   
   // Preference keys
   static const String _prefLastCheckTime = 'last_update_check_time';
@@ -363,8 +363,12 @@ class UpdateService {
     final releaseBaseParts = releaseBase.split('.');
     
     // Normalize to have at least 3 parts
-    while (currentBaseParts.length < 3) currentBaseParts.add('0');
-    while (releaseBaseParts.length < 3) releaseBaseParts.add('0');
+    while (currentBaseParts.length < 3) {
+      currentBaseParts.add('0');
+    }
+    while (releaseBaseParts.length < 3) {
+      releaseBaseParts.add('0');
+    }
     
     final currentMajor = int.tryParse(currentBaseParts[0]) ?? 0;
     final currentMinor = int.tryParse(currentBaseParts[1]) ?? 0;
@@ -583,9 +587,9 @@ class UpdateService {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
+                  color: Colors.orange.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                  border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
                 ),
                 child: Row(
                   children: [
@@ -629,9 +633,9 @@ class UpdateService {
                           Container(
                             padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
-                              color: Colors.blue.withOpacity(0.1),
+                              color: Colors.blue.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                              border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
                             ),
                             child: Row(
                               children: [
@@ -662,7 +666,9 @@ class UpdateService {
                   ) ?? false;
                   
                   if (!shouldRequestPermission) {
-                    Navigator.of(context).pop(false);
+                    if (context.mounted) {
+                      Navigator.of(context).pop(false);
+                    }
                     return;
                   }
                   
@@ -687,9 +693,9 @@ class UpdateService {
                             Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: Colors.orange.withOpacity(0.1),
+                                color: Colors.orange.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                                border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
                               ),
                               child: Row(
                                 children: [
@@ -723,20 +729,22 @@ class UpdateService {
                 }
                 
                 // Show loading state
-                showDialog(
-                  context: context,
-                  barrierDismissible: false,
-                  builder: (context) => const AlertDialog(
-                    content: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Center(child: CircularProgressIndicator()),
-                        SizedBox(height: 16),
-                        Text('Starting installation...'),
-                      ],
+                if (context.mounted) {
+                  showDialog(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (context) => const AlertDialog(
+                      content: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Center(child: CircularProgressIndicator()),
+                          SizedBox(height: 16),
+                          Text('Starting installation...'),
+                        ],
+                      ),
                     ),
-                  ),
-                );
+                  );
+                }
                 
                 try {
                   final success = await installUpdate(filePath);
@@ -750,57 +758,61 @@ class UpdateService {
                     // Check permission again to provide better error message
                     final hasPermission = await UpdateLauncher.canInstallPackages();
                     
-                    await showDialog(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('Installation Failed'),
-                        content: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(hasPermission 
-                              ? 'Failed to start APK installation. This could be due to:'
-                              : 'Installation permission is not granted.'),
-                            const SizedBox(height: 8),
-                            if (hasPermission) ...[
-                              const Text('• File permissions issue'),
-                              const Text('• Corrupted download file'),
-                              const Text('• Device storage space'),
-                              const SizedBox(height: 12),
-                              const Text('Please try:'),
-                              const Text('1. Re-download the update'),
-                              const Text('2. Check device storage space'),
-                              const Text('3. Restart the app and try again'),
-                            ] else ...[
-                              const Text('Please enable "Allow from this source" for Playtivity in:'),
-                              const Text('Settings > Apps > Special access > Install unknown apps'),
+                    if (context.mounted) {
+                      await showDialog(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('Installation Failed'),
+                          content: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(hasPermission 
+                                ? 'Failed to start APK installation. This could be due to:'
+                                : 'Installation permission is not granted.'),
+                              const SizedBox(height: 8),
+                              if (hasPermission) ...[
+                                const Text('• File permissions issue'),
+                                const Text('• Corrupted download file'),
+                                const Text('• Device storage space'),
+                                const SizedBox(height: 12),
+                                const Text('Please try:'),
+                                const Text('1. Re-download the update'),
+                                const Text('2. Check device storage space'),
+                                const Text('3. Restart the app and try again'),
+                              ] else ...[
+                                const Text('Please enable "Allow from this source" for Playtivity in:'),
+                                const Text('Settings > Apps > Special access > Install unknown apps'),
+                              ],
                             ],
+                          ),
+                          actions: [
+                            if (!hasPermission)
+                              TextButton(
+                                onPressed: () async {
+                                  Navigator.of(context).pop();
+                                  await UpdateLauncher.requestInstallPermission();
+                                },
+                                child: const Text('Open Settings'),
+                              ),
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              child: const Text('OK'),
+                            ),
                           ],
                         ),
-                        actions: [
-                          if (!hasPermission)
-                            TextButton(
-                              onPressed: () async {
-                                Navigator.of(context).pop();
-                                await UpdateLauncher.requestInstallPermission();
-                              },
-                              child: const Text('Open Settings'),
-                            ),
-                          TextButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            child: const Text('OK'),
-                          ),
-                        ],
-                      ),
-                    );
+                      );
+                    }
                   } else {
                     // Installation started successfully
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Installation started! Follow the on-screen prompts.'),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Installation started! Follow the on-screen prompts.'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    }
                   }
                   
                   if (context.mounted) {
@@ -828,7 +840,9 @@ class UpdateService {
                       ),
                     );
                     
-                    Navigator.of(context).pop(false);
+                    if (context.mounted) {
+                      Navigator.of(context).pop(false);
+                    }
                   }
                 }
               },
@@ -916,7 +930,7 @@ class UpdateInfo {
     final body = json['body'] as String? ?? '';
     
     AppLogger.info('Parsing GitHub release: tag=$tagName, name=$releaseName, isNightly=$isNightly');
-    AppLogger.info('Release body preview: ${body.length > 100 ? body.substring(0, 100) + '...' : body}');
+    AppLogger.info('Release body preview: ${body.length > 100 ? '${body.substring(0, 100)}...' : body}');
     
     // Find APK asset
     Map<String, dynamic>? apkAsset;
@@ -931,7 +945,7 @@ class UpdateInfo {
     final apkFileName = apkUrl.isNotEmpty ? Uri.parse(apkUrl).pathSegments.last : '';
     final fileSizeBytes = apkAsset?['size'] as int? ?? 0;
     
-    AppLogger.info('Found APK asset: $apkFileName (${fileSizeBytes} bytes)');
+    AppLogger.info('Found APK asset: $apkFileName ($fileSizeBytes bytes)');
     
     // Parse release date
     DateTime buildDate;
@@ -1084,7 +1098,7 @@ class DownloadProgress {
 class _DownloadProgressDialog extends StatefulWidget {
   final UpdateInfo updateInfo;
 
-  const _DownloadProgressDialog({Key? key, required this.updateInfo}) : super(key: key);
+  const _DownloadProgressDialog({required this.updateInfo});
 
   @override  
   _DownloadProgressDialogState createState() => _DownloadProgressDialogState();
