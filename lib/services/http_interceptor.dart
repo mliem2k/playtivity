@@ -18,6 +18,13 @@ class HttpInterceptor {
   static void clearContext() {
     _currentContext = null;
   }
+
+  /// Check if the URL should be excluded from automatic login redirection
+  static bool _shouldExcludeFromLoginRedirect(Uri url) {
+    // Exclude the top content endpoint from automatic login redirection
+    // as it handles its own 401 retry logic
+    return url.toString().contains('api-partner.spotify.com/pathfinder/v2/query');
+  }
   
   /// Intercepted GET request that handles 401/403 errors
   static Future<http.Response> get(
@@ -26,7 +33,7 @@ class HttpInterceptor {
   }) async {
     try {
       final response = await http.get(url, headers: headers);
-      await _handleResponse(response);
+      await _handleResponse(response, url);
       return response;
     } catch (e) {
       rethrow;
@@ -47,16 +54,23 @@ class HttpInterceptor {
         body: body, 
         encoding: encoding,
       );
-      await _handleResponse(response);
+      await _handleResponse(response, url);
       return response;
     } catch (e) {
       rethrow;
     }
   }
-    /// Handle response and check for authentication errors
-  static Future<void> _handleResponse(http.Response response) async {
+
+  /// Handle response and check for authentication errors
+  static Future<void> _handleResponse(http.Response response, Uri url) async {
     if (response.statusCode == 401 || response.statusCode == 403) {
       AppLogger.http('HTTP ${response.statusCode} detected - authentication error');
+
+      // Skip login redirection for excluded endpoints
+      if (_shouldExcludeFromLoginRedirect(url)) {
+        AppLogger.http('Skipping login redirect for excluded endpoint: ${url.path}');
+        return;
+      }
       
       if (_currentContext != null && _currentContext!.mounted) {
         AppLogger.http('Context available - redirecting to login');

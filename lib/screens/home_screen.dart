@@ -8,6 +8,7 @@ import '../widgets/activity_card.dart';
 import '../widgets/activity_skeleton.dart';
 import '../widgets/last_updated_indicator.dart';
 import '../utils/auth_utils.dart';
+import '../services/app_logger.dart';
 
 
 class HomeScreen extends StatefulWidget {
@@ -49,7 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
     
     // Ensure authentication is initialized before loading data
     if (!authProvider.isInitialized) {
-      print('⚠️ Authentication not yet initialized, skipping data load');
+      AppLogger.warning('Authentication not yet initialized, skipping data load');
       return;
     }
     
@@ -60,7 +61,7 @@ class _HomeScreenState extends State<HomeScreen> {
       // Update widget with current user data
       await spotifyProvider.updateWidget(currentUser: authProvider.currentUser);
     } else {
-      print('⚠️ No authentication available - cannot load friend activities');
+      AppLogger.warning('No authentication available - cannot load friend activities');
     }
   }
 
@@ -70,7 +71,7 @@ class _HomeScreenState extends State<HomeScreen> {
     
     // Ensure authentication is initialized before refreshing data
     if (!authProvider.isInitialized) {
-      print('⚠️ Authentication not yet initialized, skipping data refresh');
+      AppLogger.warning('Authentication not yet initialized, skipping data refresh');
       return;
     }
     
@@ -81,7 +82,7 @@ class _HomeScreenState extends State<HomeScreen> {
       // Update widget with current user data
       await spotifyProvider.updateWidget(currentUser: authProvider.currentUser);
     } else {
-      print('⚠️ No authentication available - cannot refresh friend activities');
+      AppLogger.warning('No authentication available - cannot refresh friend activities');
     }
   }
 
@@ -89,17 +90,28 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    
     return Scaffold(
       extendBodyBehindAppBar: true, // Extend body behind app bar
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(kToolbarHeight),
         child: ClipRRect(
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: AppBar(
-              title: const Text(
-                'Friends\' Activities',
-                style: TextStyle(fontWeight: FontWeight.bold),
+            filter: ImageFilter.blur(sigmaX: isDark ? 20 : 10, sigmaY: isDark ? 20 : 10),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).appBarTheme.backgroundColor ?? theme.scaffoldBackgroundColor.withValues(alpha: 230),
+                boxShadow: [], // Empty box shadow
+              ),
+              child: AppBar(
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                title: const Text(
+                  'Friends\' Activities',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
               ),
             ),
           ),

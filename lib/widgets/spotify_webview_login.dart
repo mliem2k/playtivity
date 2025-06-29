@@ -22,7 +22,6 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
   String? _error;
   Map<String, String> _extractedHeaders = {};
   bool _showOverlay = true;
-  String _currentUrl = '';
 
   @override
   Widget build(BuildContext context) {
@@ -51,7 +50,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(12),
-              color: Theme.of(context).primaryColor.withOpacity(0.1),
+              color: Theme.of(context).primaryColor.withValues(alpha: 26), // 0.1 * 255 ≈ 26
               child: Row(
                 children: [
                   Icon(
@@ -75,7 +74,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(12),
-              color: Colors.red.withOpacity(0.1),
+              color: Colors.red.withValues(alpha: 26), // 0.1 * 255 ≈ 26
               child: Row(
                 children: [
                   const Icon(
@@ -199,9 +198,8 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                           
                           String urlString = url.toString();
                           AppLogger.auth('Page loaded: $urlString');
-                            // Update current URL and r logic
+                          
                           setState(() {
-                            _currentUrl = urlString;
                             // Show overlay for spotify.com domain pages that are NOT /login or challenge pages
                             // Don't show for non-spotify sites (facebook, etc) or login/challenge pages
                             Uri uri = Uri.parse(urlString);
@@ -288,7 +286,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                                 Text(
                                   'Please wait while we complete your authentication',
                                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.7),
+                                    color: Theme.of(context).textTheme.bodyMedium?.color?.withValues(alpha: 179), // 0.7 * 255 ≈ 179
                                   ),
                                   textAlign: TextAlign.center,
                                 ),
@@ -297,7 +295,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                   decoration: BoxDecoration(
-                                    color: Colors.green.withOpacity(0.15),
+                                    color: Colors.green.withValues(alpha: 38), // 0.15 * 255 ≈ 38
                                     borderRadius: BorderRadius.circular(20),
                                   ),
                                   child: Row(
@@ -732,7 +730,6 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
           
           if (bearerToken != null && bearerToken.isNotEmpty) {
             AppLogger.auth('Token polling found complete result!');
-            timer.cancel();
             
             AppLogger.auth('Successfully captured Bearer token: ${bearerToken.substring(0, 20)}...');
             AppLogger.debug('Token length: ${bearerToken.length} characters');
@@ -741,33 +738,101 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
             
             AppLogger.auth('Bearer token found');
             
-            // Complete authentication but don't navigate immediately
-            if (mounted) {
-              AppLogger.auth('Calling onAuthComplete with Bearer token and updated headers...');
-              AppLogger.debug('Final headers: ${_extractedHeaders.keys.join(', ')}');
-              AppLogger.debug('Cookie header length: ${_extractedHeaders['Cookie']?.length ?? 0}');
+            // Navigate to user profile page to capture client-token
+            AppLogger.auth('Navigating to user profile page to capture client-token...');
+            await controller.loadUrl(urlRequest: URLRequest(
+              url: WebUri('https://open.spotify.com/user/21fvdxlt6ejvha6jnrgdwamja'),
+              headers: {
+                'Authorization': 'Bearer $bearerToken',
+                'Cookie': _extractedHeaders['Cookie'] ?? '',
+              },
+            ));
+
+            // Add additional client-token interception
+            await controller.evaluateJavascript(source: '''
+              (function() {
+                console.log('🔍 Setting up client-token interception...');
+                
+                // Function to check headers for client-token
+                function checkForClientToken(headers) {
+                  if (!headers) return null;
+                  
+                  // Handle different header formats
+                  let clientToken = null;
+                  if (typeof headers.get === 'function') {
+                    clientToken = headers.get('client-token');
+                  } else if (typeof headers === 'object') {
+                    clientToken = headers['client-token'] || headers['Client-Token'];
+                  }
+                  
+                  if (clientToken && !window.capturedClientToken) {
+                    console.log('✅ Found client-token:', clientToken.substring(0, 20) + '...');
+                    window.capturedClientToken = clientToken;
+                    window.dispatchEvent(new CustomEvent('spotifyClientTokenCaptured', {
+                      detail: { clientToken: clientToken }
+                    }));
+                  }
+                  return clientToken;
+                }
+                
+                // Intercept fetch requests for client-token
+                const originalFetch = window.fetch;
+                window.fetch = function(...args) {
+                  const options = args[1] || {};
+                  checkForClientToken(options.headers);
+                  return originalFetch.apply(this, args);
+                };
+                
+                // Intercept XHR for client-token
+                const originalXHRSetRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
+                XMLHttpRequest.prototype.setRequestHeader = function(name, value) {
+                  if (name.toLowerCase() === 'client-token') {
+                    checkForClientToken({ 'client-token': value });
+                  }
+                  return originalXHRSetRequestHeader.call(this, name, value);
+                };
+                
+                console.log('✅ Client-token interception setup complete');
+              })();
+            ''');
+
+            // Start polling for client-token
+            bool clientTokenFound = false;
+            int attempts = 0;
+            while (!clientTokenFound && attempts < 30) {
+              final clientTokenResult = await controller.evaluateJavascript(source: '''
+                window.capturedClientToken || null;
+              ''');
               
-              // Add debug logging for the callback
+              if (clientTokenResult != null) {
+                AppLogger.auth('Client token captured: ${clientTokenResult.toString().substring(0, 20)}...');
+                _extractedHeaders['client-token'] = clientTokenResult.toString();
+                clientTokenFound = true;
+              } else {
+                attempts++;
+                await Future.delayed(const Duration(milliseconds: 500));
+              }
+            }
+
+            // Complete authentication with both tokens
+            if (mounted) {
+              AppLogger.auth('Calling onAuthComplete with Bearer token and updated headers (including client-token)...');
+              AppLogger.debug('Final headers: ${_extractedHeaders.keys.join(', ')}');
+              
               try {
-                // Call the callback and wait for it to complete
                 await widget.onAuthComplete(bearerToken, _extractedHeaders);
                 AppLogger.auth('onAuthComplete callback executed successfully');
                 
-                // Add a longer delay to ensure all auth processing is complete
                 await Future.delayed(const Duration(milliseconds: 500));
                 
-                // Only close the WebView after ensuring the callback completed successfully
                 if (mounted && Navigator.canPop(context)) {
                   AppLogger.auth('Closing WebView after successful authentication');
-                  // Don't return true/false, let the parent handle navigation
                   Navigator.of(context).pop();
                 }
               } catch (e) {
                 AppLogger.error('Error in onAuthComplete callback', e);
-                // If there's an error, stay on the WebView and let the user retry
                 if (mounted) {
                   String errorMessage = e.toString();
-                  // Make authentication timeout errors more user-friendly
                   if (errorMessage.contains('Authentication verification failed after completion')) {
                     errorMessage = 'Authentication took too long to complete. Please try again or check your internet connection.';
                   }
@@ -777,6 +842,8 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                 }
               }
             }
+
+            timer.cancel();
           } else {
             AppLogger.debug('Cookie update received (no token yet)');
           }

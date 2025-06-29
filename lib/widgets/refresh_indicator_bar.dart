@@ -16,14 +16,16 @@ class RefreshIndicatorBar extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
+    final primaryColor = Theme.of(context).primaryColor;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        color: Theme.of(context).primaryColor.withOpacity(0.1),
+        color: primaryColor.withAlpha((0.1 * 255).round()),
         border: Border(
           bottom: BorderSide(
-            color: Theme.of(context).primaryColor.withOpacity(0.2),
+            color: primaryColor.withAlpha((0.2 * 255).round()),
             width: 1,
           ),
         ),
@@ -36,16 +38,14 @@ class RefreshIndicatorBar extends StatelessWidget {
             height: 16,
             child: CircularProgressIndicator(
               strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation<Color>(
-                Theme.of(context).primaryColor,
-              ),
+              valueColor: AlwaysStoppedAnimation<Color>(primaryColor),
             ),
           ),
           const SizedBox(width: 12),
           Text(
             message ?? 'Refreshing...',
             style: TextStyle(
-              color: Theme.of(context).primaryColor,
+              color: primaryColor,
               fontSize: 14,
               fontWeight: FontWeight.w500,
             ),

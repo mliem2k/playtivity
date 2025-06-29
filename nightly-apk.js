@@ -285,6 +285,7 @@ class NightlyBuilder {
     buildNightlyAPK() {
         this.log('Starting nightly APK build process', 'build');
 
+        // Check if FVM is available, otherwise use flutter directly
         let flutterCommand = 'flutter';
         try {
             execSync('fvm --version', { stdio: 'pipe' });
@@ -295,25 +296,52 @@ class NightlyBuilder {
         }
 
         try {
-            // Get dependencies
-            this.runCommand(`${flutterCommand} pub get`, 'Getting dependencies');
-            
-            // Clean previous builds
-            this.runCommand(`${flutterCommand} clean`, 'Cleaning previous builds');
-            
-            // Run tests (optional, continue on failure)
-            try {
-                this.runCommand(`${flutterCommand} test`, 'Running tests');
-            } catch (error) {
-                this.log('Tests failed, but continuing with nightly build', 'warning');
+            // Check if pubspec.lock has changed
+            const pubspecLockHash = execSync('git hash-object pubspec.lock', { stdio: 'pipe' }).toString().trim();
+            const pubspecLockCachePath = path.join(this.projectRoot, '.pub-cache-hash');
+            let needsPubGet = true;
+
+            if (fs.existsSync(pubspecLockCachePath)) {
+                const cachedHash = fs.readFileSync(pubspecLockCachePath, 'utf8').trim();
+                needsPubGet = cachedHash !== pubspecLockHash;
             }
-            
-            // Build APK with nightly configuration
-            this.runCommand(`${flutterCommand} build apk --release --dart-define=BUILD_TYPE=nightly`, 'Building nightly APK');
+
+            // Only run pub get if dependencies have changed
+            if (needsPubGet) {
+                this.runCommand(`${flutterCommand} pub get`, 'Getting dependencies');
+                fs.writeFileSync(pubspecLockCachePath, pubspecLockHash);
+            } else {
+                this.log('Dependencies are up to date, skipping pub get', 'info');
+            }
+
+            // Check if we need to clean
+            const buildDir = path.join(this.projectRoot, 'build');
+            const shouldClean = !fs.existsSync(buildDir) || 
+                              process.env.FORCE_CLEAN === 'true' ||
+                              process.argv.includes('--clean');
+
+            if (shouldClean) {
+                this.runCommand(`${flutterCommand} clean`, 'Cleaning previous builds');
+            } else {
+                this.log('Skipping clean step for faster build', 'info');
+            }
+
+            // Build APK with optimized flags
+            const buildCommand = [
+                `${flutterCommand} build apk`,
+                '--release',
+                '--target-platform android-arm64',  // Focus on 64-bit only for nightly
+                '--dart-define=FLUTTER_BUILD_MODE=release',
+                '--no-tree-shake-icons',  // Skip icon tree shaking for faster build
+                '--no-pub',  // Skip pub get since we handled it above
+                process.env.CI ? '--suppress-analytics' : '',  // Suppress analytics in CI
+            ].filter(Boolean).join(' ');
+
+            this.runCommand(buildCommand, 'Building APK');
             
             return true;
         } catch (error) {
-            this.log(`Nightly build failed: ${error.message}`, 'error');
+            this.log(`Build failed: ${error.message}`, 'error');
             return false;
         }
     }

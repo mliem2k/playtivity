@@ -76,7 +76,7 @@ class AppTheme {
       primaryColor: spotifyGreen,
       scaffoldBackgroundColor: spotifyBlack,
       appBarTheme: AppBarTheme(
-        backgroundColor: spotifyBlack.withOpacity(0.85), // Transparent effect
+        backgroundColor: spotifyBlack.withOpacity(0.9), // Increased opacity for better visibility in dark mode
         foregroundColor: spotifyWhite,
         elevation: 0,
         scrolledUnderElevation: 0,

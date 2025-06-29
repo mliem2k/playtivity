@@ -161,8 +161,6 @@ class MainActivity : FlutterActivity() {    private val WIDGET_CHANNEL = "playti
             val flutterActivitiesCount = flutterPrefs.getString("flutter.activities_count", "0")
             val homeWidgetActivitiesCount = homeWidgetPrefs.getString("activities_count", "0")
             
-            android.util.Log.d("PlaytivityWidget", "Widget update triggered - Flutter: $flutterActivitiesCount, HomeWidget: $homeWidgetActivitiesCount activities")
-            
             // Start image caching service first
             ImageCacheService.startImageCaching(this)
             
@@ -174,8 +172,6 @@ class MainActivity : FlutterActivity() {    private val WIDGET_CHANNEL = "playti
             for (appWidgetId in appWidgetIds) {
                 PlaytivityWidgetProvider.updateAppWidget(this, appWidgetManager, appWidgetId)
             }
-            
-            android.util.Log.d("PlaytivityWidget", "Widget update completed")
         } catch (e: Exception) {
             android.util.Log.e("PlaytivityWidget", "Error updating widget", e)
         }

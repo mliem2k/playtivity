@@ -1,4 +1,4 @@
-import 'package:logger/logger.dart';
+import 'package:logger/logger.dart' show Logger, ProductionFilter, PrettyPrinter, ConsoleOutput, DateTimeFormat;
 
 /// Centralized logging service for the application
 /// Replaces print() statements with structured logging
@@ -15,7 +15,7 @@ class AppLogger {
         lineLength: 120,       // Width of the output
         colors: true,          // Colorful log messages
         printEmojis: true,     // Print emoji for each log level
-        printTime: false,      // Should each log print contain a timestamp
+        dateTimeFormat: DateTimeFormat.none,  // Format for timestamps in log messages
       ),
       output: ConsoleOutput(),
     );

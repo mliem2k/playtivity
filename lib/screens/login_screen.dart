@@ -4,6 +4,7 @@ import '../providers/auth_provider.dart';
 import '../utils/theme.dart';
 import '../widgets/spotify_webview_login.dart';
 import '../services/update_service.dart';
+import '../services/app_logger.dart';
 
 class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
@@ -42,7 +43,7 @@ class LoginScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(20),
                   boxShadow: [
                     BoxShadow(
-                      color: theme.primaryColor.withOpacity(0.25),
+                      color: theme.primaryColor.withAlpha(64),
                       blurRadius: 15,
                       spreadRadius: 1,
                       offset: const Offset(0, 3),
@@ -122,7 +123,7 @@ class LoginScreen extends StatelessWidget {
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       elevation: isDark ? 0 : 3,
-                      shadowColor: isDark ? Colors.transparent : theme.primaryColor.withOpacity(0.3),
+                      shadowColor: isDark ? Colors.transparent : theme.primaryColor.withAlpha(77),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(25),
                       ),
@@ -171,29 +172,29 @@ class LoginScreen extends StatelessWidget {
         MaterialPageRoute(
           builder: (context) => SpotifyWebViewLogin(
             onAuthComplete: (bearerToken, headers) async {
-              print('🔄 Login screen received auth completion callback');
+              AppLogger.auth('Login screen received auth completion callback');
               try {
                 // Process authentication without immediate navigation
                 await authProvider.handleAuthComplete(bearerToken, headers);
-                print('✅ Authentication handling completed successfully');
+                AppLogger.auth('Authentication handling completed successfully');
                 
                 // Add a small delay to ensure state is fully updated
                 await Future.delayed(const Duration(milliseconds: 200));
                 
                 // Verify authentication was successful before proceeding
                 if (authProvider.isAuthenticated) {
-                  print('✅ Authentication verified - ready to proceed');
+                  AppLogger.auth('Authentication verified - ready to proceed');
                   
                   // Return success to the WebView (but don't navigate yet)
                   if (context.mounted && Navigator.canPop(context)) {
                     Navigator.of(context).pop(true);
                   }
                 } else {
-                  print('❌ Authentication failed - auth provider not authenticated');
+                  AppLogger.auth('Authentication failed - auth provider not authenticated');
                   throw Exception('Authentication verification failed');
                 }
               } catch (e) {
-                print('❌ Error in auth completion: $e');
+                AppLogger.auth('Error in auth completion', e);
                 if (context.mounted) {
                   // Pop the WebView first
                   if (Navigator.canPop(context)) {
@@ -225,7 +226,7 @@ class LoginScreen extends StatelessWidget {
         
         // Double-check authentication state before navigating
         if (authProvider.isAuthenticated) {
-          print('✅ Login successful, navigating to home screen...');
+          AppLogger.auth('Login successful, navigating to home screen...');
           if (context.mounted) {
             // Use pushNamedAndRemoveUntil to ensure clean navigation stack
             Navigator.of(context).pushNamedAndRemoveUntil(
@@ -234,7 +235,7 @@ class LoginScreen extends StatelessWidget {
             );
           }
         } else {
-          print('❌ Authentication lost after successful login - showing error');
+          AppLogger.auth('Authentication lost after successful login - showing error');
           authProvider.cancelLogin();
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -247,11 +248,11 @@ class LoginScreen extends StatelessWidget {
         }
       } else {
         // Login was cancelled or failed
-        print('ℹ️ Login was cancelled or failed');
+        AppLogger.auth('Login was cancelled or failed');
         authProvider.cancelLogin();
       }
     } catch (e) {
-      print('❌ Error in login flow: $e');
+      AppLogger.auth('Error in login flow', e);
       authProvider.cancelLogin();
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -298,6 +299,7 @@ class LoginScreen extends StatelessWidget {
       
       if (updateResult.hasUpdate && updateResult.updateInfo != null) {
         // Show update available dialog
+        if (!context.mounted) return;
         final shouldUpdate = await _showUpdateDialog(
           context,
           updateResult.updateInfo!,
@@ -320,6 +322,7 @@ class LoginScreen extends StatelessWidget {
             
             if (shouldInstall) {
               // Installation started, show final message
+              if (!context.mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text('Installing update... The app will restart.'),
@@ -421,9 +424,9 @@ class LoginScreen extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.orange.withOpacity(0.1),
+                    color: Colors.orange.withAlpha(26),
                     borderRadius: BorderRadius.circular(4),
-                    border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                    border: Border.all(color: Colors.orange.withAlpha(77)),
                   ),
                   child: Row(
                     children: [
