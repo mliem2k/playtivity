@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/spotify_buddy_service.dart';
 import '../services/spotify_service.dart';
 import '../services/widget_service.dart';
+import '../services/app_logger.dart';
 import '../models/track.dart';
 import '../models/activity.dart';
 import '../models/artist.dart';
@@ -48,9 +49,17 @@ class SpotifyProvider extends ChangeNotifier {
 
   /// Handle authentication errors by setting flag for UI to handle
   Future<void> _handleAuthenticationError(String error) async {
-    print('🚨 Authentication error detected in provider: $error');
+    AppLogger.error('Authentication error detected in provider', error);
     _hasAuthError = true;
     _authErrorMessage = error;
+    
+    // Clear all cached data in this provider since authentication failed
+    _topTracks = [];
+    _topArtists = [];
+    _friendsActivities = [];
+    _currentlyPlaying = null;
+    _error = 'Authentication expired. Please login again.';
+    
     notifyListeners();
   }
 
@@ -86,7 +95,7 @@ class SpotifyProvider extends ChangeNotifier {
       // Update widget with new currently playing data
       await _updateWidget();
     } catch (e) {
-      print('❌ Failed to load currently playing: $e');
+      AppLogger.error('Failed to load currently playing', e);
       _currentlyPlaying = null;
       if (!e.toString().contains('No Bearer token available')) {
         _error = e.toString();
@@ -167,7 +176,6 @@ class SpotifyProvider extends ChangeNotifier {
       List<Activity> activities = [];
 
       // Get friend activities using Bearer token
-      print('🔄 Attempting to fetch friend activities with Bearer token...');
       try {
         // Use fast load when showing skeleton to avoid slow API calls
         final useFastLoad = showSkeleton;
@@ -177,21 +185,15 @@ class SpotifyProvider extends ChangeNotifier {
             // Update activities progressively as track durations are fetched
             _friendsActivities = updatedActivities;
             notifyListeners();
-            print('🔄 Progressive update: ${updatedActivities.length} activities updated');
           },
         );
-        if (activities.isNotEmpty) {
-          print('✅ Successfully fetched ${activities.length} friend activities');
-        } else {
-          print('⚠️ No friend activities found');
-        }
       } catch (e) {
-        print('❌ Failed to fetch friend activities: $e');
+        AppLogger.error('Failed to fetch friend activities', e);
         
         // Check if this is an authentication error
         final errorMessage = e.toString();
         if (_isAuthenticationError(errorMessage)) {
-          print('🔐 Authentication error detected, may need re-authentication');
+          AppLogger.auth('Authentication error detected, may need re-authentication');
           _error = 'Authentication expired. Please login again.';
           await _handleAuthenticationError(errorMessage);
         } else {
@@ -310,7 +312,7 @@ class SpotifyProvider extends ChangeNotifier {
       // Update widget after initial load
       await _updateWidget();
     } catch (e) {
-      print('❌ Error during fast initial load: $e');
+      AppLogger.error('Error during fast initial load', e);
       _error = e.toString();
       _isSkeletonLoading = false;
       notifyListeners();
@@ -323,7 +325,7 @@ class SpotifyProvider extends ChangeNotifier {
     await Future.delayed(const Duration(milliseconds: 500));
     
     try {
-      print('🔄 Enhancing activities with detailed info...');
+      AppLogger.debug('Enhancing activities with detailed info...');
       // Load detailed activities (with duration checks)
       final detailedActivities = await _buddyService.getFriendActivity(
         fastLoad: false, // Full load with duration checks
@@ -331,7 +333,10 @@ class SpotifyProvider extends ChangeNotifier {
           // Update activities progressively as track durations are fetched
           _friendsActivities = updatedActivities;
           notifyListeners();
-          print('🔄 Background enhancement update: ${updatedActivities.length} activities updated');
+          // Reduced logging frequency for background enhancements
+          if (updatedActivities.length <= 5 || updatedActivities.length % 10 == 0) {
+            AppLogger.debug('Background enhancement update: ${updatedActivities.length} activities updated');
+          }
         },
       );
       
@@ -339,15 +344,15 @@ class SpotifyProvider extends ChangeNotifier {
         _friendsActivities = detailedActivities;
         _lastUpdated = DateTime.now();
         notifyListeners();
-        print('✅ Enhanced ${detailedActivities.length} activities with detailed info');
+        AppLogger.debug('Enhanced ${detailedActivities.length} activities with detailed info');
       }
     } catch (e) {
-      print('❌ Failed to enhance activities: $e');
+      AppLogger.error('Failed to enhance activities', e);
       
       // Check if this is an authentication error
       final errorMessage = e.toString();
       if (_isAuthenticationError(errorMessage)) {
-        print('🔐 Authentication error detected during enhancement');
+        AppLogger.auth('Authentication error detected during enhancement');
         _error = 'Authentication expired. Please login again.';
         await _handleAuthenticationError(errorMessage);
         notifyListeners();
@@ -369,7 +374,7 @@ class SpotifyProvider extends ChangeNotifier {
         friendsActivities: _friendsActivities,
       );
     } catch (e) {
-      print('❌ Failed to update widget: $e');
+      AppLogger.error('Failed to update widget', e);
     }
   }
 

@@ -92,40 +92,80 @@ struct PlaytivityWidgetEntryView: View {
                     
                     VStack(spacing: 3) {
                         ForEach(Array(entry.friendsActivities.prefix(maxFriendsToShow).enumerated()), id: \.offset) { index, activity in
-                            HStack(spacing: 8) {
-                                Image(systemName: "person.circle.fill")
-                                    .foregroundColor(.white.opacity(0.5))
-                                    .font(.system(size: 12))
-                                
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(activity.name)
-                                        .font(.system(size: 11, weight: .bold))
-                                        .foregroundColor(.white)
-                                        .lineLimit(1)
-                                    
-                                    Text("\(activity.friendName) • \(activity.artist)")
-                                        .font(.system(size: 10))
-                                        .foregroundColor(.white.opacity(0.5))
-                                        .lineLimit(1)
-                                    
-                                    // Add status row with icon and text
-                                    HStack(spacing: 2) {
-                                        Image(systemName: activity.isRecentOrPlaying() ? "play.circle.fill" : "clock")
-                                            .font(.system(size: 9))
-                                            .foregroundColor(activity.isRecentOrPlaying() ? Color(red: 29/255, green: 185/255, blue: 84/255) : .white.opacity(0.4))
+                            if let url = URL(string: "spotify:user:\(activity.userId)") {
+                                Link(destination: url) {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "person.circle.fill")
+                                            .foregroundColor(.white.opacity(0.5))
+                                            .font(.system(size: 12))
                                         
-                                        Text(activity.getStatusText())
-                                            .font(.system(size: 9))
-                                            .foregroundColor(activity.isRecentOrPlaying() ? Color(red: 29/255, green: 185/255, blue: 84/255) : .white.opacity(0.4))
-                                            .lineLimit(1)
+                                        VStack(alignment: .leading, spacing: 1) {
+                                            Text(activity.name)
+                                                .font(.system(size: 11, weight: .bold))
+                                                .foregroundColor(.white)
+                                                .lineLimit(1)
+                                            
+                                            Text("\(activity.friendName) • \(activity.artist)")
+                                                .font(.system(size: 10))
+                                                .foregroundColor(.white.opacity(0.5))
+                                                .lineLimit(1)
+                                            
+                                            // Add status row with icon and text
+                                            HStack(spacing: 2) {
+                                                Image(systemName: activity.isRecentOrPlaying() ? "play.circle.fill" : "clock")
+                                                    .font(.system(size: 9))
+                                                    .foregroundColor(activity.isRecentOrPlaying() ? Color(red: 29/255, green: 185/255, blue: 84/255) : .white.opacity(0.4))
+                                                
+                                                Text(activity.getStatusText())
+                                                    .font(.system(size: 9))
+                                                    .foregroundColor(activity.isRecentOrPlaying() ? Color(red: 29/255, green: 185/255, blue: 84/255) : .white.opacity(0.4))
+                                                    .lineLimit(1)
+                                            }
+                                        }
+                                        
+                                        Spacer()
                                     }
+                                    .padding(6)
+                                    .background(Color.white.opacity(0.1))
+                                    .cornerRadius(8)
                                 }
-                                
-                                Spacer()
+                            } else {
+                                // Fallback for invalid URLs - non-clickable version
+                                HStack(spacing: 8) {
+                                    Image(systemName: "person.circle.fill")
+                                        .foregroundColor(.white.opacity(0.5))
+                                        .font(.system(size: 12))
+                                    
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(activity.name)
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundColor(.white)
+                                            .lineLimit(1)
+                                        
+                                        Text("\(activity.friendName) • \(activity.artist)")
+                                            .font(.system(size: 10))
+                                            .foregroundColor(.white.opacity(0.5))
+                                            .lineLimit(1)
+                                        
+                                        // Add status row with icon and text
+                                        HStack(spacing: 2) {
+                                            Image(systemName: activity.isRecentOrPlaying() ? "play.circle.fill" : "clock")
+                                                .font(.system(size: 9))
+                                                .foregroundColor(activity.isRecentOrPlaying() ? Color(red: 29/255, green: 185/255, blue: 84/255) : .white.opacity(0.4))
+                                            
+                                            Text(activity.getStatusText())
+                                                .font(.system(size: 9))
+                                                .foregroundColor(activity.isRecentOrPlaying() ? Color(red: 29/255, green: 185/255, blue: 84/255) : .white.opacity(0.4))
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                    
+                                    Spacer()
+                                }
+                                .padding(6)
+                                .background(Color.white.opacity(0.1))
+                                .cornerRadius(8)
                             }
-                            .padding(6)
-                            .background(Color.white.opacity(0.1))
-                            .cornerRadius(8)
                         }
                     }
                 }
@@ -168,7 +208,8 @@ struct PlaytivityWidget_Previews: PreviewProvider {
                     albumArt: "",
                     timestamp: Int64(Date().timeIntervalSince1970 * 1000) - 120000, // 2 minutes ago
                     isCurrentlyPlaying: false,
-                    activityType: "track"
+                    activityType: "track",
+                    userId: "alice123"
                 ),
                 FriendActivity(
                     name: "As It Was",
@@ -177,7 +218,8 @@ struct PlaytivityWidget_Previews: PreviewProvider {
                     albumArt: "",
                     timestamp: Int64(Date().timeIntervalSince1970 * 1000) - 30000, // 30 seconds ago (recent)
                     isCurrentlyPlaying: true,
-                    activityType: "track"
+                    activityType: "track",
+                    userId: "bob456"
                 )
             ]
         ))

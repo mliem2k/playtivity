@@ -22,7 +22,7 @@ class AppTheme {
       primaryColor: spotifyGreen,
       scaffoldBackgroundColor: spotifyWhite,
       appBarTheme: AppBarTheme(
-        backgroundColor: spotifyWhite.withOpacity(0.85), // Transparent effect
+        backgroundColor: spotifyWhite.withValues(alpha: 0.85), // Transparent effect
         foregroundColor: spotifyBlack,
         elevation: 0,
         scrolledUnderElevation: 0,
@@ -30,7 +30,7 @@ class AppTheme {
         surfaceTintColor: Colors.transparent,
       ),
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
-        backgroundColor: spotifyWhite.withOpacity(0.85), // Transparent effect
+        backgroundColor: spotifyWhite.withValues(alpha: 0.85), // Transparent effect
         selectedItemColor: spotifyGreen,
         unselectedItemColor: lightTextSecondary,
         type: BottomNavigationBarType.fixed,
@@ -45,13 +45,13 @@ class AppTheme {
           ),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           elevation: 2,
-          shadowColor: spotifyGreen.withOpacity(0.3),
+          shadowColor: spotifyGreen.withValues(alpha: 0.3),
         ),
       ),
       cardTheme: CardThemeData(
         color: lightCardBackground,
         elevation: 2,
-        shadowColor: Colors.black.withOpacity(0.1),
+        shadowColor: Colors.black.withValues(alpha: 0.1),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
         ),
@@ -76,7 +76,7 @@ class AppTheme {
       primaryColor: spotifyGreen,
       scaffoldBackgroundColor: spotifyBlack,
       appBarTheme: AppBarTheme(
-        backgroundColor: spotifyBlack.withOpacity(0.85), // Transparent effect
+        backgroundColor: spotifyBlack.withValues(alpha: 0.9), // Increased opacity for better visibility in dark mode
         foregroundColor: spotifyWhite,
         elevation: 0,
         scrolledUnderElevation: 0,
@@ -84,7 +84,7 @@ class AppTheme {
         surfaceTintColor: Colors.transparent,
       ),
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
-        backgroundColor: spotifyBlack.withOpacity(0.85), // Transparent effect
+        backgroundColor: spotifyBlack.withValues(alpha: 0.85), // Transparent effect
         selectedItemColor: spotifyGreen,
         unselectedItemColor: spotifyLightGray,
         type: BottomNavigationBarType.fixed,

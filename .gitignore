@@ -56,3 +56,7 @@ app.*.map.json
 android/app/release-key.jks
 android/app/upload-keystore.jks
 *.txt
+*.apk
+/nightly
+.pub-cache-hash
+delete-releases.js

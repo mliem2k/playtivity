@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- For APKs in cache directory -->
+    <cache-path name="cache" path="." />
+    
+    <!-- For APKs in external cache directory -->
+    <external-cache-path name="external-cache" path="." />
+    
+    <!-- For APKs in files directory -->
+    <files-path name="files" path="." />
+    
+    <!-- For APKs in external files directory -->
+    <external-files-path name="external-files" path="." />
+</paths>

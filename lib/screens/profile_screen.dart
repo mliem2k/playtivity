@@ -8,7 +8,9 @@ import '../widgets/track_tile.dart';
 import '../widgets/artist_tile.dart';
 import '../widgets/currently_playing_card.dart';
 import '../widgets/refresh_indicator_bar.dart';
+import '../utils/spotify_launcher.dart';
 import 'settings_screen.dart';
+import '../services/app_logger.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -42,7 +44,7 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
     
     // Ensure authentication is initialized before loading data
     if (!authProvider.isInitialized) {
-      print('⚠️ Authentication not yet initialized, skipping data load');
+      AppLogger.warning('Authentication not yet initialized, skipping data load');
       return;
     }
     
@@ -51,97 +53,98 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
       final showLoading = spotifyProvider.topTracks.isEmpty && spotifyProvider.topArtists.isEmpty;
       await spotifyProvider.refreshData(showLoading: showLoading);
     } else {
-      print('⚠️ No authentication available - cannot load profile data');
-    }
-  }
-
-  Future<void> _refreshData() async {
-    final authProvider = context.read<AuthProvider>();
-    final spotifyProvider = context.read<SpotifyProvider>();
-    
-    // Ensure authentication is initialized before refreshing data
-    if (!authProvider.isInitialized) {
-      print('⚠️ Authentication not yet initialized, skipping data refresh');
-      return;
-    }
-    
-    if (authProvider.isAuthenticated) {
-      // Silent refresh - don't show loading spinner
-      await spotifyProvider.silentRefresh();
-    } else {
-      print('⚠️ No authentication available - cannot refresh profile data');
+      AppLogger.warning('No authentication available - cannot load profile data');
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    
     return Scaffold(
       extendBodyBehindAppBar: true, // Extend body behind app bar
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(kToolbarHeight),
         child: ClipRRect(
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: AppBar(
-              title: const Text(
-                'Profile',
-                style: TextStyle(fontWeight: FontWeight.bold),
+            filter: ImageFilter.blur(sigmaX: isDark ? 20 : 10, sigmaY: isDark ? 20 : 10),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).appBarTheme.backgroundColor ?? theme.scaffoldBackgroundColor.withValues(alpha: 230),
+                boxShadow: [], // Empty box shadow
               ),
-              actions: [
-                IconButton(
-                  icon: const Icon(Icons.settings),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const SettingsScreen()),
-                    );
-                  },
+              child: AppBar(
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                title: const Text(
+                  'Profile',
+                  style: TextStyle(fontWeight: FontWeight.bold),
                 ),
-              ],
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.settings),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const SettingsScreen()),
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
         ),
-      ),
-      body: Consumer2<AuthProvider, SpotifyProvider>(
-        builder: (context, authProvider, spotifyProvider, child) {
-          final user = authProvider.currentUser;
-          
-          return Column(
-            children: [
-              // Refresh indicator bar
-              RefreshIndicatorBar(
-                isRefreshing: spotifyProvider.isRefreshing,
-                message: 'Updating profile data...',
-              ),
-              // User Profile Header
-              Container(
-                padding: EdgeInsets.only(
-                  left: 24,
-                  right: 24,
-                  top: MediaQuery.of(context).padding.top,
-                  bottom: 24,
+      ),      body: SafeArea(
+        child: Consumer2<AuthProvider, SpotifyProvider>(
+          builder: (context, authProvider, spotifyProvider, child) {
+            final user = authProvider.currentUser;
+            
+            return Column(
+              children: [
+                // Refresh indicator bar
+                RefreshIndicatorBar(
+                  isRefreshing: spotifyProvider.isRefreshing,
+                  message: 'Updating profile data...',
                 ),
+                // User Profile Header
+                Container(
+                  padding: const EdgeInsets.only(
+                    left: 24,
+                    right: 24,
+                    top: 24,
+                    bottom: 24,
+                  ),
                 child: Column(
                   children: [
                     // Profile Picture
-                    CircleAvatar(
-                      radius: 50,
-                      backgroundColor: Theme.of(context).primaryColor,
-                      backgroundImage: user?.imageUrl != null
-                          ? CachedNetworkImageProvider(user!.imageUrl!)
-                          : null,
-                      child: user?.imageUrl == null
-                          ? Text(
-                              user?.displayName.isNotEmpty == true
-                                  ? user!.displayName[0].toUpperCase()
-                                  : '?',
-                              style: const TextStyle(
-                                fontSize: 32,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            )
-                          : null,
+                    GestureDetector(
+                      onTap: () async {
+                        if (user != null) {
+                          final spotifyUri = 'spotify:user:${user.id}';
+                          await SpotifyLauncher.launchSpotifyUri(spotifyUri);
+                        }
+                      },
+                      child: CircleAvatar(
+                        radius: 50,
+                        backgroundColor: Theme.of(context).primaryColor,
+                        backgroundImage: user?.imageUrl != null
+                            ? CachedNetworkImageProvider(user!.imageUrl!)
+                            : null,
+                        child: user?.imageUrl == null
+                            ? Text(
+                                user?.displayName.isNotEmpty == true
+                                    ? user!.displayName[0].toUpperCase()
+                                    : '?',
+                                style: const TextStyle(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : null,
+                      ),
                     ),
                     
                     const SizedBox(height: 16),
@@ -199,10 +202,10 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
                     _buildTopArtistsTab(spotifyProvider),
                   ],
                 ),
-              ),
-            ],
+              ),            ],
           );
         },
+        ),
       ),
     );
   }
@@ -223,10 +226,8 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
           ],
         ),
       );
-    }
-
-    return ListView.builder(
-      padding: EdgeInsets.only(top: 16, left: 16, right: 16, bottom: MediaQuery.of(context).padding.bottom),
+    }    return ListView.builder(
+      padding: const EdgeInsets.only(top: 16, left: 16, right: 16, bottom: 16),
       itemCount: spotifyProvider.topTracks.length,
       itemBuilder: (context, index) {
         final track = spotifyProvider.topTracks[index];
@@ -254,10 +255,8 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
           ],
         ),
       );
-    }
-
-    return ListView.builder(
-      padding: EdgeInsets.only(top: 16, left: 16, right: 16, bottom: MediaQuery.of(context).padding.bottom),
+    }    return ListView.builder(
+      padding: const EdgeInsets.only(top: 16, left: 16, right: 16, bottom: 16),
       itemCount: spotifyProvider.topArtists.length,
       itemBuilder: (context, index) {
         final artist = spotifyProvider.topArtists[index];

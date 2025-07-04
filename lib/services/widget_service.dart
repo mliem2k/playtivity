@@ -2,11 +2,13 @@ import 'package:home_widget/home_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
+import 'dart:math' as math;
 import '../models/activity.dart';
 import '../models/user.dart';
+import 'app_logger.dart';
 
 @pragma('vm:entry-point')
-class WidgetService {  static const String _widgetName = 'PlaytivityWidget';
+class WidgetService {
   static const String _androidWidgetName = 'com.mliem.playtivity.widget.PlaytivityWidgetReceiver';
   static const String _iOSWidgetName = 'PlaytivityWidget';
   
@@ -14,6 +16,7 @@ class WidgetService {  static const String _widgetName = 'PlaytivityWidget';
   static const MethodChannel _channel = MethodChannel('playtivity_widget');
   
   // Initialize the widget
+  @pragma('vm:entry-point')
   static Future<void> initialize() async {
     await HomeWidget.setAppGroupId('group.com.mliem.playtivity');
     // Register interactive callback for widget clicks
@@ -23,53 +26,46 @@ class WidgetService {  static const String _widgetName = 'PlaytivityWidget';
   // Background callback for interactive widget actions
   @pragma("vm:entry-point")
   static FutureOr<void> backgroundCallback(Uri? data) async {
-    print('🎯 Widget callback triggered with data: $data');
-    
     if (data != null) {
       final action = data.host;
-      final queryParams = data.queryParameters;
       
       switch (action) {
         case 'openApp':
-          print('📱 Opening main app from widget');
-          break;
         case 'refreshData':
-          print('🔄 Refreshing widget data');
-          // Could trigger a data refresh here
           break;
         default:
-          print('🤷 Unknown widget action: $action');
+          AppLogger.warning('Unknown widget action: $action');
       }
     }
   }
-
+  
   // Save data directly to SharedPreferences as fallback
   static Future<void> _saveToSharedPreferences(String key, String value) async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      // Save to both flutter prefix and regular HomeWidget prefix for maximum compatibility
       await prefs.setString('flutter.$key', value);
-      print('📊 Direct save: flutter.$key = $value');
+      await prefs.setString(key, value); // Also save without flutter prefix
     } catch (e) {
-      print('❌ Error saving to SharedPreferences: $e');
+      AppLogger.error('Error saving to SharedPreferences', e);
     }
   }
   
   // Update widget with friends' activities only
+  @pragma('vm:entry-point')
   static Future<void> updateWidget({
     User? currentUser,
     List<Activity>? friendsActivities,
   }) async {
     try {
-      
       // Save friends' activities (show all activities, no longer limited to 5)
       if (friendsActivities != null && friendsActivities.isNotEmpty) {
         // Remove the take(5) limitation to show all friends
         final activities = friendsActivities.toList();
         
-        print('📊 Widget: Saving ${activities.length} activities');
-        
-        // First, clear any old data by clearing up to 50 slots to handle large friend lists
-        for (int i = 0; i < 50; i++) {
+        // Optimize: Only clear necessary slots based on current activity count
+        final maxSlotsToProcess = math.max(activities.length, 10); // Process at least 10 to clear old data
+        for (int i = 0; i < maxSlotsToProcess; i++) {
           await HomeWidget.saveWidgetData('friend_${i}_name', '');
           await HomeWidget.saveWidgetData('friend_${i}_track', '');
           await HomeWidget.saveWidgetData('friend_${i}_artist', '');
@@ -94,32 +90,25 @@ class WidgetService {  static const String _widgetName = 'PlaytivityWidget';
         // Now save all the actual activities
         for (int i = 0; i < activities.length; i++) {
           final activity = activities[i];
-          print('📊 Widget: Activity $i - ${activity.user.displayName}: ${activity.contentName}');
           
-          // Save via HomeWidget
+          // Save via HomeWidget - batch operations for better performance
           await HomeWidget.saveWidgetData('friend_${i}_name', activity.user.displayName);
           await HomeWidget.saveWidgetData('friend_${i}_track', activity.contentName);
           await HomeWidget.saveWidgetData('friend_${i}_artist', activity.contentSubtitle);
           await HomeWidget.saveWidgetData('friend_${i}_album_art', activity.contentImageUrl ?? '');
-          // Note: friend_image saved for potential future iOS widget support
           await HomeWidget.saveWidgetData('friend_${i}_image', activity.user.imageUrl ?? '');
-          // Save friend user ID for Spotify profile launching
           await HomeWidget.saveWidgetData('friend_${i}_user_id', activity.user.id);
-          // Save timestamp and currently playing status for "time ago" functionality
           await HomeWidget.saveWidgetData('friend_${i}_timestamp', activity.timestamp.millisecondsSinceEpoch.toString());
           await HomeWidget.saveWidgetData('friend_${i}_is_currently_playing', activity.isCurrentlyPlaying.toString());
           await HomeWidget.saveWidgetData('friend_${i}_activity_type', activity.type == ActivityType.playlist ? 'playlist' : 'track');
           
-          // Save directly to SharedPreferences as fallback
+          // Save directly to SharedPreferences as fallback - reduced logging
           await _saveToSharedPreferences('friend_${i}_name', activity.user.displayName);
           await _saveToSharedPreferences('friend_${i}_track', activity.contentName);
           await _saveToSharedPreferences('friend_${i}_artist', activity.contentSubtitle);
           await _saveToSharedPreferences('friend_${i}_album_art', activity.contentImageUrl ?? '');
-          // Note: Android Glance widgets don't support network images, but saving for iOS
           await _saveToSharedPreferences('friend_${i}_image', activity.user.imageUrl ?? '');
-          // Save friend user ID for Spotify profile launching
           await _saveToSharedPreferences('friend_${i}_user_id', activity.user.id);
-          // Save timestamp and currently playing status for "time ago" functionality
           await _saveToSharedPreferences('friend_${i}_timestamp', activity.timestamp.millisecondsSinceEpoch.toString());
           await _saveToSharedPreferences('friend_${i}_is_currently_playing', activity.isCurrentlyPlaying.toString());
           await _saveToSharedPreferences('friend_${i}_activity_type', activity.type == ActivityType.playlist ? 'playlist' : 'track');
@@ -128,19 +117,13 @@ class WidgetService {  static const String _widgetName = 'PlaytivityWidget';
         // Save activity count AFTER all activities are saved for atomic updates
         await HomeWidget.saveWidgetData('activities_count', activities.length.toString());
         await _saveToSharedPreferences('activities_count', activities.length.toString());
-        print('📊 Widget: Saved activities_count as ${activities.length} AFTER saving all activities');
-        
-        // Extra debug logging
-        print('📊 Widget: Successfully saved all ${activities.length} activities');
-        print('📊 Widget: First friend saved: ${activities.isNotEmpty ? activities[0].user.displayName : 'none'}');
-        print('📊 Widget: Last friend saved: ${activities.isNotEmpty ? activities[activities.length - 1].user.displayName : 'none'}');
-        
       } else {
-        print('📊 Widget: No activities to save');
         // No activities - clear all slots and set count to 0
         await HomeWidget.saveWidgetData('activities_count', '0');
         await _saveToSharedPreferences('activities_count', '0');
-        for (int i = 0; i < 50; i++) {
+        
+        // Clear only necessary slots for performance
+        for (int i = 0; i < 10; i++) {
           await HomeWidget.saveWidgetData('friend_${i}_name', '');
           await HomeWidget.saveWidgetData('friend_${i}_track', '');
           await HomeWidget.saveWidgetData('friend_${i}_artist', '');
@@ -163,27 +146,30 @@ class WidgetService {  static const String _widgetName = 'PlaytivityWidget';
         }
       }
       
-      // Save last update timestamp
-      await HomeWidget.saveWidgetData('last_update', DateTime.now().toIso8601String());
       await _saveToSharedPreferences('last_update', DateTime.now().toIso8601String());
       
-      // Longer delay to ensure all data is persisted before widget update
-      await Future.delayed(const Duration(milliseconds: 500));
+      // Reduced delay for faster widget updates
+      await Future.delayed(const Duration(milliseconds: 100));
       
-      print('📊 Widget: About to call updateWidget()');
-      print('📊 Widget: Using androidName: $_androidWidgetName');
-      
-            // Trigger widget update via method channel
+      // Trigger simple widget update
       try {
-        final result = await _channel.invokeMethod('updateWidget');
-        print('📱 Widget update triggered via method channel: $result');
-      } catch (channelError) {
-        print('❌ Method channel widget update failed: $channelError');
-        // Fallback: data is still saved, widget may update on next system refresh
-        print('📱 Data saved to SharedPreferences - widget will update on next refresh');
+        await HomeWidget.updateWidget(
+          qualifiedAndroidName: _androidWidgetName,
+          iOSName: _iOSWidgetName,
+        );
+        // Force image caching after a short delay
+        Future.delayed(const Duration(milliseconds: 500), () async {
+          try {
+            await _channel.invokeMethod('cacheImages');
+          } catch (e) {
+            AppLogger.error('Image caching failed', e);
+          }
+        });
+      } catch (e) {
+        AppLogger.error('Widget update failed', e);
       }
     } catch (e) {
-      print('❌ Error updating widget: $e');
+      AppLogger.error('Error updating widget', e);
     }
   }
   
@@ -209,8 +195,8 @@ class WidgetService {  static const String _widgetName = 'PlaytivityWidget';
       await HomeWidget.saveWidgetData('activities_count', '0');
       await HomeWidget.saveWidgetData('last_update', '');
       
-      // Clear up to 50 friend slots to ensure all data is cleared
-      for (int i = 0; i < 50; i++) {
+      // Optimized: Clear only necessary slots to improve performance
+      for (int i = 0; i < 20; i++) {
         await HomeWidget.saveWidgetData('friend_${i}_name', '');
         await HomeWidget.saveWidgetData('friend_${i}_track', '');
         await HomeWidget.saveWidgetData('friend_${i}_artist', '');
@@ -223,51 +209,116 @@ class WidgetService {  static const String _widgetName = 'PlaytivityWidget';
       }
       
       await HomeWidget.updateWidget(
-        androidName: _androidWidgetName,
+        qualifiedAndroidName: _androidWidgetName,
         iOSName: _iOSWidgetName,
       );
     } catch (e) {
-      print('❌ Error clearing widget data: $e');
+      AppLogger.error('Error clearing widget data', e);
     }
   }
-
+  
   // Debug method to test widget data and update
   static Future<void> debugWidgetData() async {
     try {
-      print('📊 === WIDGET DEBUG TEST ===');
+      AppLogger.widget('=== WIDGET DEBUG TEST ===');
       
       // Check what's currently in SharedPreferences
       final prefs = await SharedPreferences.getInstance();
-      print('📊 Current SharedPreferences data:');
+      AppLogger.widget('Current SharedPreferences data:');
       
       final activitiesCount = prefs.getString('flutter.activities_count') ?? 'null';
-      print('📊   activities_count: $activitiesCount');
+      AppLogger.widget('activities_count: $activitiesCount');
       
-      // Debug all activities (up to 20 to avoid spam)
+      // Debug only first 5 activities to reduce noise
       final count = int.tryParse(activitiesCount) ?? 0;
-      final maxDebug = count > 20 ? 20 : count;
+      final maxDebug = count > 5 ? 5 : count;
       for (int i = 0; i < maxDebug; i++) {
         final name = prefs.getString('flutter.friend_${i}_name') ?? 'null';
         final track = prefs.getString('flutter.friend_${i}_track') ?? 'null';
         final artist = prefs.getString('flutter.friend_${i}_artist') ?? 'null';
-        print('📊   friend_$i: $name - $track by $artist');
+        final userId = prefs.getString('flutter.friend_${i}_user_id') ?? 'null';
+        AppLogger.widget('friend_$i: $name - $track by $artist (ID: $userId)');
       }
-      if (count > 20) {
-        print('📊   ... and ${count - 20} more activities');
+      if (count > 5) {
+        AppLogger.widget('... and ${count - 5} more activities');
       }
       
       // Test widget update via method channel
-      print('📊 Testing widget update...');
+      AppLogger.widget('Testing widget update...');
       try {
         final result = await _channel.invokeMethod('updateWidget');
-        print('📊 Widget update successful via method channel: $result');
+        AppLogger.widget('Widget update successful via method channel: $result');
       } catch (e) {
-        print('📊 Widget update failed: $e');
+        AppLogger.error('Widget update failed', e);
       }
       
-      print('📊 === END WIDGET DEBUG TEST ===');
+      AppLogger.widget('=== END WIDGET DEBUG TEST ===');
     } catch (e) {
-      print('❌ Error in widget debug: $e');
+      AppLogger.error('Error in widget debug', e);
     }
+  }
+
+  // Comprehensive debug for release builds
+  static Future<Map<String, dynamic>> debugReleaseWidget() async {
+    final debugInfo = <String, dynamic>{};
+    
+    try {
+      AppLogger.widget('=== RELEASE WIDGET DEBUG ===');
+      
+      // 1. Check SharedPreferences data
+      final prefs = await SharedPreferences.getInstance();
+      final allKeys = prefs.getKeys().toList();
+      final widgetKeys = allKeys.where((key) => 
+        key.contains('activities') || key.contains('friend_') || key.contains('last_update')
+      ).toList();
+      
+      debugInfo['total_keys'] = allKeys.length;
+      debugInfo['widget_keys'] = widgetKeys.length;
+      debugInfo['widget_key_list'] = widgetKeys;
+      
+      AppLogger.widget('Total keys in SharedPreferences: ${allKeys.length}');
+      AppLogger.widget('Widget-related keys: ${widgetKeys.length}');
+      
+      // 2. Check activities data
+      final flutterActivitiesCount = prefs.getString('flutter.activities_count');
+      final homeWidgetActivitiesCount = prefs.getString('activities_count');
+      
+      debugInfo['flutter_activities_count'] = flutterActivitiesCount;
+      debugInfo['home_widget_activities_count'] = homeWidgetActivitiesCount;
+      
+      AppLogger.widget('Flutter activities count: $flutterActivitiesCount');
+      AppLogger.widget('HomeWidget activities count: $homeWidgetActivitiesCount');
+      
+      // 3. Test method channel
+      debugInfo['method_channel_available'] = false;
+      try {
+        final result = await _channel.invokeMethod('updateWidget');
+        debugInfo['method_channel_available'] = true;
+        debugInfo['method_channel_result'] = result;
+        AppLogger.widget('Method channel works: $result');
+      } catch (e) {
+        debugInfo['method_channel_error'] = e.toString();
+        AppLogger.error('Method channel failed', e);
+      }
+      
+      // 4. Test HomeWidget integration
+      debugInfo['home_widget_available'] = false;
+      try {
+        await HomeWidget.setAppGroupId('group.com.mliem.playtivity');
+        debugInfo['home_widget_available'] = true;
+        AppLogger.widget('HomeWidget integration works');
+      } catch (e) {
+        debugInfo['home_widget_error'] = e.toString();
+        AppLogger.error('HomeWidget integration failed', e);
+      }
+      
+      AppLogger.widget('=== END RELEASE DEBUG ===');
+      
+    } catch (e) {
+      debugInfo['debug_error'] = e.toString();
+      AppLogger.error('Debug error', e);
+    }
+    
+    return debugInfo;
   }
 } 

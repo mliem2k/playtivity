@@ -4,6 +4,7 @@ import '../models/user.dart';
 import '../models/track.dart';
 import 'spotify_buddy_service.dart';
 import 'http_interceptor.dart';
+import 'app_logger.dart';
 
 class SpotifyService {
   static const String baseUrl = 'https://api.spotify.com/v1';
@@ -100,12 +101,12 @@ class SpotifyService {
           // No content - nothing is currently playing
           return null;
         } else {
-          print('Failed to get currently playing: ${response.statusCode} - ${response.body}');
+          AppLogger.spotify('Failed to get currently playing: ${response.statusCode} - ${response.body}');
           return null;
         }
         
         } catch (e) {
-          print('❌ Error getting currently playing: $e');
+          AppLogger.spotify('Error getting currently playing', e);
           return null;
         }
       },
@@ -126,7 +127,7 @@ class SpotifyService {
     
     while (attempt < maxRetries) {
       try {
-        print('🔄 Attempting $operation (attempt ${attempt + 1}/$maxRetries)');
+        AppLogger.spotify('Attempting $operation (attempt ${attempt + 1}/$maxRetries)');
         return await apiCall().timeout(
           const Duration(seconds: 15), // 15 second timeout per request
           onTimeout: () {
@@ -137,12 +138,12 @@ class SpotifyService {
         attempt++;
         
         if (attempt >= maxRetries) {
-          print('❌ $operation failed after $maxRetries attempts: $e');
+          AppLogger.error('$operation failed after $maxRetries attempts', e);
           rethrow;
         }
         
-        print('⚠️ $operation failed (attempt $attempt/$maxRetries): $e');
-        print('🔄 Retrying in ${delay.inMilliseconds}ms...');
+        AppLogger.warning('$operation failed (attempt $attempt/$maxRetries)', e);
+        AppLogger.spotify('Retrying in ${delay.inMilliseconds}ms...');
         
         await Future.delayed(delay);
         delay = Duration(milliseconds: (delay.inMilliseconds * 1.5).round()); // Exponential backoff

@@ -10,7 +10,11 @@ class CurrentlyPlayingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return GestureDetector(
+      onTap: () async {
+        await SpotifyLauncher.launchSpotifyUri('spotify:');
+      },
+      child: Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -111,31 +115,13 @@ class CurrentlyPlayingCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                
-                // Play button
-                GestureDetector(
-                  onTap: () async {
-                    await SpotifyLauncher.launchSpotifyUriAndPlay(track.uri);
-                  },
-                  behavior: HitTestBehavior.opaque,
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Theme.of(context).primaryColor.withOpacity(0.1),
-                    ),
-                    child: Icon(
-                      Icons.play_arrow,
-                      color: Theme.of(context).primaryColor,
-                      size: 24,
-                    ),
-                  ),
-                ),
+                // Play button removed
               ],
             ),
           ],
         ),
       ),
+    ),
     );
   }
 } 

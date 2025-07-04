@@ -8,6 +8,7 @@ import 'package:playtivity/models/track.dart';
 import 'package:playtivity/models/playlist.dart';
 import 'package:playtivity/models/artist.dart';
 import 'http_interceptor.dart';
+import 'app_logger.dart';
 // import 'package:playtivity/services/spotify_service.dart';
 
 class SpotifyBuddyService {
@@ -26,11 +27,14 @@ class SpotifyBuddyService {
   // Public factory constructor that returns the singleton
   factory SpotifyBuddyService() => instance;
   
-  // Cache for complete cookie string to avoid repeated requests
+  // Cache for complete cookie string
   String? _completeCookieString;
   
   // New: Direct Bearer token support (bypasses TOTP generation)
   String? _directBearerToken;
+  
+  // New: Client token storage
+  String? _clientToken;
     // Spotify service for fetching track details
   // final SpotifyService _spotifyService = SpotifyService();
   
@@ -68,14 +72,13 @@ class SpotifyBuddyService {
       
       if (cacheJson != null) {
         final cacheData = json.decode(cacheJson) as Map<String, dynamic>;
-        _trackDurationCache.clear();
-        cacheData.forEach((key, value) {
-          _trackDurationCache[key] = value as int;
-        });
-        print('📦 Loaded ${_trackDurationCache.length} cached track durations');
+                  _trackDurationCache.clear();
+          cacheData.forEach((key, value) {
+            _trackDurationCache[key] = value as int;
+          });
       }
     } catch (e) {
-      print('❌ Error loading track duration cache: $e');
+      AppLogger.spotify('❌ Error loading track duration cache: $e');
     }
   }
 
@@ -85,9 +88,9 @@ class SpotifyBuddyService {
       final prefs = await SharedPreferences.getInstance();
       final cacheJson = json.encode(_trackDurationCache);
       await prefs.setString(_trackDurationCacheKey, cacheJson);
-      print('💾 Saved ${_trackDurationCache.length} track durations to cache');
+      AppLogger.spotify('💾 Saved ${_trackDurationCache.length} track durations to cache');
     } catch (e) {
-      print('❌ Error saving track duration cache: $e');
+      AppLogger.spotify('❌ Error saving track duration cache: $e');
     }
   }
 
@@ -98,9 +101,9 @@ class SpotifyBuddyService {
       _cacheModified = false;
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_trackDurationCacheKey);
-      print('🗑️ Cleared track duration cache');
+      AppLogger.spotify('🗑️ Cleared track duration cache');
     } catch (e) {
-      print('❌ Error clearing track duration cache: $e');
+      AppLogger.spotify('❌ Error clearing track duration cache: $e');
     }
   }
 
@@ -108,7 +111,7 @@ class SpotifyBuddyService {
   void clearBuddyListCache() {
     _cachedBuddyActivities = null;
     _lastBuddyListFetch = null;
-    print('🗑️ Cleared buddy list cache - next request will fetch fresh data');
+    AppLogger.spotify('🗑️ Cleared buddy list cache - next request will fetch fresh data');
   }
 
   /// Gets information about the current buddy list cache status
@@ -146,7 +149,7 @@ class SpotifyBuddyService {
         
         // Check cache first
         if (_trackDurationCache.containsKey(trackUri)) {
-          print('💾 Using cached duration for track: $trackUri');
+          AppLogger.spotify('💾 Using cached duration for track: $trackUri');
           return _trackDurationCache[trackUri];
         }
         
@@ -174,7 +177,7 @@ class SpotifyBuddyService {
             // Cache the duration in memory
             _trackDurationCache[trackUri] = durationMs;
             _cacheModified = true;
-            print('✅ Fetched and cached duration for track $trackId: ${(durationMs/1000).toStringAsFixed(1)}s');
+
             return durationMs;
           }
         } else {
@@ -189,40 +192,38 @@ class SpotifyBuddyService {
 
   /// Sets the Bearer token and headers directly (bypasses TOTP generation)
   void setBearerToken(String bearerToken, Map<String, String> headers) {
-    print('🔧 setBearerToken called with:');
-    print('   - bearerToken: ${bearerToken.substring(0, 20)}... (length: ${bearerToken.length})');
-    print('   - headers keys: ${headers.keys.join(', ')}');
+    AppLogger.spotify('🔧 setBearerToken called with:');
+    AppLogger.spotify('   - bearerToken: ${bearerToken.substring(0, 20)}... (length: ${bearerToken.length})');
+    AppLogger.spotify('   - headers keys: ${headers.keys.join(', ')}');
     
     _directBearerToken = bearerToken;
     
     // Store the complete cookie string
     _completeCookieString = headers['Cookie'] ?? '';
     
-    print('✅ Bearer token and headers set directly');
-    print('   Token length: ${bearerToken.length}');
-    print('   Headers: ${headers.keys.join(', ')}');
-    print('   Cookie key exists: ${headers.containsKey('Cookie')}');
-    print('   Cookie value: ${headers['Cookie']?.substring(0, 100) ?? 'null'}...');
-    print('   Cookie length: ${_completeCookieString?.length ?? 0}');
-    print('   Final _completeCookieString: ${_completeCookieString?.isNotEmpty == true ? '${_completeCookieString!.substring(0, 100)}...' : 'EMPTY'}');
-    print('   _directBearerToken stored: ${_directBearerToken?.substring(0, 20)}...');
+    // Store the client token if present
+    if (headers['client-token'] != null) {
+      _clientToken = headers['client-token'];
+      AppLogger.spotify('✅ Client token stored (length: ${_clientToken?.length ?? 0})');
+    }
+    
+    AppLogger.spotify('✅ Bearer token and headers set directly');
+    AppLogger.spotify('   Token length: ${bearerToken.length}');
+    AppLogger.spotify('   Headers: ${headers.keys.join(', ')}');
+    AppLogger.spotify('   Cookie key exists: ${headers.containsKey('Cookie')}');
+    AppLogger.spotify('   Cookie value: ${headers['Cookie']?.substring(0, 100) ?? 'null'}...');
+    AppLogger.spotify('   Cookie length: ${_completeCookieString?.length ?? 0}');
+    AppLogger.spotify('   Final _completeCookieString: ${_completeCookieString?.isNotEmpty == true ? '${_completeCookieString!.substring(0, 100)}...' : 'EMPTY'}');
+    AppLogger.spotify('_directBearerToken stored: ${_directBearerToken?.substring(0, 20)}...');
+    AppLogger.spotify('_clientToken stored: ${_clientToken != null ? '${_clientToken!.substring(0, 20)}...' : 'null'}');
   }
 
   /// Gets the current Bearer token (direct only)
   String? getBearerToken() {
-    print('🔍 getBearerToken called:');
-    print('   - _directBearerToken null: ${_directBearerToken == null}');
-    print('   - _directBearerToken empty: ${_directBearerToken?.isEmpty ?? true}');
-    print('   - _directBearerToken length: ${_directBearerToken?.length ?? 0}');
-    print('   - _directBearerToken preview: ${_directBearerToken?.substring(0, 20) ?? 'null'}...');
-    
     if (_directBearerToken != null && _directBearerToken!.isNotEmpty) {
-      print('✅ Using direct Bearer token');
       return _directBearerToken;
     }
-    
-    print('❌ No Bearer token available');
-    throw Exception('No Bearer token available - must authenticate first');
+    return null; // Return null instead of throwing exception
   }
 
   /// Gets the complete cookie string
@@ -230,11 +231,33 @@ class SpotifyBuddyService {
     return _completeCookieString;
   }
 
+  /// Gets the client token
+  String? getClientToken() {
+    if (_clientToken != null && _clientToken!.isNotEmpty) {
+      AppLogger.spotify('✅ Using stored client token');
+      return _clientToken;
+    }
+    AppLogger.spotify('❌ No client token available');
+    return null;
+  }
+
   /// Clears the stored Bearer token and headers
   void clearBearerToken() {
+    AppLogger.spotify('🗑️ Clearing all SpotifyBuddyService state...');
+    
+    // Clear authentication tokens
     _directBearerToken = null;
     _completeCookieString = null;
-    print('🗑️ Cleared Bearer token and headers');
+    _clientToken = null;
+    
+    // Clear all cached data to prevent stale state
+    clearBuddyListCache();
+    _trackDurationCache.clear();
+    _artistDetailsCache.clear();
+    _cacheModified = false;
+    _artistCacheModified = false;
+    
+    AppLogger.spotify('✅ Cleared Bearer token, headers, and all cached data');
   }
 
 
@@ -247,15 +270,15 @@ class SpotifyBuddyService {
       final userName = friend['user']?['display_name'] ?? 'Unknown';
       
       if (timestamp == null || track == null) {
-        print('❌ $userName: Missing timestamp or track data');
+        AppLogger.spotify('❌ $userName: Missing timestamp or track data');
         return false;
       }
       
       // Get song duration in milliseconds - use provided duration or try to get from track data
       final trackDurationMs = durationMs ?? track['duration_ms'];
       if (trackDurationMs == null) {
-        print('❌ $userName: Missing duration_ms in track data and no duration provided');
-        print('🔍 Track data: $track');
+        AppLogger.spotify('❌ $userName: Missing duration_ms in track data and no duration provided');
+        AppLogger.spotify('🔍 Track data: $track');
         return false;
       }
       
@@ -266,20 +289,13 @@ class SpotifyBuddyService {
       // Calculate elapsed time since the friend started playing
       final elapsedMs = currentTime.difference(friendTimestamp).inMilliseconds;
       
-      print('🕐 $userName: timestamp=$timestamp, friendTime=${friendTimestamp.toIso8601String()}, now=${currentTime.toIso8601String()}');
-      
       // Friend is currently playing if elapsed time is less than song duration
       // Add a small buffer (5 seconds) to account for network delays
       final isPlaying = elapsedMs >= 0 && elapsedMs < (trackDurationMs + 5000);
       
-      print('⏱️  ${friend['user']?['display_name'] ?? 'Unknown'}: '
-            'elapsed=${(elapsedMs/1000).toStringAsFixed(1)}s, '
-            'duration=${(trackDurationMs/1000).toStringAsFixed(1)}s, '
-            'playing=$isPlaying');
-      
       return isPlaying;
     } catch (e) {
-      print('❌ Error calculating playback status: $e');
+      AppLogger.spotify('❌ Error calculating playback status: $e');
       return false;
     }
   }
@@ -290,14 +306,14 @@ class SpotifyBuddyService {
     
     // If no cache exists or cache is older than 1.5 minutes, refresh
     if (_cachedBuddyActivities == null || _lastBuddyListFetch == null) {
-      print('📊 Cache refresh needed: No cached data');
+      AppLogger.spotify('📊 Cache refresh needed: No cached data');
       return true;
     }
     
     // Check if cache has expired (1.5 minutes)
     final cacheAge = now.difference(_lastBuddyListFetch!);
     if (cacheAge >= _buddyListCacheDuration) {
-      print('📊 Cache refresh needed: Cache expired (${cacheAge.inSeconds}s > ${_buddyListCacheDuration.inSeconds}s)');
+      AppLogger.spotify('📊 Cache refresh needed: Cache expired (${cacheAge.inSeconds}s > ${_buddyListCacheDuration.inSeconds}s)');
       return true;
     }
     
@@ -313,42 +329,48 @@ class SpotifyBuddyService {
         
         // If track should have finished (with 5 second buffer), refresh cache
         if (elapsedMs >= (trackDurationMs + 5000)) {
-          print('📊 Cache refresh needed: Track "${activity.track!.name}" by ${activity.user.displayName} should have finished');
+          AppLogger.spotify('📊 Cache refresh needed: Track "${activity.track!.name}" by ${activity.user.displayName} should have finished');
           return true;
         }
       }
     }
     
-    print('📊 Cache still valid: Age=${cacheAge.inSeconds}s, no tracks finished');
+    AppLogger.spotify('📊 Cache still valid: Age=${cacheAge.inSeconds}s, no tracks finished');
     return false;
   }
   
   /// Generates a curl command for debugging API requests
-  // String _generateCurlCommand(String method, String url, Map<String, String> headers, {String? body}) {
-  //   final buffer = StringBuffer();
-  //   buffer.write('curl -X $method');
-  //   
-  //   // Add headers
-  //   headers.forEach((key, value) {
-  //     buffer.write(' -H "$key: $value"');
-  //   });
-  //   
-  //   // Add body if present
-  //   if (body != null && body.isNotEmpty) {
-  //     buffer.write(' -d \'$body\'');
-  //   });
-  //   
-  //   // Add URL
-  //   buffer.write(' "$url"');
-  //   
-  //   return buffer.toString();
-  // }
+  String _generateCurlCommand(String method, String url, Map<String, String> headers, {String? body}) {
+    final buffer = StringBuffer();
+    buffer.write("curl '$url'");
+    
+    // Add headers
+    headers.forEach((key, value) {
+      // Escape single quotes in values
+      final escapedValue = value.replaceAll("'", "'\\''");
+      buffer.write(" \\\n  -H '$key: $escapedValue'");
+    });
+    
+    // Add method if not GET
+    if (method != 'GET') {
+      buffer.write(" \\\n  -X $method");
+    }
+    
+    // Add body if present
+    if (body != null && body.isNotEmpty) {
+      // Escape single quotes in body
+      final escapedBody = body.replaceAll("'", "'\\''");
+      buffer.write(" \\\n  --data-raw '$escapedBody'");
+    }
+    
+    return buffer.toString();
+  }
 
   Future<List<Activity>> getFriendActivity({
     bool fastLoad = false,
     Function(List<Activity>)? onActivitiesUpdate,
   }) async {
-    print('🔍 getFriendActivity called');
+    AppLogger.spotify('🔍 getFriendActivity called');
     
     // The new buddylist endpoint only requires Bearer token authentication
     String? accessToken = getBearerToken();
@@ -357,7 +379,7 @@ class SpotifyBuddyService {
     }
     // Check if we can use cached data
     if (!_shouldRefreshBuddyList()) {
-      print('✅ Using cached buddy list data');
+      AppLogger.spotify('✅ Using cached buddy list data');
       return _cachedBuddyActivities!;
     }
     
@@ -368,7 +390,7 @@ class SpotifyBuddyService {
           await _loadTrackDurationCache();
         }
         
-        print('✅ Got access token, fetching friend activity...');
+        AppLogger.spotify('✅ Got access token, fetching friend activity...');
         
         // Use the new buddylist endpoint - no hash parameter needed
         final url = '$_baseUrl/presence-view/v1/buddylist';
@@ -382,12 +404,9 @@ class SpotifyBuddyService {
             headers: headers,
           );
 
-          print('📡 Buddy list API response: ${response.statusCode}');
-          print('📦 Response body: ${response.body}');
-
+          // Only log status code for debugging
           // Handle unauthorized response - clear cache and retry once
           if (response.statusCode == 401 || response.statusCode == 403) {
-            print('🔄 Access token unauthorized, clearing cache and retrying...');
             _completeCookieString = null;
             
             // Use the new buddylist endpoint for retry as well
@@ -402,8 +421,6 @@ class SpotifyBuddyService {
                 headers: retryHeaders,
               );
               
-              print('📡 Retry response: ${retryResponse.statusCode}');
-              
               if (retryResponse.statusCode == 200) {
                 final activities = await _parseActivityResponse(
                   retryResponse.body, 
@@ -415,11 +432,9 @@ class SpotifyBuddyService {
                 _lastBuddyListFetch = DateTime.now();
                 return activities;
               } else {
-                print('❌ Retry also failed with status: ${retryResponse.statusCode}');
                 throw Exception('Failed to fetch friend activity: ${retryResponse.statusCode}');
               }
             } catch (retryError) {
-              print('❌ Error during retry request: $retryError');
               throw Exception('Network error during retry: $retryError');
             }
           }
@@ -433,14 +448,11 @@ class SpotifyBuddyService {
             // Cache the successful response
             _cachedBuddyActivities = activities;
             _lastBuddyListFetch = DateTime.now();
-            print('💾 Cached buddy list data with ${activities.length} activities');
             return activities;
           } else {
-            print('❌ Failed to fetch friend activity: ${response.statusCode} - ${response.body}');
-            throw Exception('Failed to fetch friend activity: ${response.statusCode} - ${response.body}');
+            throw Exception('Failed to fetch friend activity: ${response.statusCode}');
           }
         } catch (e) {
-          print('❌ Error making buddy list API request: $e');
           return [];
         }
       },
@@ -455,11 +467,9 @@ class SpotifyBuddyService {
   }) async {
     try {
       final data = json.decode(responseBody);
-      print('📦 Buddy list response data: $data');
       final friends = data['friends'] as List?;
       
       if (friends != null) {
-        print('👥 Found ${friends.length} friends in response');
         final activities = <Activity>[];
         final tracksNeedingDuration = <int>[];
         
@@ -469,10 +479,7 @@ class SpotifyBuddyService {
           final userInfo = friend['user'];
           final timestamp = friend['timestamp'] ?? DateTime.now().millisecondsSinceEpoch;
           
-          print('👤 Processing friend: ${userInfo?['name']} at timestamp $timestamp');
-          
           // Create User object
-          // Extract user ID from URI (e.g., "spotify:user:214diupj3zah2rimagmv4wrgy" -> "214diupj3zah2rimagmv4wrgy")
           final userUri = userInfo['uri'] ?? '';
           final userId = userUri.startsWith('spotify:user:') 
               ? userUri.substring('spotify:user:'.length)
@@ -490,10 +497,8 @@ class SpotifyBuddyService {
           // Check if this is a track or playlist activity
           final trackInfo = friend['track'];
           final playlistInfo = friend['playlist'];
-          // final contextInfo = friend['context']; // v2 API includes context - not used yet
           
           if (playlistInfo != null) {
-            print('🎵 Processing playlist activity: ${playlistInfo['name']}');
             // For playlists, we can't calculate duration-based playback
             final playlist = Playlist(
               id: playlistInfo['uri']?.split(':').last ?? '',
@@ -515,8 +520,6 @@ class SpotifyBuddyService {
               type: ActivityType.playlist,
             ));
           } else if (trackInfo != null) {
-            print('🎵 Processing track activity: ${trackInfo['name']} by ${trackInfo['artist']?['name']}');
-            
             // Get track duration from cache or API response
             int? durationMs = trackInfo['duration_ms'];
             final trackUri = trackInfo['uri'] ?? '';
@@ -525,20 +528,14 @@ class SpotifyBuddyService {
             // Check cache first for duration
             if (durationMs == null && trackUri.isNotEmpty && _trackDurationCache.containsKey(trackUri)) {
               durationMs = _trackDurationCache[trackUri];
-              print('💾 Using cached duration for track: $trackUri');
             }
             
             // If we have duration, calculate if currently playing
             if (durationMs != null) {
               isCurrentlyPlaying = _isCurrentlyPlaying(friend, durationMs: durationMs);
-              print('🎵 Friend activity: ${userInfo['name']} - Currently Playing: $isCurrentlyPlaying');
             } else if (!fastLoad && trackUri.isNotEmpty) {
               // Mark this track as needing duration fetch
               tracksNeedingDuration.add(i);
-              print('⏳ Track needs duration fetch: $trackUri');
-            } else {
-              // In fast load mode or no URI, assume not currently playing
-              print('⚡ Fast load or no URI: ${userInfo['name']} - Skipping duration check');
             }
             
             // Create Track object - handle v2 API structure
@@ -563,15 +560,11 @@ class SpotifyBuddyService {
               isCurrentlyPlaying: isCurrentlyPlaying,
               type: ActivityType.track,
             ));
-          } else {
-            print('⚠️ Friend ${userInfo?['name']} has no track or playlist data');
           }
         }
         
         // Sort by timestamp - most recent first
         activities.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-        
-        print('✅ Parsed ${activities.length} activities successfully (${tracksNeedingDuration.length} tracks need duration fetch)');
         
         // Second pass: Fetch missing track durations in background and update progressively
         if (tracksNeedingDuration.isNotEmpty && !fastLoad) {
@@ -585,12 +578,9 @@ class SpotifyBuddyService {
         }
         
         return activities;
-      } else {
-        print('⚠️ No friends array found in response');
       }
     } catch (e) {
-      print('❌ Error parsing activity response: $e');
-      print('📦 Raw response: $responseBody');
+      AppLogger.spotify('❌ Error parsing activity response: $e');
     }
     
     return [];
@@ -605,7 +595,7 @@ class SpotifyBuddyService {
   ) {
     // Run in background without blocking the main response
     Future.microtask(() async {
-      print('🔄 Starting progressive track duration fetch for ${tracksNeedingDuration.length} tracks...');
+      AppLogger.spotify('🔄 Starting progressive track duration fetch for ${tracksNeedingDuration.length} tracks...');
       
       var updatedActivities = List<Activity>.from(activities);
       
@@ -618,7 +608,7 @@ class SpotifyBuddyService {
           
           if (trackUri.isEmpty) continue;
           
-          print('🔍 Fetching duration for track: $trackUri (user: $userName)');
+          AppLogger.spotify('🔍 Fetching duration for track: $trackUri (user: $userName)');
           final durationMs = await _getTrackDuration(trackUri);
           
           if (durationMs != null) {
@@ -653,7 +643,7 @@ class SpotifyBuddyService {
                 type: oldActivity.type,
               );
               
-              print('✅ Updated activity for $userName: ${oldActivity.track!.name} - Currently Playing: $isCurrentlyPlaying');
+              AppLogger.spotify('✅ Updated activity for $userName: ${oldActivity.track!.name} - Currently Playing: $isCurrentlyPlaying');
               
               // Update cached activities
               _cachedBuddyActivities = List<Activity>.from(updatedActivities);
@@ -665,7 +655,7 @@ class SpotifyBuddyService {
             }
           }
         } catch (e) {
-          print('⚠️ Failed to fetch duration for track at index $friendIndex: $e');
+          AppLogger.spotify('⚠️ Failed to fetch duration for track at index $friendIndex: $e');
         }
       }
       
@@ -675,7 +665,7 @@ class SpotifyBuddyService {
         _cacheModified = false;
       }
       
-      print('✅ Completed progressive track duration fetch');
+      AppLogger.spotify('✅ Completed progressive track duration fetch');
     });
   }
 
@@ -801,7 +791,7 @@ class SpotifyBuddyService {
     
     while (attempt < maxRetries) {
       try {
-        print('🔄 Attempting $operation (attempt ${attempt + 1}/$maxRetries)');
+        AppLogger.spotify('🔄 Attempting $operation (attempt ${attempt + 1}/$maxRetries)');
         return await apiCall().timeout(
           const Duration(seconds: 30), // 30 second timeout per request
           onTimeout: () {
@@ -812,12 +802,12 @@ class SpotifyBuddyService {
         attempt++;
         
         if (attempt >= maxRetries) {
-          print('❌ $operation failed after $maxRetries attempts: $e');
+          AppLogger.spotify('❌ $operation failed after $maxRetries attempts: $e');
           rethrow;
         }
         
-        print('⚠️ $operation failed (attempt $attempt/$maxRetries): $e');
-        print('🔄 Retrying in ${delay.inMilliseconds}ms...');
+        AppLogger.spotify('⚠️ $operation failed (attempt $attempt/$maxRetries): $e');
+        AppLogger.spotify('🔄 Retrying in ${delay.inMilliseconds}ms...');
         
         await Future.delayed(delay);
         delay = Duration(milliseconds: (delay.inMilliseconds * 1.5).round()); // Exponential backoff
@@ -832,7 +822,7 @@ class SpotifyBuddyService {
   Future<User?> getCurrentUserProfileWithToken(String bearerToken) async {
     return _retryApiCall(
       () async {
-        print('🔄 Getting user profile with Bearer token...');
+        AppLogger.spotify('🔄 Getting user profile with Bearer token...');
         
         final url = 'https://api.spotify.com/v1/me';
         final headers = {
@@ -846,11 +836,11 @@ class SpotifyBuddyService {
           headers: headers,
         );
 
-        print('📡 User profile API response: ${response.statusCode}');
+        AppLogger.spotify('📡 User profile API response: ${response.statusCode}');
 
         if (response.statusCode == 200) {
           final data = json.decode(response.body);
-          print('✅ Successfully fetched user profile: ${data['display_name']}');
+          AppLogger.spotify('✅ Successfully fetched user profile: ${data['display_name']}');
           
           return User.fromSpotifyApi(data);
         } else {
@@ -876,19 +866,20 @@ class SpotifyBuddyService {
       
       return await _retryApiCall(
         () async {
-          print('🔄 Getting top content with GraphQL API...');
+          AppLogger.spotify('🔄 Getting top content with GraphQL API...');
+          AppLogger.spotify('   - Time range: $timeRange');
+          AppLogger.spotify('   - Tracks limit: $tracksLimit (enabled: $includeTopTracks)');
+          AppLogger.spotify('   - Artists limit: $artistsLimit (enabled: $includeTopArtists)');
           
           // Get Bearer token (direct only)
           String? accessToken = getBearerToken();
+          String? clientToken = getClientToken();
           
           if (accessToken == null) {
             throw Exception('Failed to get access token for top content');
           }
 
-          print('✅ Got access token, fetching top content...');
-          
-          // Convert timeRange to GraphQL format
-          final gqlTimeRange = _convertTimeRangeToGraphQL(timeRange);
+          AppLogger.spotify('✅ Got access token, fetching top content...');
           
           final url = 'https://api-partner.spotify.com/pathfinder/v2/query';
           final headers = {
@@ -896,10 +887,12 @@ class SpotifyBuddyService {
             'accept-language': 'en',
             'app-platform': 'WebPlayer',
             'authorization': 'Bearer $accessToken',
-            'client-token': _generateClientToken(),
+            'cache-control': 'no-cache',
+            'client-token': clientToken ?? _generateClientToken(),
             'content-type': 'application/json;charset=UTF-8',
             'dnt': '1',
             'origin': 'https://open.spotify.com',
+            'pragma': 'no-cache',
             'priority': 'u=1, i',
             'referer': 'https://open.spotify.com/',
             'sec-ch-ua': '"Google Chrome";v="137", "Chromium";v="137", "Not/A)Brand";v="24"',
@@ -908,8 +901,8 @@ class SpotifyBuddyService {
             'sec-fetch-dest': 'empty',
             'sec-fetch-mode': 'cors',
             'sec-fetch-site': 'same-site',
-            'spotify-app-version': '1.2.66.322.g4d62a810',
-            'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/537.36',
+            'spotify-app-version': '1.2.67.546.ga043c80d',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
             'Cookie': _completeCookieString!,
           };
 
@@ -920,23 +913,23 @@ class SpotifyBuddyService {
                 'offset': 0,
                 'limit': artistsLimit,
                 'sortBy': 'AFFINITY',
-                'timeRange': gqlTimeRange,
+                'timeRange': 'SHORT_TERM'
               },
               'includeTopTracks': includeTopTracks,
               'topTracksInput': {
                 'offset': 0,
                 'limit': tracksLimit,
                 'sortBy': 'AFFINITY',
-                'timeRange': gqlTimeRange,
-              },
+                'timeRange': 'SHORT_TERM'
+              }
             },
             'operationName': 'userTopContent',
             'extensions': {
               'persistedQuery': {
                 'version': 1,
-                'sha256Hash': 'feb6d55177e2cbce2ac59214f9493f1ef2e4368eec01b3d4c3468fa1b97336e2',
-              },
-            },
+                'sha256Hash': 'feb6d55177e2cbce2ac59214f9493f1ef2e4368eec01b3d4c3468fa1b97336e2'
+              }
+            }
           };
 
           final response = await HttpInterceptor.post(
@@ -945,20 +938,83 @@ class SpotifyBuddyService {
             body: json.encode(requestBody),
           );
 
-          print('📡 Top content GraphQL API response: ${response.statusCode}');
-
+          AppLogger.spotify('📡 Top content API response: ${response.statusCode}');
+          
           if (response.statusCode == 200) {
             final data = json.decode(response.body);
-            print('✅ Successfully fetched top content');
+            final topArtistsCount = data['data']?['me']?['profile']?['topArtists']?['totalCount'] ?? 0;
+            final topTracksCount = data['data']?['me']?['profile']?['topTracks']?['totalCount'] ?? 0;
+            AppLogger.spotify('✅ Successfully fetched top content (artists: $topArtistsCount, tracks: $topTracksCount)');
             return data;
+          } else if (response.statusCode == 401 || response.statusCode == 403) {
+            AppLogger.spotify('🔄 Access token unauthorized, clearing cache and retrying...');
+            AppLogger.spotify('Response body: ${response.body}');
+            _completeCookieString = null;
+            
+            // Retry with the same request
+            final retryHeaders = {
+              'accept': 'application/json',
+              'accept-language': 'en',
+              'app-platform': 'WebPlayer',
+              'authorization': 'Bearer $accessToken',
+              'cache-control': 'no-cache',
+              'client-token': _generateClientToken(),
+              'content-type': 'application/json;charset=UTF-8',
+              'dnt': '1',
+              'origin': 'https://open.spotify.com',
+              'pragma': 'no-cache',
+              'priority': 'u=1, i',
+              'referer': 'https://open.spotify.com/',
+              'sec-ch-ua': '"Google Chrome";v="137", "Chromium";v="137", "Not/A)Brand";v="24"',
+              'sec-ch-ua-mobile': '?0',
+              'sec-ch-ua-platform': '"Windows"',
+              'sec-fetch-dest': 'empty',
+              'sec-fetch-mode': 'cors',
+              'sec-fetch-site': 'same-site',
+              'spotify-app-version': '1.2.67.546.ga043c80d',
+              'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
+              'Cookie': _completeCookieString!,
+            };
+            
+            try {
+              // Log retry curl command for debugging
+              AppLogger.spotify('📡 Retry request curl command:');
+              AppLogger.spotify(_generateCurlCommand('POST', url, retryHeaders, body: json.encode(requestBody)));
+
+              final retryResponse = await HttpInterceptor.post(
+                Uri.parse(url),
+                headers: retryHeaders,
+                body: json.encode(requestBody),
+              );
+              
+              AppLogger.spotify('📡 Retry response: ${retryResponse.statusCode}');
+              
+              if (retryResponse.statusCode == 200) {
+                final data = json.decode(retryResponse.body);
+                final topArtistsCount = data['data']?['me']?['profile']?['topArtists']?['totalCount'] ?? 0;
+                final topTracksCount = data['data']?['me']?['profile']?['topTracks']?['totalCount'] ?? 0;
+                AppLogger.spotify('✅ Successfully fetched top content on retry:');
+                AppLogger.spotify('   - Total artists available: $topArtistsCount');
+                AppLogger.spotify('   - Total tracks available: $topTracksCount');
+                return data;
+              } else {
+                AppLogger.spotify('❌ Retry also failed with status: ${retryResponse.statusCode}');
+                throw Exception('Failed to fetch top content: ${retryResponse.statusCode}');
+              }
+            } catch (retryError) {
+              AppLogger.spotify('❌ Error during retry request: $retryError');
+              throw Exception('Network error during retry: $retryError');
+            }
           } else {
+            AppLogger.spotify('❌ Failed to fetch top content: ${response.statusCode}');
+            AppLogger.spotify('   Response body: ${response.body}');
             throw Exception('Failed to fetch top content: ${response.statusCode} - ${response.body}');
           }
         },
         operation: 'Get Top Content',
       );
     } catch (e) {
-      print('❌ Error in getTopContent: $e');
+      AppLogger.spotify('❌ Error in getTopContent: $e');
       return null;
     }
   }
@@ -975,7 +1031,7 @@ class SpotifyBuddyService {
       );
       
       if (data == null) {
-        print('⚠️ Failed to get top content data for tracks');
+        AppLogger.spotify('⚠️ Failed to get top content data for tracks');
         return [];
       }
       
@@ -997,13 +1053,26 @@ class SpotifyBuddyService {
           final coverArt = albumData['coverArt']?['sources'] as List? ?? [];
           String? imageUrl;
           if (coverArt.isNotEmpty) {
+            // Try to find an image close to 300x300 first (good for display)
             for (final image in coverArt) {
               final height = image['height'] as int?;
-              if (height != null && height >= 300 && height <= 640) {
+              if (height != null && height == 300) {
                 imageUrl = image['url'] as String?;
                 break;
               }
             }
+            // If no 300x300 found, use the highest resolution
+            if (imageUrl == null) {
+              var maxHeight = 0;
+              for (final image in coverArt) {
+                final height = image['height'] as int?;
+                if (height != null && height > maxHeight) {
+                  maxHeight = height;
+                  imageUrl = image['url'] as String?;
+                }
+              }
+            }
+            // Fallback to first image if no suitable size found
             imageUrl ??= coverArt.first['url'] as String?;
           }
           
@@ -1020,10 +1089,10 @@ class SpotifyBuddyService {
         }
       }
       
-      print('✅ Parsed ${tracks.length} top tracks from GraphQL response');
+
       return tracks;
     } catch (e) {
-      print('❌ Error in getTopTracks: $e');
+      AppLogger.spotify('❌ Error in getTopTracks: $e');
       return [];
     }
   }
@@ -1040,7 +1109,7 @@ class SpotifyBuddyService {
       );
       
       if (data == null) {
-        print('⚠️ Failed to get top content data for artists');
+        AppLogger.spotify('⚠️ Failed to get top content data for artists');
         return [];
       }
       
@@ -1059,13 +1128,26 @@ class SpotifyBuddyService {
           final avatarImages = artistData['visuals']?['avatarImage']?['sources'] as List? ?? [];
           String? imageUrl;
           if (avatarImages.isNotEmpty) {
+            // Try to find a 320x320 image first (good balance of quality and size)
             for (final image in avatarImages) {
               final height = image['height'] as int?;
-              if (height != null && height >= 300 && height <= 640) {
+              if (height != null && height == 320) {
                 imageUrl = image['url'] as String?;
                 break;
               }
             }
+            // If no 320x320 found, use the highest resolution
+            if (imageUrl == null) {
+              var maxHeight = 0;
+              for (final image in avatarImages) {
+                final height = image['height'] as int?;
+                if (height != null && height > maxHeight) {
+                  maxHeight = height;
+                  imageUrl = image['url'] as String?;
+                }
+              }
+            }
+            // Fallback to first image if no suitable size found
             imageUrl ??= avatarImages.first['url'] as String?;
           }
           
@@ -1081,7 +1163,7 @@ class SpotifyBuddyService {
             followers = cachedDetails['followers'] ?? -1;
             genres = (cachedDetails['genres'] as List?)?.map((g) => g.toString()).toList() ?? [];
             popularity = cachedDetails['popularity'] ?? 0;
-            print('💾 Using cached artist details for $artistId: $followers followers');
+
           }
           
           artists.add(Artist(
@@ -1096,11 +1178,11 @@ class SpotifyBuddyService {
         }
       }
       
-      print('✅ Parsed ${artists.length} top artists from GraphQL response');
+
       
       return artists;
     } catch (e) {
-      print('❌ Error in getTopArtists: $e');
+      AppLogger.spotify('❌ Error in getTopArtists: $e');
       return [];
     }
   }
@@ -1131,11 +1213,8 @@ class SpotifyBuddyService {
     }
     
     if (missingIds.isEmpty) {
-      print('✅ All artist details already cached');
       return artists;
     }
-    
-    print('🔄 Fetching details for ${missingIds.length} artists in background...');
     
     var updatedArtists = List<Artist>.from(artists);
     
@@ -1165,7 +1244,7 @@ class SpotifyBuddyService {
               uri: oldArtist.uri,
             );
             
-            print('✅ Updated artist $artistId with ${artistDetails['followers']?['total']} followers');
+
             
             // Notify callback with updated list
             if (onUpdate != null) {
@@ -1174,7 +1253,7 @@ class SpotifyBuddyService {
           }
         }
       } catch (e) {
-        print('⚠️ Failed to fetch details for artist $artistId: $e');
+        AppLogger.spotify('⚠️ Failed to fetch details for artist $artistId: $e');
         // Cache a placeholder to avoid repeated failures
         _artistDetailsCache[artistId] = {
           'followers': 0,
@@ -1244,15 +1323,15 @@ class SpotifyBuddyService {
             if (cachedAt != null && (now - cachedAt) < (7 * 24 * 60 * 60 * 1000)) {
               _artistDetailsCache[artistId] = Map<String, dynamic>.from(details);
             } else {
-              print('🗑️ Artist details cache expired for $artistId');
+
             }
           }
         });
         
-        print('💾 Loaded ${_artistDetailsCache.length} artist details from cache');
+
       }
     } catch (e) {
-      print('⚠️ Failed to load artist details cache: $e');
+      AppLogger.spotify('⚠️ Failed to load artist details cache: $e');
       _artistDetailsCache.clear();
     }
   }
@@ -1263,29 +1342,22 @@ class SpotifyBuddyService {
       final prefs = await SharedPreferences.getInstance();
       final cacheJson = json.encode(_artistDetailsCache);
       await prefs.setString(_artistDetailsCacheKey, cacheJson);
-      print('💾 Saved ${_artistDetailsCache.length} artist details to cache');
+      AppLogger.spotify('💾 Saved ${_artistDetailsCache.length} artist details to cache');
     } catch (e) {
-      print('⚠️ Failed to save artist details cache: $e');
+      AppLogger.spotify('⚠️ Failed to save artist details cache: $e');
     }
   }
 
   /// Converts time range from REST API format to GraphQL format
   String _convertTimeRangeToGraphQL(String timeRange) {
-    switch (timeRange) {
-      case 'short_term':
-        return 'SHORT_TERM';
-      case 'medium_term':
-        return 'MEDIUM_TERM';
-      case 'long_term':
-        return 'LONG_TERM';
-      default:
-        return 'SHORT_TERM';
-    }
+    // Always return SHORT_TERM as that's what works with the current GraphQL schema
+    return 'SHORT_TERM';
   }
 
   /// Generates a client token for the GraphQL API
-  /// This is a simplified version - in a real app, this would be more complex
+  /// This is a fallback in case we don't have an intercepted token
   String _generateClientToken() {
+    AppLogger.spotify('⚠️ Using fallback client token - this should be replaced with an intercepted token');
     // This is a placeholder - the actual client token generation is complex
     // For now, we'll use a static token from the example
     return 'AAAyrFCYuQiGGFsq0OYbkiotiZ9YtDPzdjemsDOtMJ6msHslHFxskOjd1h1q28igZTPhiB+n++o4n7/QkdHbIuzznY/QOKMesZKLlV83stuo8yn7hiiDN1R7b0HyInceiDZUgEPotzcBSM7v9ff76LEOJ53Hxl4W8qp+bwi+WAMlKSG6LSKb4905Tyqj0p2nsnWblSZVUw+Lj7huYgvu2y4istr4/zCyTIed9nI6ys3M2C8yhYfF1+5PC58l5gwGasCb7J7EikdPOfjBXZlMfMfh3gnOP4mK1ITzqmfaevpbrZDkJpspdzZFtYJT2eax';

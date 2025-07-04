@@ -69,11 +69,8 @@ object ImageDownloader {
                 
                 // If already cached, return the path
                 if (file.exists()) {
-                    android.util.Log.d("ImageDownloader", "Using cached image for friend $friendIndex")
                     return@withContext file.absolutePath
                 }
-                
-                android.util.Log.d("ImageDownloader", "Downloading image for friend $friendIndex: $imageUrl")
                 
                 // Download the image
                 val url = URL(imageUrl)
@@ -100,13 +97,12 @@ object ImageDownloader {
                     circularBitmap.recycle()
                     resizedBitmap.recycle()
                     
-                    android.util.Log.d("ImageDownloader", "Successfully cached image for friend $friendIndex")
                     return@withContext file.absolutePath
                 }
                 
                 null
             } catch (e: Exception) {
-                android.util.Log.e("ImageDownloader", "Failed to download image for friend $friendIndex", e)
+                android.util.Log.e("ImageDownloader", "Failed to download/cache image", e)
                 null
             }
         }

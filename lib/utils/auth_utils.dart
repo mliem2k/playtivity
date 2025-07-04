@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/spotify_webview_login.dart';
+import '../services/app_logger.dart';
 
 class AuthUtils {
   /// Shows a re-authentication dialog when authentication expires
@@ -33,29 +34,28 @@ class AuthUtils {
   /// Handles re-authentication flow
   static Future<bool> handleReAuthentication(BuildContext context) async {
     final authProvider = context.read<AuthProvider>();
-    
-    try {
-      print('🔄 Starting re-authentication flow...');
+      try {
+      AppLogger.auth('Starting re-authentication flow...');
       
       // Clear old authentication data
       await authProvider.logout();
       
       // Show WebView login
+      if (!context.mounted) return false;
       final result = await Navigator.of(context).push<bool>(
         MaterialPageRoute(
           builder: (context) => SpotifyWebViewLogin(
             onAuthComplete: (bearerToken, headers) async {
-              print('🔄 Re-authentication completed, processing...');
+              AppLogger.auth('Re-authentication completed, processing...');
               try {
                 await authProvider.handleAuthComplete(bearerToken, headers);
-                print('✅ Re-authentication successful');
+                AppLogger.auth('Re-authentication successful');
                 
                 // Pop the WebView
                 if (context.mounted && Navigator.canPop(context)) {
                   Navigator.of(context).pop(true);
-                }
-              } catch (e) {
-                print('❌ Error in re-authentication: $e');
+                }              } catch (e) {
+                AppLogger.error('Error in re-authentication', e);
                 if (context.mounted) {
                   Navigator.of(context).pop(false);
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -72,11 +72,10 @@ class AuthUtils {
             },
           ),
         ),
-      );
-      
+      );      
       return result == true;
     } catch (e) {
-      print('❌ Error during re-authentication flow: $e');
+      AppLogger.error('Error during re-authentication flow', e);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -92,9 +91,8 @@ class AuthUtils {
   /// Checks authentication and shows re-auth dialog if needed
   static Future<bool> ensureAuthenticated(BuildContext context) async {
     final authProvider = context.read<AuthProvider>();
-    
-    if (!authProvider.isAuthenticated) {
-      print('⚠️ Authentication required');
+      if (!authProvider.isAuthenticated) {
+      AppLogger.auth('Authentication required');
       
       final shouldReAuth = await showReAuthDialog(context);
       if (shouldReAuth && context.mounted) {
@@ -109,13 +107,19 @@ class AuthUtils {
   /// Handles 401/403 errors by immediately navigating to login screen
   /// This should be called when authentication errors are detected
   static Future<void> handleAuthenticationError(BuildContext context, {String? errorMessage}) async {
-    print('🚨 Authentication error detected: ${errorMessage ?? "401/403 error"}');
+    AppLogger.auth('Authentication error detected: ${errorMessage ?? "401/403 error"}');
     
     try {
       final authProvider = context.read<AuthProvider>();
       
-      // Force logout and navigate to login screen
-      await authProvider.forceLogoutAndNavigate(context);
+      // First, try to reset authentication state without navigation
+      // This clears all cached data and tokens but keeps the user in the app
+      await authProvider.resetAuthenticationState();
+      
+      // If we're in a context where we can navigate, force logout and navigate
+      if (context.mounted) {
+        await authProvider.forceLogoutAndNavigate(context);
+      }
       
       // Show a brief message about the authentication error
       if (context.mounted && errorMessage != null) {
@@ -128,7 +132,7 @@ class AuthUtils {
         );
       }
     } catch (e) {
-      print('❌ Error handling authentication error: $e');
+      AppLogger.error('Error handling authentication error', e);
       
       // Fallback: try to navigate directly
       if (context.mounted) {
