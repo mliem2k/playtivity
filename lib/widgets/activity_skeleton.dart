@@ -36,6 +36,9 @@ class _ActivitySkeletonState extends State<ActivitySkeleton>
     return AnimatedBuilder(
       animation: _animation,
       builder: (context, child) {
+        final baseColor = Colors.grey[300];
+        final alpha = (_animation.value * 255).toInt();
+        
         return Card(
           margin: const EdgeInsets.only(bottom: 16),
           child: Padding(
@@ -52,7 +55,7 @@ class _ActivitySkeletonState extends State<ActivitySkeleton>
                       height: 40,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: Colors.grey[300]?.withOpacity(_animation.value),
+                        color: baseColor?.withAlpha(alpha),
                       ),
                     ),
                     
@@ -68,7 +71,7 @@ class _ActivitySkeletonState extends State<ActivitySkeleton>
                             height: 16,
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(4),
-                              color: Colors.grey[300]?.withOpacity(_animation.value),
+                              color: baseColor?.withAlpha(alpha),
                             ),
                           ),
                           const SizedBox(height: 4),
@@ -77,7 +80,7 @@ class _ActivitySkeletonState extends State<ActivitySkeleton>
                             height: 12,
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(4),
-                              color: Colors.grey[300]?.withOpacity(_animation.value),
+                              color: baseColor?.withAlpha(alpha),
                             ),
                           ),
                         ],
@@ -97,7 +100,7 @@ class _ActivitySkeletonState extends State<ActivitySkeleton>
                       height: 60,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(8),
-                        color: Colors.grey[300]?.withOpacity(_animation.value),
+                        color: baseColor?.withAlpha(alpha),
                       ),
                     ),
                     
@@ -113,7 +116,7 @@ class _ActivitySkeletonState extends State<ActivitySkeleton>
                             height: 16,
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(4),
-                              color: Colors.grey[300]?.withOpacity(_animation.value),
+                              color: baseColor?.withAlpha(alpha),
                             ),
                           ),
                           const SizedBox(height: 4),
@@ -122,7 +125,7 @@ class _ActivitySkeletonState extends State<ActivitySkeleton>
                             height: 14,
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(4),
-                              color: Colors.grey[300]?.withOpacity(_animation.value),
+                              color: baseColor?.withAlpha(alpha),
                             ),
                           ),
                           const SizedBox(height: 2),
@@ -131,7 +134,7 @@ class _ActivitySkeletonState extends State<ActivitySkeleton>
                             height: 12,
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(4),
-                              color: Colors.grey[300]?.withOpacity(_animation.value),
+                              color: baseColor?.withAlpha(alpha),
                             ),
                           ),
                         ],
@@ -144,7 +147,7 @@ class _ActivitySkeletonState extends State<ActivitySkeleton>
                       height: 40,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: Colors.grey[300]?.withOpacity(_animation.value),
+                        color: baseColor?.withAlpha(alpha),
                       ),
                     ),
                   ],

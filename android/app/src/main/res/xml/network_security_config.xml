@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="false">
+        <!-- Allow cleartext traffic for API endpoints if needed -->
+        <domain includeSubdomains="true">api.spotify.com</domain>
+        <domain includeSubdomains="true">accounts.spotify.com</domain>
+        <domain includeSubdomains="true">open.spotify.com</domain>
+    </domain-config>
+    
+    <!-- For debugging, you can temporarily enable cleartext traffic -->
+    <!-- Remove this for production -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system"/>
+        </trust-anchors>
+    </base-config>
+</network-security-config> 

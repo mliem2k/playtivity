@@ -10,5 +10,7 @@
     android:maxResizeHeight="700dp"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
-    android:updatePeriodMillis="1800000">
+    android:updatePeriodMillis="1800000"
+    android:initialLayout="@layout/widget_layout"
+    android:previewImage="@drawable/widget_preview">
 </appwidget-provider>

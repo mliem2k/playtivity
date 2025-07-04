@@ -8,6 +8,8 @@ import '../widgets/activity_card.dart';
 import '../widgets/activity_skeleton.dart';
 import '../widgets/last_updated_indicator.dart';
 import '../utils/auth_utils.dart';
+import '../services/app_logger.dart';
+
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -48,7 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
     
     // Ensure authentication is initialized before loading data
     if (!authProvider.isInitialized) {
-      print('⚠️ Authentication not yet initialized, skipping data load');
+      AppLogger.warning('Authentication not yet initialized, skipping data load');
       return;
     }
     
@@ -59,7 +61,7 @@ class _HomeScreenState extends State<HomeScreen> {
       // Update widget with current user data
       await spotifyProvider.updateWidget(currentUser: authProvider.currentUser);
     } else {
-      print('⚠️ No authentication available - cannot load friend activities');
+      AppLogger.warning('No authentication available - cannot load friend activities');
     }
   }
 
@@ -69,7 +71,7 @@ class _HomeScreenState extends State<HomeScreen> {
     
     // Ensure authentication is initialized before refreshing data
     if (!authProvider.isInitialized) {
-      print('⚠️ Authentication not yet initialized, skipping data refresh');
+      AppLogger.warning('Authentication not yet initialized, skipping data refresh');
       return;
     }
     
@@ -80,51 +82,64 @@ class _HomeScreenState extends State<HomeScreen> {
       // Update widget with current user data
       await spotifyProvider.updateWidget(currentUser: authProvider.currentUser);
     } else {
-      print('⚠️ No authentication available - cannot refresh friend activities');
+      AppLogger.warning('No authentication available - cannot refresh friend activities');
     }
   }
 
+
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    
     return Scaffold(
       extendBodyBehindAppBar: true, // Extend body behind app bar
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(kToolbarHeight),
         child: ClipRRect(
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: AppBar(
-              title: const Text(
-                'Friends\' Activities',
-                style: TextStyle(fontWeight: FontWeight.bold),
+            filter: ImageFilter.blur(sigmaX: isDark ? 20 : 10, sigmaY: isDark ? 20 : 10),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).appBarTheme.backgroundColor ?? theme.scaffoldBackgroundColor.withValues(alpha: 230),
+                boxShadow: [], // Empty box shadow
+              ),
+              child: AppBar(
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                title: const Text(
+                  'Friends\' Activities',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
               ),
             ),
           ),
         ),
       ),
-      body: Consumer2<AuthProvider, SpotifyProvider>(
-        builder: (context, authProvider, spotifyProvider, child) {
-          return Column(
-            children: [
-              
-              // Main content
-              Expanded(
-                child: _buildMainContent(spotifyProvider),
-              ),
-            ],
-          );
-        },
+      body: SafeArea(
+        child: Consumer2<AuthProvider, SpotifyProvider>(
+          builder: (context, authProvider, spotifyProvider, child) {
+            return Column(
+              children: [
+                
+                // Main content
+                Expanded(
+                  child: _buildMainContent(spotifyProvider),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
-
   Widget _buildMainContent(SpotifyProvider spotifyProvider) {
     // Show skeleton loading for initial load
     if (spotifyProvider.isSkeletonLoading) {
       return Column(
         children: [
-          // Add proper spacing to account for the app bar
-          SizedBox(height: MediaQuery.of(context).padding.top + kToolbarHeight + 16),
+          const SizedBox(height: 16),
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.only(
@@ -143,134 +158,105 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     if (spotifyProvider.isLoading) {
-      return Column(
-        children: [
-          SizedBox(height: MediaQuery.of(context).padding.top + kToolbarHeight),
-          const Expanded(
-            child: Center(
-              child: CircularProgressIndicator(),
-            ),
-          ),
-        ],
+      return const Center(
+        child: CircularProgressIndicator(),
       );
-    }
-
-          if (spotifyProvider.error != null) {
+    }          if (spotifyProvider.error != null) {
             final isAuthError = spotifyProvider.error!.contains('Authentication expired');
             
-            return Column(
-              children: [
-                SizedBox(height: MediaQuery.of(context).padding.top + kToolbarHeight),
-                Expanded(
-                  child: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          isAuthError ? Icons.lock_outline : Icons.error_outline,
-                          size: 64,
-                          color: Colors.grey,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          isAuthError ? 'Authentication Required' : 'Error loading activities',
-                          style: Theme.of(context).textTheme.headlineSmall,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          spotifyProvider.error!,
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Colors.grey,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        if (isAuthError) ...[
-                          ElevatedButton(
-                            onPressed: () async {
-                              final success = await AuthUtils.handleReAuthentication(context);
-                              if (success && mounted) {
-                                // Clear error and refresh data
-                                spotifyProvider.clearError();
-                                _loadData();
-                              }
-                            },
-                            child: const Text('Login Again'),
-                          ),
-                          const SizedBox(height: 8),
-                          TextButton(
-                            onPressed: () {
-                              spotifyProvider.clearError();
-                              _refreshData();
-                            },
-                            child: const Text('Retry'),
-                          ),
-                        ] else ...[
-                          ElevatedButton(
-                            onPressed: _refreshData,
-                            child: const Text('Retry'),
-                          ),
-                        ],
-                      ],
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    isAuthError ? Icons.lock_outline : Icons.error_outline,
+                    size: 64,
+                    color: Colors.grey,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    isAuthError ? 'Authentication Required' : 'Error loading activities',
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    spotifyProvider.error!,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.grey,
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 16),
+                  if (isAuthError) ...[
+                    ElevatedButton(
+                      onPressed: () async {
+                        final success = await AuthUtils.handleReAuthentication(context);
+                        if (success && mounted) {
+                          // Clear error and refresh data
+                          spotifyProvider.clearError();
+                          _loadData();
+                        }
+                      },
+                      child: const Text('Login Again'),
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: () {
+                        spotifyProvider.clearError();
+                        _refreshData();
+                      },
+                      child: const Text('Retry'),
+                    ),
+                  ] else ...[
+                    ElevatedButton(
+                      onPressed: _refreshData,
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ],
+              ),
             );
           }
 
-          final activities = spotifyProvider.friendsActivities;
-
-          if (activities.isEmpty) {
-            return Column(
-              children: [
-                SizedBox(height: MediaQuery.of(context).padding.top + kToolbarHeight),
-                Expanded(
-                  child: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.music_note_outlined,
-                          size: 64,
-                          color: Colors.grey,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'No recent activities',
-                          style: Theme.of(context).textTheme.headlineSmall,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Your friends haven\'t been listening to music recently',
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Colors.grey,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        ElevatedButton(
-                          onPressed: _refreshData,
-                          child: const Text('Refresh'),
-                        ),
-                      ],
+          final activities = spotifyProvider.friendsActivities;          if (activities.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.music_note_outlined,
+                    size: 64,
+                    color: Colors.grey,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No recent activities',
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Your friends haven\'t been listening to music recently',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.grey,
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: _refreshData,
+                    child: const Text('Refresh'),
+                  ),
+                ],
+              ),
             );
-          }
-
-          return RefreshIndicator(
+          }          return RefreshIndicator(
             onRefresh: _refreshData,
-            edgeOffset: kToolbarHeight,
             child: CustomScrollView(
               slivers: [
                 SliverToBoxAdapter(
                   child: Column(
                     children: [
-                      // Add proper spacing to account for the app bar
-                      SizedBox(height: MediaQuery.of(context).padding.top + kToolbarHeight + 8),
+                      const SizedBox(height: 8),
                       LastUpdatedIndicator(
                         lastUpdated: spotifyProvider.lastUpdated,
                         isRefreshing: spotifyProvider.isRefreshing,
@@ -279,10 +265,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 SliverPadding(
-                  padding: EdgeInsets.only(
+                  padding: const EdgeInsets.only(
                     left: 16,
                     right: 16,
-                    bottom: MediaQuery.of(context).padding.bottom,
+                    bottom: 16,
                   ),
                   sliver: SliverList.builder(
                     itemCount: activities.length,

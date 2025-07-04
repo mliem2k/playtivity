@@ -1,7 +1,6 @@
 plugins {
     id("com.android.application")
     id("kotlin-android")
-    id("org.jetbrains.kotlin.plugin.compose")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
@@ -11,20 +10,6 @@ android {
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "27.0.12077973"
     
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_21.toString()
-    }
-
-    buildFeatures {
-        compose = true
-        viewBinding = true
-    }
-
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.mliem.playtivity"
@@ -35,8 +20,28 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
+    
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
+        isCoreLibraryDesugaringEnabled = true
+    }
+    
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_21.toString()
+        freeCompilerArgs += listOf("-Xlint:-options")
+    }
+    
+    buildFeatures {
+        buildConfig = true
+        viewBinding = true
+    }
 
     signingConfigs {
+        getByName("debug") {
+            // Default debug config
+        }
+        
         create("release") {
             storeFile = file(System.getenv("ANDROID_KEYSTORE_PATH") ?: "release-key.jks")
             storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
@@ -44,9 +49,9 @@ android {
             keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
         }
     }
-
+    
     buildTypes {
-        release {
+        getByName("release") {
             signingConfig = if (System.getenv("ANDROID_KEYSTORE_PATH") != null) {
                 signingConfigs.getByName("release")
             } else {
@@ -55,6 +60,14 @@ android {
             }
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Add additional optimization flags
+            isDebuggable = false
+            isShrinkResources = true
+        }
+        
+        getByName("debug") {
+            isDebuggable = true
+            applicationIdSuffix = ".debug"
         }
     }
 }
@@ -72,4 +85,6 @@ dependencies {
     implementation("androidx.glance:glance-material3:1.1.1")
     // For coroutines support
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    // For Java 8+ APIs on older Android versions
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 }
