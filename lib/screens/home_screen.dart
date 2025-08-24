@@ -7,7 +7,6 @@ import '../models/activity.dart';
 import '../widgets/activity_card.dart';
 import '../widgets/activity_skeleton.dart';
 import '../widgets/last_updated_indicator.dart';
-import '../widgets/performance_selectors.dart';
 import '../widgets/optimized_list_view.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../services/debounced_refresh_service.dart';
@@ -107,27 +106,27 @@ class _HomeScreenState extends State<HomeScreen>
       extendBodyBehindAppBar: true,
       appBar: const BlurredAppBar(title: 'Friends\' Activities'),
       body: SafeArea(
-        child: HomeScreenDataSelector(
-          builder: (context, isAuthenticated, isLoading, activities, error) {
-            if (!isAuthenticated) {
+        child: Consumer2<AuthProvider, SpotifyProvider>(
+          builder: (context, authProvider, spotifyProvider, child) {
+            if (!authProvider.isAuthenticated) {
               return _buildAuthenticationRequired();
             }
             
             return Column(
               children: [
                 // Last updated indicator
-                LastUpdatedSelector(
-                  builder: (context, lastUpdated) {
-                    if (lastUpdated != null) {
-                      return const LastUpdatedIndicator();
-                    }
-                    return const SizedBox.shrink();
-                  },
+                LastUpdatedIndicator(
+                  lastUpdated: spotifyProvider.lastUpdated,
+                  isRefreshing: spotifyProvider.isLoading,
                 ),
                 
                 // Main content
                 Expanded(
-                  child: _buildMainContent(isLoading, activities, error),
+                  child: _buildMainContent(
+                    spotifyProvider.isLoading,
+                    spotifyProvider.friendsActivities,
+                    spotifyProvider.error,
+                  ),
                 ),
               ],
             );

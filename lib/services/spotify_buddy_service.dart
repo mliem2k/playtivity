@@ -12,12 +12,12 @@ import 'app_logger.dart';
 import 'api_retry_service.dart';
 import 'cache_service.dart';
 import 'lru_cache_service.dart';
-import 'debounced_refresh_service.dart';
-import '../constants/api_constants.dart';
-import '../constants/app_constants.dart';
 // import 'package:playtivity/services/spotify_service.dart';
 
 class SpotifyBuddyService {
+  static const String _baseUrl = 'https://guc-spclient.spotify.com';
+  static const String _trackDurationCacheKey = 'track_duration_cache';
+  static const String _artistDetailsCacheKey = 'artist_details_cache';
   
   // Singleton pattern
   static SpotifyBuddyService? _instance;
@@ -70,8 +70,7 @@ class SpotifyBuddyService {
   /// Loads track duration cache from SharedPreferences
   Future<void> _loadTrackDurationCache() async {
     try {
-      const cacheKey = 'track_duration_cache';
-      final cacheData = await CacheService.loadJson(cacheKey);
+      final cacheData = await CacheService.loadJson(_trackDurationCacheKey);
       
       if (cacheData != null) {
         cacheData.forEach((key, value) {
@@ -98,8 +97,7 @@ class SpotifyBuddyService {
         }
       }
       
-      const cacheKey = 'track_duration_cache';
-      await CacheService.saveJson(cacheKey, cacheData);
+      await CacheService.saveJson(_trackDurationCacheKey, cacheData);
       AppLogger.spotify('💾 Saved ${cacheData.length} track durations to cache');
     } catch (e) {
       AppLogger.spotify('❌ Error saving track duration cache: $e');
@@ -1134,7 +1132,7 @@ class SpotifyBuddyService {
           int popularity = 0;
           
           if (_artistDetailsCache.containsKey(artistId)) {
-            final cachedDetails = _artistDetailsCache[artistId]!;
+            final cachedDetails = _artistDetailsCache.get(artistId)!;
             followers = cachedDetails['followers'] ?? -1;
             genres = (cachedDetails['genres'] as List?)?.map((g) => g.toString()).toList() ?? [];
             popularity = cachedDetails['popularity'] ?? 0;
@@ -1197,12 +1195,12 @@ class SpotifyBuddyService {
       try {
         final artistDetails = await _getArtistDetails(artistId);
         if (artistDetails != null) {
-          _artistDetailsCache[artistId] = {
+          _artistDetailsCache.put(artistId, {
             'followers': artistDetails['followers']?['total'] ?? 0,
             'genres': artistDetails['genres'] ?? [],
             'popularity': artistDetails['popularity'] ?? 0,
             'cached_at': DateTime.now().millisecondsSinceEpoch,
-          };
+          });
           _artistCacheModified = true;
           
           // Update the artist in the list
@@ -1230,13 +1228,13 @@ class SpotifyBuddyService {
       } catch (e) {
         AppLogger.spotify('⚠️ Failed to fetch details for artist $artistId: $e');
         // Cache a placeholder to avoid repeated failures
-        _artistDetailsCache[artistId] = {
+        _artistDetailsCache.put(artistId, {
           'followers': 0,
           'genres': [],
           'popularity': 0,
           'cached_at': DateTime.now().millisecondsSinceEpoch,
           'failed': true,
-        };
+        });
         _artistCacheModified = true;
       }
     }
@@ -1296,7 +1294,7 @@ class SpotifyBuddyService {
             
             // Cache expires after 7 days for artist details (they don't change often)
             if (cachedAt != null && (now - cachedAt) < (7 * 24 * 60 * 60 * 1000)) {
-              _artistDetailsCache[artistId] = Map<String, dynamic>.from(details);
+              _artistDetailsCache.put(artistId, Map<String, dynamic>.from(details));
             } else {
 
             }
