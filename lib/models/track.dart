@@ -1,3 +1,5 @@
+import '../utils/json_helpers.dart';
+
 class Track {
   final String id;
   final String name;
@@ -24,35 +26,19 @@ class Track {
   });
 
   factory Track.fromJson(Map<String, dynamic> json) {
-    List<String> artistNames = [];
-    List<String> artistUris = [];
-    
-    if (json['artists'] is List) {
-      final artistsList = json['artists'] as List;
-      artistNames = artistsList.map((artist) => artist['name'] as String).toList();
-      artistUris = artistsList.map((artist) => artist['uri'] as String? ?? '').where((uri) => uri.isNotEmpty).toList();
-    } else if (json['artist'] != null) {
-      final artist = json['artist'];
-      artistNames = [artist['name'] as String? ?? 'Unknown Artist'];
-      final artistUri = artist['uri'] as String?;
-      if (artistUri != null && artistUri.isNotEmpty) {
-        artistUris = [artistUri];
-      }
-    }
+    final artists = JsonHelpers.getSpotifyArtists(json);
     
     return Track(
-      id: json['id'] ?? '',
-      name: json['name'] ?? '',
-      artists: artistNames,
-      artistUris: artistUris,
-      album: json['album']?['name'] ?? '',
-      albumUri: json['album']?['uri'],
-      imageUrl: json['album']?['images'] != null && json['album']['images'].isNotEmpty
-          ? json['album']['images'][0]['url']
-          : null,
-      durationMs: json['duration_ms'] ?? 0,
-      previewUrl: json['preview_url'],
-      uri: json['uri'] ?? '',
+      id: JsonHelpers.getString(json, 'id'),
+      name: JsonHelpers.getString(json, 'name'),
+      artists: artists.names,
+      artistUris: artists.uris,
+      album: JsonHelpers.getNestedString(json, ['album', 'name']),
+      albumUri: json['album']?['uri'] as String?,
+      imageUrl: json['album'] != null ? JsonHelpers.getSpotifyImageUrl(json['album']) : null,
+      durationMs: JsonHelpers.getInt(json, 'duration_ms'),
+      previewUrl: json['preview_url'] as String?,
+      uri: JsonHelpers.getString(json, 'uri'),
     );
   }
 
