@@ -1,3 +1,5 @@
+import '../utils/json_helpers.dart';
+
 class User {
   final String id;
   final String displayName;
@@ -17,26 +19,24 @@ class User {
 
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
-      id: json['id'] ?? '',
-      displayName: json['display_name'] ?? '',
-      email: json['email'] ?? '',
-      imageUrl: json['image_url'],
-      followers: json['followers'] ?? 0,
-      country: json['country'] ?? '',
+      id: JsonHelpers.getString(json, 'id'),
+      displayName: JsonHelpers.getString(json, 'display_name'),
+      email: JsonHelpers.getString(json, 'email'),
+      imageUrl: json['image_url'] as String?,
+      followers: JsonHelpers.getInt(json, 'followers'),
+      country: JsonHelpers.getString(json, 'country'),
     );
   }
 
   /// Creates User from Spotify API response
   factory User.fromSpotifyApi(Map<String, dynamic> json) {
     return User(
-      id: json['id'] ?? '',
-      displayName: json['display_name'] ?? '',
-      email: json['email'] ?? '',
-      imageUrl: json['images'] != null && json['images'].isNotEmpty 
-          ? json['images'][0]['url'] 
-          : null,
-      followers: json['followers']?['total'] ?? 0,
-      country: json['country'] ?? '',
+      id: JsonHelpers.getString(json, 'id'),
+      displayName: JsonHelpers.getString(json, 'display_name'),
+      email: JsonHelpers.getString(json, 'email'),
+      imageUrl: JsonHelpers.getSpotifyImageUrl(json),
+      followers: JsonHelpers.getNestedInt(json, ['followers', 'total']),
+      country: JsonHelpers.getString(json, 'country'),
     );
   }
 

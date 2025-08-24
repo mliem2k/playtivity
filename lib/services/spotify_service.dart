@@ -5,44 +5,20 @@ import '../models/track.dart';
 import 'spotify_buddy_service.dart';
 import 'http_interceptor.dart';
 import 'app_logger.dart';
+import 'api_retry_service.dart';
+import '../constants/api_constants.dart';
 
 class SpotifyService {
-  static const String baseUrl = 'https://api.spotify.com/v1';
-  static const String authUrl = 'https://accounts.spotify.com';
-  static const String webAuthUrl = 'https://open.spotify.com'; // For WebView login to get sp_dc cookie
-
-
-  /// Generates a curl command for debugging API requests
-  // String _generateCurlCommand(String method, String url, Map<String, String> headers, {String? body}) {
-  //   final buffer = StringBuffer();
-  //   buffer.write('curl -X $method');
-  //   
-  //   // Add headers
-  //   headers.forEach((key, value) {
-  //     buffer.write(' -H "$key: $value"');
-  //   });
-  //   
-  //   // Add body if present
-  //   if (body != null && body.isNotEmpty) {
-  //     buffer.write(' -d \'$body\'');
-  //   }
-  //   
-  //   // Add URL
-  //   buffer.write(' "$url"');
-  //   
-  //   return buffer.toString();
-  // }
-
   String getAuthorizationUrl() {
     // Use Spotify's accounts page - the app will detect when user reaches the status page
     // and extract the sp_dc cookie automatically
-    return 'https://accounts.spotify.com/';
+    return ApiConstants.spotifyAuthUrl;
   }
 
   Future<User> getCurrentUser(String accessToken) async {
-    return _retryApiCall(
+    return ApiRetryService.retryApiCall(
       () async {
-        final url = '$baseUrl/me';
+        final url = ApiConstants.spotifyApiBaseUrl + ApiConstants.currentUserEndpoint;
         final headers = {
           'Authorization': 'Bearer $accessToken',
         };
@@ -63,9 +39,9 @@ class SpotifyService {
   }
 
   Future<Track?> getCurrentlyPlaying(String accessToken) async {
-    return _retryApiCall(
+    return ApiRetryService.retryApiCall(
       () async {
-        final url = '$baseUrl/me/player/currently-playing';
+        final url = ApiConstants.spotifyApiBaseUrl + ApiConstants.currentlyPlayingEndpoint;
         
         // Get stored cookie from SpotifyBuddyService
         final cookieString = SpotifyBuddyService.instance.getCookieString();
@@ -115,41 +91,4 @@ class SpotifyService {
   }
 
 
-  /// Retry logic for API calls with exponential backoff
-  static Future<T> _retryApiCall<T>(
-    Future<T> Function() apiCall, {
-    int maxRetries = 3,
-    Duration initialDelay = const Duration(milliseconds: 50),
-    String operation = 'API call',
-  }) async {
-    int attempt = 0;
-    Duration delay = initialDelay;
-    
-    while (attempt < maxRetries) {
-      try {
-        AppLogger.spotify('Attempting $operation (attempt ${attempt + 1}/$maxRetries)');
-        return await apiCall().timeout(
-          const Duration(seconds: 15), // 15 second timeout per request
-          onTimeout: () {
-            throw TimeoutException('Request timed out after 15 seconds', const Duration(seconds: 15));
-          },
-        );
-      } catch (e) {
-        attempt++;
-        
-        if (attempt >= maxRetries) {
-          AppLogger.error('$operation failed after $maxRetries attempts', e);
-          rethrow;
-        }
-        
-        AppLogger.warning('$operation failed (attempt $attempt/$maxRetries)', e);
-        AppLogger.spotify('Retrying in ${delay.inMilliseconds}ms...');
-        
-        await Future.delayed(delay);
-        delay = Duration(milliseconds: (delay.inMilliseconds * 1.5).round()); // Exponential backoff
-      }
-    }
-    
-    throw Exception('Failed to complete $operation after $maxRetries attempts');
-  }
 }

@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:timeago/timeago.dart' as timeago;
-import 'package:cached_network_image/cached_network_image.dart';
 import '../models/activity.dart';
 import '../models/track.dart';
 import '../utils/spotify_launcher.dart';
 import '../utils/friend_profile_launcher.dart';
 import 'package:playtivity/services/app_logger.dart';
+import 'avatar_widget.dart';
+import 'cached_image_widget.dart';
 
 class ActivityCard extends StatelessWidget {
   final Activity activity;
@@ -37,23 +38,10 @@ class ActivityCard extends StatelessWidget {
                       );
                     },
                     borderRadius: BorderRadius.circular(20),
-                    child: CircleAvatar(
+                    child: AvatarWidget(
+                      imageUrl: activity.user.imageUrl,
+                      displayName: activity.user.displayName,
                       radius: 20,
-                      backgroundColor: Theme.of(context).primaryColor,
-                      backgroundImage: activity.user.imageUrl != null
-                          ? CachedNetworkImageProvider(activity.user.imageUrl!)
-                          : null,
-                      child: activity.user.imageUrl == null
-                          ? Text(
-                              activity.user.displayName.isNotEmpty
-                                  ? activity.user.displayName[0].toUpperCase()
-                                  : '?',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            )
-                          : null,
                     ),
                   ),
                   
@@ -150,36 +138,15 @@ class ActivityCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(8),
                           color: Colors.grey[300],
                         ),
-                        child: activity.contentImageUrl != null
-                            ? ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: CachedNetworkImage(
-                                  imageUrl: activity.contentImageUrl!,
-                                  fit: BoxFit.cover,
-                                  placeholder: (context, url) => Container(
-                                    color: Colors.grey[300],
-                                    child: Icon(
-                                      activity.type == ActivityType.playlist 
-                                          ? Icons.queue_music 
-                                          : Icons.music_note,
-                                    ),
-                                  ),
-                                  errorWidget: (context, url, error) => Container(
-                                    color: Colors.grey[300],
-                                    child: Icon(
-                                      activity.type == ActivityType.playlist 
-                                          ? Icons.queue_music 
-                                          : Icons.music_note,
-                                    ),
-                                  ),
-                                ),
-                              )
-                            : Icon(
-                                activity.type == ActivityType.playlist 
-                                    ? Icons.queue_music 
-                                    : Icons.music_note,
-                                color: Colors.grey,
-                              ),
+                        child: CachedImageWidget(
+                          imageUrl: activity.contentImageUrl,
+                          width: 64,
+                          height: 64,
+                          borderRadius: BorderRadius.circular(8),
+                          placeholderIcon: activity.type == ActivityType.playlist 
+                              ? Icons.queue_music 
+                              : Icons.music_note,
+                        ),
                       ),
                     ),
                     

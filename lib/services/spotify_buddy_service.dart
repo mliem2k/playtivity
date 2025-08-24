@@ -9,10 +9,15 @@ import 'package:playtivity/models/playlist.dart';
 import 'package:playtivity/models/artist.dart';
 import 'http_interceptor.dart';
 import 'app_logger.dart';
+import 'api_retry_service.dart';
+import 'cache_service.dart';
+import 'lru_cache_service.dart';
+import 'debounced_refresh_service.dart';
+import '../constants/api_constants.dart';
+import '../constants/app_constants.dart';
 // import 'package:playtivity/services/spotify_service.dart';
 
 class SpotifyBuddyService {
-  static const String _baseUrl = 'https://guc-spclient.spotify.com';
   
   // Singleton pattern
   static SpotifyBuddyService? _instance;
@@ -22,7 +27,15 @@ class SpotifyBuddyService {
   }
   
   // Private constructor for singleton
-  SpotifyBuddyService._internal();
+  SpotifyBuddyService._internal() {
+    // Initialize LRU caches with optimal sizes for performance
+    _trackDurationCache = LRUCache<String, int>(500); // 500 tracks
+    _artistDetailsCache = LRUCache<String, Map<String, dynamic>>(200); // 200 artists
+    
+    // Load persistent cache data
+    _loadTrackDurationCache();
+    _loadArtistDetailsCache();
+  }
   
   // Public factory constructor that returns the singleton
   factory SpotifyBuddyService() => instance;
@@ -38,23 +51,13 @@ class SpotifyBuddyService {
     // Spotify service for fetching track details
   // final SpotifyService _spotifyService = SpotifyService();
   
-  // In-memory cache for track durations
-  final Map<String, int> _trackDurationCache = {};
+  // High-performance LRU caches with automatic memory management
+  late final LRUCache<String, int> _trackDurationCache;
+  late final LRUCache<String, Map<String, dynamic>> _artistDetailsCache;
   
   // Track if cache has been modified since last save
   bool _cacheModified = false;
-  
-  // SharedPreferences key for persistent track duration cache
-  static const String _trackDurationCacheKey = 'track_duration_cache';
-  
-  // In-memory cache for artist details (followers, genres, popularity)
-  final Map<String, Map<String, dynamic>> _artistDetailsCache = {};
-  
-  // Track if artist cache has been modified since last save
   bool _artistCacheModified = false;
-  
-  // SharedPreferences key for persistent artist details cache
-  static const String _artistDetailsCacheKey = 'artist_details_cache';
   
   // Cache for buddy list activities to reduce API hits
   List<Activity>? _cachedBuddyActivities;
@@ -67,15 +70,16 @@ class SpotifyBuddyService {
   /// Loads track duration cache from SharedPreferences
   Future<void> _loadTrackDurationCache() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final cacheJson = prefs.getString(_trackDurationCacheKey);
+      const cacheKey = 'track_duration_cache';
+      final cacheData = await CacheService.loadJson(cacheKey);
       
-      if (cacheJson != null) {
-        final cacheData = json.decode(cacheJson) as Map<String, dynamic>;
-                  _trackDurationCache.clear();
-          cacheData.forEach((key, value) {
-            _trackDurationCache[key] = value as int;
-          });
+      if (cacheData != null) {
+        cacheData.forEach((key, value) {
+          if (value is int) {
+            _trackDurationCache.put(key, value);
+          }
+        });
+        AppLogger.spotify('📖 Loaded ${_trackDurationCache.length} track durations from cache');
       }
     } catch (e) {
       AppLogger.spotify('❌ Error loading track duration cache: $e');
@@ -85,10 +89,18 @@ class SpotifyBuddyService {
   /// Saves track duration cache to SharedPreferences
   Future<void> _saveTrackDurationCache() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final cacheJson = json.encode(_trackDurationCache);
-      await prefs.setString(_trackDurationCacheKey, cacheJson);
-      AppLogger.spotify('💾 Saved ${_trackDurationCache.length} track durations to cache');
+      // Convert LRU cache to Map for JSON serialization
+      final cacheData = <String, int>{};
+      for (final key in _trackDurationCache.keys) {
+        final value = _trackDurationCache.get(key);
+        if (value != null) {
+          cacheData[key] = value;
+        }
+      }
+      
+      const cacheKey = 'track_duration_cache';
+      await CacheService.saveJson(cacheKey, cacheData);
+      AppLogger.spotify('💾 Saved ${cacheData.length} track durations to cache');
     } catch (e) {
       AppLogger.spotify('❌ Error saving track duration cache: $e');
     }
@@ -140,7 +152,7 @@ class SpotifyBuddyService {
 
   /// Fetches track duration from Spotify API using stored bearer token
   Future<int?> _getTrackDuration(String trackUri) async {
-    return _retryApiCall(
+    return ApiRetryService.retryApiCall(
       () async {
         // Load cache from storage if not already loaded
         if (_trackDurationCache.isEmpty) {
@@ -150,7 +162,7 @@ class SpotifyBuddyService {
         // Check cache first
         if (_trackDurationCache.containsKey(trackUri)) {
           AppLogger.spotify('💾 Using cached duration for track: $trackUri');
-          return _trackDurationCache[trackUri];
+          return _trackDurationCache.get(trackUri);
         }
         
         // Extract track ID from URI (spotify:track:id)
@@ -175,7 +187,7 @@ class SpotifyBuddyService {
           
           if (durationMs != null) {
             // Cache the duration in memory
-            _trackDurationCache[trackUri] = durationMs;
+            _trackDurationCache.put(trackUri, durationMs);
             _cacheModified = true;
 
             return durationMs;
@@ -383,7 +395,7 @@ class SpotifyBuddyService {
       return _cachedBuddyActivities!;
     }
     
-    return _retryApiCall(
+    return ApiRetryService.retryApiCall(
       () async {
         // Preload track duration cache only if not doing fast load
         if (!fastLoad && _trackDurationCache.isEmpty) {
@@ -527,7 +539,7 @@ class SpotifyBuddyService {
             
             // Check cache first for duration
             if (durationMs == null && trackUri.isNotEmpty && _trackDurationCache.containsKey(trackUri)) {
-              durationMs = _trackDurationCache[trackUri];
+              durationMs = _trackDurationCache.get(trackUri);
             }
             
             // If we have duration, calculate if currently playing
@@ -779,48 +791,11 @@ class SpotifyBuddyService {
 
 
 
-  /// Retry logic for API calls with exponential backoff
-  static Future<T> _retryApiCall<T>(
-    Future<T> Function() apiCall, {
-    int maxRetries = 3,
-    Duration initialDelay = const Duration(milliseconds: 50),
-    String operation = 'API call',
-  }) async {
-    int attempt = 0;
-    Duration delay = initialDelay;
-    
-    while (attempt < maxRetries) {
-      try {
-        AppLogger.spotify('🔄 Attempting $operation (attempt ${attempt + 1}/$maxRetries)');
-        return await apiCall().timeout(
-          const Duration(seconds: 30), // 30 second timeout per request
-          onTimeout: () {
-            throw TimeoutException('Request timed out after 30 seconds', const Duration(seconds: 30));
-          },
-        );
-      } catch (e) {
-        attempt++;
-        
-        if (attempt >= maxRetries) {
-          AppLogger.spotify('❌ $operation failed after $maxRetries attempts: $e');
-          rethrow;
-        }
-        
-        AppLogger.spotify('⚠️ $operation failed (attempt $attempt/$maxRetries): $e');
-        AppLogger.spotify('🔄 Retrying in ${delay.inMilliseconds}ms...');
-        
-        await Future.delayed(delay);
-        delay = Duration(milliseconds: (delay.inMilliseconds * 1.5).round()); // Exponential backoff
-      }
-    }
-    
-    throw Exception('Failed to complete $operation after $maxRetries attempts');
-  }
 
   /// Gets current user profile using web access token
   /// Gets user profile using Bearer token directly
   Future<User?> getCurrentUserProfileWithToken(String bearerToken) async {
-    return _retryApiCall(
+    return ApiRetryService.retryApiCall(
       () async {
         AppLogger.spotify('🔄 Getting user profile with Bearer token...');
         
@@ -864,7 +839,7 @@ class SpotifyBuddyService {
         throw Exception('No cookie string available - please authenticate first');
       }
       
-      return await _retryApiCall(
+      return await ApiRetryService.retryApiCall(
         () async {
           AppLogger.spotify('🔄 Getting top content with GraphQL API...');
           AppLogger.spotify('   - Time range: $timeRange');
@@ -1277,7 +1252,7 @@ class SpotifyBuddyService {
 
   /// Fetches detailed artist information from Spotify Web API
   Future<Map<String, dynamic>?> _getArtistDetails(String artistId) async {
-    return _retryApiCall(
+    return ApiRetryService.retryApiCall(
       () async {
         // Get Bearer token
         final bearerToken = getBearerToken();

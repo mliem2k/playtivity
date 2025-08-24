@@ -1,87 +1,47 @@
-import 'package:url_launcher/url_launcher.dart';
 import '../services/app_logger.dart';
+import '../services/url_launcher_service.dart';
 
 class SpotifyLauncher {
   /// Launch a Spotify URI in the Spotify app with play action
   /// This will attempt to start playing the content immediately
   static Future<bool> launchSpotifyUriAndPlay(String uri) async {
-    try {
-      AppLogger.spotify('Attempting to PLAY: $uri');
-      
-      // For play action, always try the Spotify app first with the native URI
-      final spotifyUri = Uri.parse(uri);
-      if (await canLaunchUrl(spotifyUri)) {
-        final success = await launchUrl(
-          spotifyUri,
-          mode: LaunchMode.externalApplication,
-        );
-        if (success) {
-          AppLogger.spotify('Successfully launched and played Spotify URI: $uri');
-        }
-        return success;
-      }
-      
-      // Fallback to web player for play
-      final webUrl = _convertUriToWebUrl(uri);
-      if (webUrl != null) {
-        final webUri = Uri.parse(webUrl);
-        final success = await launchUrl(
-          webUri,
-          mode: LaunchMode.externalApplication,
-        );
-        if (success) {
-          AppLogger.spotify('Successfully launched Spotify web URL for play: $webUrl');
-        }
-        return success;
-      }
-      
-      return false;
-    } catch (e) {
-      AppLogger.error('Error launching Spotify URI with play', e);
-      return false;
+    AppLogger.spotify('Attempting to PLAY: $uri');
+    
+    // Try Spotify app first with native URI
+    final success = await UrlLauncherService.launchSpotifyUrl(
+      uri, 
+      webFallbackUrl: _convertUriToWebUrl(uri),
+    );
+    
+    if (success) {
+      AppLogger.spotify('Successfully launched and played Spotify URI: $uri');
     }
+    
+    return success;
   }
 
   /// Launch a Spotify URI for navigation/browsing (without auto-play)
   /// Uses web URLs to avoid auto-play behavior in the Spotify app
   static Future<bool> launchSpotifyUri(String uri) async {
-    try {
-      AppLogger.spotify('Attempting to NAVIGATE to: $uri');
-      
-      // For navigation, prefer web URLs to avoid auto-play behavior
-      final webUrl = _convertUriToWebUrl(uri);
-      if (webUrl != null) {
-        final webUri = Uri.parse(webUrl);
-        if (await canLaunchUrl(webUri)) {
-          final success = await launchUrl(
-            webUri,
-            mode: LaunchMode.externalApplication,
-          );
-          if (success) {
-            AppLogger.spotify('Successfully navigated to Spotify web URL: $webUrl');
-            return success;
-          }
-        }
-      }
-      
-      // Fallback to native Spotify URI if web doesn't work
-      final spotifyUri = Uri.parse(uri);
-      if (await canLaunchUrl(spotifyUri)) {
-        final success = await launchUrl(
-          spotifyUri,
-          mode: LaunchMode.externalApplication,
-        );
-        if (success) {
-          AppLogger.spotify('Successfully navigated to Spotify URI: $uri');
-        }
+    AppLogger.spotify('Attempting to NAVIGATE to: $uri');
+    
+    // For navigation, prefer web URLs to avoid auto-play behavior
+    final webUrl = _convertUriToWebUrl(uri);
+    if (webUrl != null) {
+      final success = await UrlLauncherService.launchWebUrl(webUrl);
+      if (success) {
+        AppLogger.spotify('Successfully navigated to Spotify web URL: $webUrl');
         return success;
       }
-      
-      return false;
-    } catch (e) {
-      AppLogger.error('Error launching Spotify URI', e);
-      return false;
     }
+    
+    // Fallback to native Spotify URI
+    final success = await UrlLauncherService.launchSpotifyUrl(uri);
+    if (success) {
+      AppLogger.spotify('Successfully navigated to Spotify URI: $uri');
+    }
+    
+    return success;
   }
   
   /// Launch a track in Spotify
