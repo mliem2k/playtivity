@@ -12,19 +12,20 @@
     "release:major": "node release-apk.js major",
     "release:apk-only": "node release-apk.js --no-bundle",
     "release:delete-all": "node delete-releases.js",
-    "nightly": "node nightly-apk.js",
-    "nightly:keep-10": "node nightly-apk.js --keep-builds 10",
+    "nightly": "node nightly.js",
+    "nightly:local": "node nightly.js --skip-github",
+    "nightly:stable": "node nightly.js --stable",
+    "nightly:clean": "node nightly.js --clean",
+    "nightly:keep-10": "node nightly.js --keep 10",
     "nightly:promote": "node nightly-release.js",
     "nightly:promote-patch": "node nightly-release.js patch",
     "nightly:promote-minor": "node nightly-release.js minor",
-    "nightly:promote-major": "node nightly-release.js major",    "nightly:github": "node nightly-github-release.js",
-    "nightly:github-stable": "node nightly-github-release.js --stable",
+    "nightly:promote-major": "node nightly-release.js major",
     "list": "node list-commands.js",
     "help": "node build-apk.js --help",
     "help:release": "node release-apk.js --help",
-    "help:nightly": "node nightly-apk.js --help",
-    "help:nightly-promote": "node nightly-release.js --help",
-    "help:nightly-github": "node nightly-github-release.js --help"
+    "help:nightly": "node nightly.js --help",
+    "help:nightly-promote": "node nightly-release.js --help"
   },
   "engines": {
     "node": ">=14.0.0"

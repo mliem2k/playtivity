@@ -958,34 +958,71 @@ class UpdateInfo {
     // For nightly builds, extract version and build number from the tag name or release body
     String version;
     String buildNumber = '';
-    
+
     if (isNightly && tagName.startsWith('nightly-')) {
       AppLogger.info('Processing nightly release...');
-      
-      // Look for version information in the release body with improved regex patterns
-      RegExp versionRegex = RegExp(r'\*\*Version\*\*:\s*`?([^`\s\n]+)`?', caseSensitive: false);
+      AppLogger.info('Tag name: $tagName');
+
+      // Look for version information in the release body with multiple patterns
+      // Pattern 1: **Version**: `x.x.x-nightly-YYYYMMDD-HHMMSS+buildnum`
+      RegExp versionRegex = RegExp(r'\*\*Version\*\*:\s*`([^`]+)`', caseSensitive: false);
       RegExpMatch? versionMatch = versionRegex.firstMatch(body);
-      
-      // Try alternative patterns if the first one doesn't match
+
+      // Pattern 2: Version: x.x.x-nightly-YYYYMMDD-HHMMSS+buildnum
       if (versionMatch == null) {
-        versionRegex = RegExp(r'Version[:\s]*`?([^`\s\n]+)`?', caseSensitive: false);
+        versionRegex = RegExp(r'Version:\s*([^\s\n]+)', caseSensitive: false);
         versionMatch = versionRegex.firstMatch(body);
       }
-      
+
+      // Pattern 3: - **Version**: `x.x.x-nightly-YYYYMMDD-HHMMSS+buildnum`
+      if (versionMatch == null) {
+        versionRegex = RegExp(r'-\s*\*\*Version\*\*:\s*`([^`]+)`', caseSensitive: false);
+        versionMatch = versionRegex.firstMatch(body);
+      }
+
       if (versionMatch != null) {
-        version = versionMatch.group(1)!.trim();
-        AppLogger.info('Parsed nightly version from release body: $version');
-        
-        // Extract build number from version string (after +)
-        final buildMatch = RegExp(r'\+(\d+)').firstMatch(version);
-        if (buildMatch != null) {
-          buildNumber = buildMatch.group(1) ?? '';
-          AppLogger.info('Extracted build number: $buildNumber');
+        final fullVersion = versionMatch.group(1)!.trim();
+        AppLogger.info('Found version in release body: $fullVersion');
+
+        // Split version and build number (format: version+buildNumber)
+        final versionParts = fullVersion.split('+');
+        version = versionParts[0];
+
+        if (versionParts.length > 1) {
+          buildNumber = versionParts[1];
+          AppLogger.info('Parsed nightly version: $version, buildNumber: $buildNumber');
+        } else {
+          // Try to extract build number from version string
+          final buildMatch = RegExp(r'\+(\d+)').firstMatch(fullVersion);
+          if (buildMatch != null) {
+            buildNumber = buildMatch.group(1) ?? '';
+          }
+          AppLogger.info('Parsed nightly version (no + found): $version, buildNumber: $buildNumber');
         }
       } else {
-        // Fallback: use tag name as version
-        version = tagName;
-        AppLogger.info('Using tag name as version fallback: $version');
+        // Fallback: construct version from tag name
+        // Tag format: nightly-YYYYMMDD-HHMMSS
+        // We need to extract base version from somewhere
+        AppLogger.warning('Could not find version in release body, using fallback');
+
+        // Try to find base version in body
+        final baseVersionRegex = RegExp(r'\*\*Base Version\*\*:\s*`([^`]+)`', caseSensitive: false);
+        final baseVersionMatch = baseVersionRegex.firstMatch(body);
+
+        String baseVersion = '0.0.2'; // Default fallback
+        if (baseVersionMatch != null) {
+          baseVersion = baseVersionMatch.group(1)!.trim();
+          AppLogger.info('Found base version: $baseVersion');
+        }
+
+        // Extract date-time from tag (format: nightly-YYYYMMDD-HHMMSS)
+        final tagParts = tagName.substring('nightly-'.length); // Remove 'nightly-' prefix
+        version = '$baseVersion-nightly-$tagParts';
+
+        // Use published_at timestamp as build number
+        buildNumber = (buildDate.millisecondsSinceEpoch ~/ 1000).toString();
+
+        AppLogger.info('Constructed fallback version: $version, buildNumber: $buildNumber');
       }
     } else {
       // For regular/stable releases
