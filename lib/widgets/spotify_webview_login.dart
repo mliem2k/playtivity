@@ -22,6 +22,28 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
   String? _error;
   Map<String, String> _extractedHeaders = {};
   bool _showOverlay = true;
+  Timer? _overlayTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    
+    // Failsafe: Hide overlay after 10 seconds to prevent permanently blocking login
+    _overlayTimer = Timer(const Duration(seconds: 10), () {
+      if (mounted && _showOverlay) {
+        AppLogger.debug('Overlay timeout - hiding overlay to prevent blocking login');
+        setState(() {
+          _showOverlay = false;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _overlayTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -157,6 +179,9 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                           allowsInlineMediaPlayback: true,
                           iframeAllowFullscreen: true,
                           allowsBackForwardNavigationGestures: true,
+                          mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
+                          allowFileAccessFromFileURLs: true,
+                          allowUniversalAccessFromFileURLs: true,
                         ),
                         initialUrlRequest: URLRequest(
                           url: WebUri('https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F__noul__%2F'),
@@ -165,8 +190,8 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                             'sec-ch-ua-mobile': '?0',
                             'sec-ch-ua-platform': '"Windows"',
                             'sec-fetch-dest': 'document',
-                            'sec-fetch-mode': 'navigate',
-                            'sec-fetch-site': 'none',
+                            'sec-fetch-mode': 'no-cors',
+                            'sec-fetch-site': 'same-origin',
                             'sec-fetch-user': '?1',
                             'upgrade-insecure-requests': '1',
                             'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
@@ -199,21 +224,126 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                           String urlString = url.toString();
                           AppLogger.auth('Page loaded: $urlString');
                           
+                          // More precise overlay logic - only show when we're clearly logged in
+                          Uri uri = Uri.parse(urlString);
+                          bool isSpotifyDomain = uri.host.endsWith('spotify.com');
+                          
+                          // Show overlay only when we've successfully reached the main Spotify app
+                          bool isMainSpotifyApp = urlString.contains('open.spotify.com') && 
+                                                !urlString.contains('/login') &&
+                                                !urlString.contains('/auth') &&
+                                                !urlString.contains('/challenge') &&
+                                                !urlString.contains('/error');
+                          
+                          // Hide overlay for all login-related pages
+                          bool isLoginFlow = urlString.contains('accounts.spotify.com') ||
+                                           urlString.contains('/login') ||
+                                           urlString.contains('/auth') ||
+                                           urlString.contains('challenge.spotify.com') ||
+                                           urlString.contains('/signup') ||
+                                           urlString.contains('/authorize') ||
+                                           urlString.contains('facebook.com') ||
+                                           urlString.contains('google.com') ||
+                                           !isSpotifyDomain;
+                          
+                          bool newShowOverlay = isMainSpotifyApp && !isLoginFlow;
+                          
                           setState(() {
-                            // Show overlay for spotify.com domain pages that are NOT /login or challenge pages
-                            // Don't show for non-spotify sites (facebook, etc) or login/challenge pages
-                            Uri uri = Uri.parse(urlString);
-                            bool isSpotifyDomain = uri.host.endsWith('spotify.com');
-                            bool isLoginOrChallenge = urlString.contains('/login') || urlString.contains('challenge.spotify.com');
-                            bool newShowOverlay = isSpotifyDomain && !isLoginOrChallenge;
-                            
-                            AppLogger.debug('Overlay logic: host=${uri.host}, isSpotify=$isSpotifyDomain, isLogin=$isLoginOrChallenge, showOverlay=$newShowOverlay');
+                            AppLogger.debug('Overlay logic: host=${uri.host}, isMainApp=$isMainSpotifyApp, isLoginFlow=$isLoginFlow, showOverlay=$newShowOverlay');
                             _showOverlay = newShowOverlay;
+                            
+                            // Reset timer when we detect we're in login flow
+                            if (isLoginFlow && _overlayTimer != null) {
+                              _overlayTimer?.cancel();
+                              _overlayTimer = null;
+                            }
                           });
                           
+                          // Check if we're on the device selection page after login
+                          // Try to detect and bypass it automatically
+                          try {
+                            final pageInfo = await controller.evaluateJavascript(source: '''
+                              (function() {
+                                const bodyText = document.body.innerText || document.body.textContent || '';
+                                const url = window.location.href;
+
+                                console.log('🌐 Current URL:', url);
+                                console.log('📄 Page text (first 300 chars):', bodyText.substring(0, 300));
+
+                                // Look for device selection indicators in multiple languages
+                                const deviceSelectionIndicators = [
+                                  '登入身分',           // Chinese - "Login identity"
+                                  '帳戶概覽',          // Chinese - "Account overview"
+                                  '網頁播放器',        // Chinese - "Web player"
+                                  '網頁播放',          // Chinese - "Web play"
+                                  '播放器',            // Chinese - "Player"
+                                  'web player',
+                                  'web播放器',
+                                  'choose a device',
+                                  'select a device',
+                                  'pick a device',
+                                  'where do you want to listen',
+                                  'どこで聴きますか',   // Japanese
+                                  '어디에서 들으시겠어요', // Korean
+                                  'account overview',
+                                  'login to spotify',
+                                  'login with your spotify account',
+                                ];
+
+                                const hasIndicator = deviceSelectionIndicators.some(indicator =>
+                                  bodyText.toLowerCase().includes(indicator.toLowerCase())
+                                );
+
+                                // Check URL patterns
+                                const isStatusPage = url.includes('/status') || url.includes('/en/login?continue=');
+                                const isAccountsPage = url.includes('accounts.spotify.com');
+
+                                console.log('📍 Has device/login indicator text:', hasIndicator);
+                                console.log('📍 Is status/continue page:', isStatusPage);
+                                console.log('📍 Is accounts page:', isAccountsPage);
+
+                                return {
+                                  hasIndicator: hasIndicator,
+                                  isStatusPage: isStatusPage,
+                                  isAccountsPage: isAccountsPage,
+                                  url: url,
+                                  shouldBypass: (hasIndicator || isStatusPage) && isAccountsPage
+                                };
+                              })();
+                            ''');
+
+                            if (pageInfo != null && pageInfo is Map) {
+                              final shouldBypass = pageInfo['shouldBypass'] == true;
+                              final detectedUrl = pageInfo['url'];
+
+                              AppLogger.auth('Page detection: URL=$detectedUrl, shouldBypass=$shouldBypass');
+
+                              if (shouldBypass) {
+                                AppLogger.auth('✅ Detected device selection page, navigating to main app...');
+
+                                // Show overlay to hide the device selection page
+                                setState(() {
+                                  _showOverlay = true;
+                                });
+
+                                await Future.delayed(const Duration(milliseconds: 500));
+                                await controller.loadUrl(urlRequest: URLRequest(
+                                  url: WebUri('https://open.spotify.com'),
+                                ));
+                              }
+                            }
+                          } catch (e) {
+                            AppLogger.error('Error detecting device selection page', e);
+                          }
+
                           // Set up network interception to capture Bearer token
                           if (urlString.contains('open.spotify.com')) {
                             await _setupNetworkInterception(controller, url);
+                          }
+                          
+                          // Additional check: inspect page content to ensure we're not blocking login forms
+                          if (!newShowOverlay) {
+                            await _checkForLoginFormPresence(controller);
                           }
                         },                        onReceivedError: (controller, request, error) {
                           setState(() {
@@ -364,8 +494,8 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
         'sec-ch-ua-mobile': '?0',
         'sec-ch-ua-platform': '"Windows"',
         'sec-fetch-dest': 'empty',
-        'sec-fetch-mode': 'cors',
-        'sec-fetch-site': 'same-origin',
+        'sec-fetch-mode': 'no-cors',
+        'sec-fetch-site': 'same-site',
         'Upgrade-Insecure-Requests': '1',
       };
       
@@ -898,4 +1028,61 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
       AppLogger.error('Error checking for sp_dc cookie', e);
     }
   }
-} 
+
+  Future<void> _checkForLoginFormPresence(InAppWebViewController controller) async {
+    try {
+      // Check if the page actually contains login form elements
+      final hasLoginForm = await controller.evaluateJavascript(source: '''
+        (function() {
+          // Look for common login form indicators
+          const loginSelectors = [
+            'input[type="email"]',
+            'input[type="password"]',
+            'input[name="username"]',
+            'input[name="password"]',
+            'input[id*="login"]',
+            'input[id*="email"]',
+            'input[id*="password"]',
+            'form[action*="login"]',
+            'button[type="submit"]',
+            '[data-testid*="login"]',
+            '.login-form',
+            '#login-form'
+          ];
+
+          for (const selector of loginSelectors) {
+            if (document.querySelector(selector)) {
+              console.log('Found login form element:', selector);
+              return true;
+            }
+          }
+
+          // Check for specific Spotify login text
+          const bodyText = document.body.textContent || '';
+          const hasLoginText = bodyText.includes('Log in to Spotify') ||
+                              bodyText.includes('Sign up') ||
+                              bodyText.includes('Continue with') ||
+                              bodyText.includes('Email or username');
+
+          if (hasLoginText) {
+            console.log('Found login-related text content');
+            return true;
+          }
+
+          return false;
+        })();
+      ''');
+
+      if (hasLoginForm == true) {
+        AppLogger.debug('Login form detected on page - ensuring overlay is hidden');
+        if (mounted) {
+          setState(() {
+            _showOverlay = false;
+          });
+        }
+      }
+    } catch (e) {
+      AppLogger.error('Error checking for login form presence', e);
+    }
+  }
+}

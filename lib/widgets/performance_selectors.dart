@@ -109,9 +109,8 @@ class ErrorStateSelector extends StatelessWidget {
   
   @override
   Widget build(BuildContext context) {
-    return Selector2<AuthProvider, SpotifyProvider, String?>(
-      selector: (context, authProvider, spotifyProvider) => 
-          authProvider.errorMessage ?? spotifyProvider.errorMessage,
+    return Selector<SpotifyProvider, String?>(
+      selector: (context, spotifyProvider) => spotifyProvider.error,
       builder: (context, error, child) => builder(context, error),
     );
   }
@@ -151,12 +150,12 @@ class HomeScreenDataSelector extends StatelessWidget {
   
   @override
   Widget build(BuildContext context) {
-    return Selector4<AuthProvider, SpotifyProvider, bool, List<Activity>>(
+    return Selector2<AuthProvider, SpotifyProvider, _HomeScreenData>(
       selector: (context, authProvider, spotifyProvider) => _HomeScreenData(
         isAuthenticated: authProvider.isAuthenticated,
         isLoading: authProvider.isLoading || spotifyProvider.isLoading,
         activities: spotifyProvider.friendsActivities,
-        error: authProvider.errorMessage ?? spotifyProvider.errorMessage,
+        error: spotifyProvider.error,
       ),
       shouldRebuild: (previous, next) {
         return previous.isAuthenticated != next.isAuthenticated ||

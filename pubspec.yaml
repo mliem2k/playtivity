@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 0.0.2-nightly-20250629-073824+1751153904
+version: 0.0.2-nightly-20250915-061558+1757974558
 
 environment:
   sdk: ^3.8.1
@@ -43,40 +43,64 @@ dependencies:
   
   # State management
   provider: ^6.1.2
-  
+  flutter_bloc: ^8.1.6
+  equatable: ^2.0.5
+
+  # Dependency Injection
+  get_it: ^8.0.3
+  injectable: ^2.5.0
+
+  # Networking
+  dio: ^5.7.0
+  pretty_dio_logger: ^1.4.0
+
+  # Functional Programming & Error Handling
+  dartz: ^0.10.1
+
+  # Local Storage
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+
   # URL launcher for Spotify auth
   url_launcher: ^6.2.2
-  
+
   # Image loading and caching
   cached_network_image: ^3.3.1
-  
+
   # Time formatting
   timeago: ^3.6.1
-  
+
   # Icons
   font_awesome_flutter: ^10.7.0
-  
+
   # WebView for embedded Spotify login
   flutter_inappwebview: ^6.1.3
-  
+
   # Crypto for HMAC-SHA1 implementation
   crypto: ^3.0.3
-  
+
   # Environment variables
   flutter_dotenv: ^5.1.0
-  
+
   # Home screen widgets
   home_widget: ^0.6.0
-    # Background task execution
+
+  # Background task execution
   workmanager: ^0.6.0
+
   # Logging framework
   logger: ^2.0.2+1
-  
+
   # Package information
   package_info_plus: ^8.3.0
-  
+
   # File system access
   path_provider: ^2.1.2
+
+  # Analytics & Monitoring (optional - uncomment when needed)
+  # firebase_core: ^3.8.1
+  # firebase_analytics: ^11.3.5
+  # firebase_crashlytics: ^4.1.5
 
 dev_dependencies:
   flutter_test:
@@ -88,6 +112,17 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
+
+  # Code generation for dependency injection
+  injectable_generator: ^2.6.2
+  build_runner: ^2.4.13
+
+  # Code generation for Hive
+  hive_generator: ^2.0.1
+
+  # Testing
+  bloc_test: ^9.1.7
+  mocktail: ^1.0.4
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
