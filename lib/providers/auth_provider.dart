@@ -212,9 +212,21 @@ class AuthProvider extends ChangeNotifier {
         } catch (e) {
           AppLogger.warning('Failed to load user profile on attempt $attempt: $e');
           if (attempt < 5) {
-            // Increase delay for later attempts to handle network issues
-            final delayMs = attempt <= 2 ? 1000 : 2000;
-            AppLogger.auth('Retrying in ${delayMs}ms...');
+            // Check if this is a rate limit error (429)
+            final errorStr = e.toString().toLowerCase();
+            final isRateLimitError = errorStr.contains('429') || errorStr.contains('rate limit');
+
+            int delayMs;
+            if (isRateLimitError) {
+              // Use longer delays for rate limit errors: 5s, 10s, 20s, 40s
+              delayMs = 5000 * (1 << (attempt - 1)); // 5000, 10000, 20000, 40000
+              AppLogger.auth('Rate limit detected (429), backing off for ${delayMs}ms...');
+            } else {
+              // Use shorter delays for other errors: 1s, 2s
+              delayMs = attempt <= 2 ? 1000 : 2000;
+              AppLogger.auth('Retrying in ${delayMs}ms...');
+            }
+
             await Future.delayed(Duration(milliseconds: delayMs));
           }
         }

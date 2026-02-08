@@ -20,16 +20,30 @@ class ApiRetryService {
           AppLogger.error('$operation failed after ${maxRetries + 1} attempts', e);
           rethrow;
         }
-        
-        final delay = Duration(
-          milliseconds: initialDelay.inMilliseconds * pow(2, attempt).toInt(),
-        );
-        
-        AppLogger.warning('$operation attempt ${attempt + 1} failed, retrying in ${delay.inMilliseconds}ms: $e');
+
+        // Check if this is a rate limit error (429)
+        final errorStr = e.toString().toLowerCase();
+        final isRateLimitError = errorStr.contains('429') || errorStr.contains('rate limit');
+
+        Duration delay;
+        if (isRateLimitError) {
+          // Use longer exponential backoff for rate limit errors: 5s, 10s, 20s
+          delay = Duration(
+            milliseconds: 5000 * pow(2, attempt).toInt(),
+          );
+          AppLogger.warning('$operation attempt ${attempt + 1} failed with rate limit (429), backing off for ${delay.inSeconds}s');
+        } else {
+          // Use standard exponential backoff for other errors
+          delay = Duration(
+            milliseconds: initialDelay.inMilliseconds * pow(2, attempt).toInt(),
+          );
+          AppLogger.warning('$operation attempt ${attempt + 1} failed, retrying in ${delay.inMilliseconds}ms: $e');
+        }
+
         await Future.delayed(delay);
       }
     }
-    
+
     throw Exception('Retry logic should not reach this point');
   }
 }

@@ -60,3 +60,4 @@ android/app/upload-keystore.jks
 /nightly
 .pub-cache-hash
 delete-releases.js
+/.omc

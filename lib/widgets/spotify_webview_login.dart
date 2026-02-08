@@ -1,7 +1,15 @@
 import 'dart:async';
+import 'dart:convert' as convert;
+import 'dart:io' as io;
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import '../services/app_logger.dart';
+
+/// Safely truncates a string to a max length, avoiding RangeError
+String _truncate(String? text, int maxLength) {
+  if (text == null || text.isEmpty) return '';
+  return text.length > maxLength ? '${text.substring(0, maxLength)}...' : text;
+}
 
 class SpotifyWebViewLogin extends StatefulWidget {
   final Future<void> Function(String, Map<String, String>) onAuthComplete; // Bearer access token and headers
@@ -21,8 +29,13 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
   bool _isLoading = true;
   String? _error;
   Map<String, String> _extractedHeaders = {};
-  bool _showOverlay = true;
+  bool _showOverlay = false;
   Timer? _overlayTimer;
+  Timer? _pollingTimer;
+  Timer? _directTokenFetchTimer;
+  bool _isPollingActive = false;
+  bool _networkInterceptionSetup = false;
+  bool _directTokenFetchAttempted = false;
 
   @override
   void initState() {
@@ -42,6 +55,9 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
   @override
   void dispose() {
     _overlayTimer?.cancel();
+    _pollingTimer?.cancel();
+    _directTokenFetchTimer?.cancel();
+    _isPollingActive = false;
     super.dispose();
   }
 
@@ -164,8 +180,10 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                 : Stack(
                     children: [
                       // WebView (always present, loading in background when overlay is shown)
-                      InAppWebView(                        initialSettings: InAppWebViewSettings(
-                          userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/537.36",
+                      InAppWebView(
+                        initialSettings: InAppWebViewSettings(
+                          // Desktop Chrome user agent for full Spotify desktop experience
+                          userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
                           javaScriptEnabled: true,
                           domStorageEnabled: true,
                           thirdPartyCookiesEnabled: true,
@@ -208,33 +226,40 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                             action: PermissionResponseAction.GRANT,
                           );
                         },
-                        onLoadStart: (controller, url) {
+                        onLoadStart: (controller, url) async {
                           setState(() {
                             _isLoading = true;
                             _error = null;
                           });
+
+                          // Set up network interception EARLY - before the page loads
+                          // This ensures we catch Bearer tokens in API requests made during page load
+                          if (url != null) {
+                            String urlString = url.toString();
+                            Uri uri = Uri.parse(urlString);
+                            bool isSpotifyDomain = uri.host.endsWith('spotify.com');
+
+                            if (isSpotifyDomain && !_networkInterceptionSetup) {
+                              AppLogger.auth('Early setup of network interception for: $urlString');
+                              await _setupNetworkInterception(controller, url);
+                              _networkInterceptionSetup = true;
+                            }
+                          }
                         },
                         onLoadStop: (controller, url) async {
                           setState(() {
                             _isLoading = false;
                           });
-                          
+
                           if (url == null) return;
-                          
+
                           String urlString = url.toString();
-                          AppLogger.auth('Page loaded: $urlString');
-                          
+                          AppLogger.auth('📄 Page loaded: $urlString');
+
                           // More precise overlay logic - only show when we're clearly logged in
                           Uri uri = Uri.parse(urlString);
                           bool isSpotifyDomain = uri.host.endsWith('spotify.com');
-                          
-                          // Show overlay only when we've successfully reached the main Spotify app
-                          bool isMainSpotifyApp = urlString.contains('open.spotify.com') && 
-                                                !urlString.contains('/login') &&
-                                                !urlString.contains('/auth') &&
-                                                !urlString.contains('/challenge') &&
-                                                !urlString.contains('/error');
-                          
+
                           // Hide overlay for all login-related pages
                           bool isLoginFlow = urlString.contains('accounts.spotify.com') ||
                                            urlString.contains('/login') ||
@@ -245,22 +270,78 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                                            urlString.contains('facebook.com') ||
                                            urlString.contains('google.com') ||
                                            !isSpotifyDomain;
-                          
-                          bool newShowOverlay = isMainSpotifyApp && !isLoginFlow;
-                          
+
+                          // Check if we have sp_dc cookie (indicates user is logged in)
+                          bool hasSpDcCookie = false;
+                          if (!isLoginFlow && urlString.contains('open.spotify.com')) {
+                            try {
+                              final cookies = await CookieManager.instance().getCookies(url: url);
+                              hasSpDcCookie = cookies.any((cookie) => cookie.name == 'sp_dc' && cookie.value.isNotEmpty);
+                              AppLogger.auth('🍪 sp_dc cookie check on main page: $hasSpDcCookie');
+                              AppLogger.debug('🔍 Cookie names found: ${cookies.map((c) => c.name).join(', ')}');
+                            } catch (e) {
+                              AppLogger.debug('Error checking for sp_dc cookie: $e');
+                            }
+                          }
+
+                          // Show overlay ONLY when we're on main app AND have sp_dc cookie (confirmed logged in)
+                          bool isMainSpotifyApp = urlString.contains('open.spotify.com') &&
+                                                !urlString.contains('/login') &&
+                                                !urlString.contains('/auth') &&
+                                                !urlString.contains('/challenge') &&
+                                                !urlString.contains('/error');
+
+                          // ENHANCED LOGGING: Log all condition values
+                          AppLogger.auth('🔍 onLoadStop condition check:');
+                          AppLogger.auth('   - URL: $urlString');
+                          AppLogger.auth('   - isSpotifyDomain: $isSpotifyDomain');
+                          AppLogger.auth('   - isMainSpotifyApp: $isMainSpotifyApp');
+                          AppLogger.auth('   - isLoginFlow: $isLoginFlow');
+                          AppLogger.auth('   - hasSpDcCookie: $hasSpDcCookie');
+                          AppLogger.auth('   - _isPollingActive: $_isPollingActive');
+                          AppLogger.auth('   - _directTokenFetchTimer: ${_directTokenFetchTimer != null ? "EXISTS" : "NULL"}');
+
+                          // Don't show overlay if we don't have authentication cookies
+                          bool newShowOverlay = isMainSpotifyApp && !isLoginFlow && hasSpDcCookie;
+
                           setState(() {
-                            AppLogger.debug('Overlay logic: host=${uri.host}, isMainApp=$isMainSpotifyApp, isLoginFlow=$isLoginFlow, showOverlay=$newShowOverlay');
+                            AppLogger.debug('Overlay logic: host=${uri.host}, isMainApp=$isMainSpotifyApp, isLoginFlow=$isLoginFlow, hasSpDc=$hasSpDcCookie, showOverlay=$newShowOverlay');
                             _showOverlay = newShowOverlay;
-                            
+
                             // Reset timer when we detect we're in login flow
                             if (isLoginFlow && _overlayTimer != null) {
                               _overlayTimer?.cancel();
                               _overlayTimer = null;
                             }
                           });
-                          
-                          // Check if we're on the device selection page after login
-                          // Try to detect and bypass it automatically
+
+                          // When on main Spotify page WITH sp_dc cookie, try direct token fetch as fallback
+                          // This is more reliable than JavaScript interception
+                          if (isMainSpotifyApp && hasSpDcCookie && _directTokenFetchTimer == null) {
+                            AppLogger.auth('✅ On main Spotify page with sp_dc, scheduling direct token fetch...');
+                            _directTokenFetchTimer = Timer(const Duration(seconds: 1), () {
+                              if (mounted && _isPollingActive) {
+                                AppLogger.auth('⏰ Timer triggered - Attempting direct token fetch as fallback...');
+                                _tryDirectTokenFetch(controller);
+                              } else {
+                                AppLogger.auth('⏰ Timer fired but conditions not met - mounted=$mounted, _isPollingActive=$_isPollingActive');
+                              }
+                            });
+                          } else if (isMainSpotifyApp && !hasSpDcCookie) {
+                            AppLogger.auth('⚠️ On main Spotify page but NO sp_dc cookie - user needs to complete login first');
+                          } else if (!isMainSpotifyApp) {
+                            AppLogger.auth('ℹ️ Not on main Spotify app - skipping token fetch trigger');
+                          }
+
+                          // If on main page without sp_dc, log a hint to user
+                          if (isMainSpotifyApp && !hasSpDcCookie && !isLoginFlow) {
+                            AppLogger.auth('On main Spotify page but not logged in - user needs to complete login first');
+                          }
+
+                          // DISABLED: Auto-redirect was interfering with login flow
+                          // Users need to complete login manually without being redirected
+
+                          /* OLD CODE - Disabled due to redirect issues during login
                           try {
                             final pageInfo = await controller.evaluateJavascript(source: '''
                               (function() {
@@ -335,12 +416,8 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                           } catch (e) {
                             AppLogger.error('Error detecting device selection page', e);
                           }
+                          */
 
-                          // Set up network interception to capture Bearer token
-                          if (urlString.contains('open.spotify.com')) {
-                            await _setupNetworkInterception(controller, url);
-                          }
-                          
                           // Additional check: inspect page content to ensure we're not blocking login forms
                           if (!newShowOverlay) {
                             await _checkForLoginFormPresence(controller);
@@ -379,7 +456,13 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                               message.contains('gstatic.com') ||
                               message.contains('recaptcha') ||
                               message.contains('spotifycdn.com') ||
-                              message.contains('fastly-insights.com')) {
+                              message.contains('fastly-insights.com') ||
+                              message.contains('orb') ||
+                              message.contains('opaque response') ||
+                              message.contains('net::err_blocked') ||
+                              message.contains('blocked by response') ||
+                              message.contains('blocked by client') ||
+                              message.contains('polling check')) {
                             // Silently ignore CSP violations and analytics/tracking errors
                             return;
                           }
@@ -469,7 +552,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
       final cookieString = cookies.map((cookie) => '${cookie.name}=${cookie.value}').join('; ');
       
       AppLogger.debug('Found ${cookies.length} cookies');
-      AppLogger.debug('Initial cookie string: ${cookieString.isNotEmpty ? '${cookieString.substring(0, 100)}...' : 'EMPTY'}');
+      AppLogger.debug('Initial cookie string: ${cookieString.isNotEmpty ? _truncate(cookieString, 100) : 'EMPTY'}');
       AppLogger.debug('Cookie names: ${cookies.map((c) => c.name).join(', ')}');
       
       // Check if sp_dc cookie is present
@@ -484,7 +567,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
       // Build headers that will be saved and reused
       _extractedHeaders = {
         'Cookie': cookieString,
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
         'Accept-Language': 'en-US,en;q=0.9',
         'Accept-Encoding': 'gzip, deflate, br, zstd',
@@ -499,7 +582,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
         'Upgrade-Insecure-Requests': '1',
       };
       
-      AppLogger.debug('Initial _extractedHeaders Cookie: ${_extractedHeaders['Cookie']?.isNotEmpty == true ? '${_extractedHeaders['Cookie']!.substring(0, 100)}...' : 'EMPTY'}');
+      AppLogger.debug('Initial _extractedHeaders Cookie: ${_extractedHeaders['Cookie']?.isNotEmpty == true ? _truncate(_extractedHeaders['Cookie'], 100) : 'EMPTY'}');
       
       // Set up network request interception
       await _interceptTokenRequests(controller);
@@ -510,6 +593,248 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
         _error = 'Failed to setup authentication monitoring: $e';
       });
     }
+  }
+
+  /// Directly fetches access token from Spotify's API using native HTTP client
+  /// This bypasses WebView JavaScript limitations and CORS issues
+  Future<void> _tryDirectTokenFetch(InAppWebViewController controller) async {
+    try {
+      AppLogger.auth('🔧 _tryDirectTokenFetch called');
+      AppLogger.auth('   - Trigger: ${_directTokenFetchAttempted ? "Polling loop (alternative)" : "onLoadStop (primary)"}');
+      AppLogger.auth('   - _isPollingActive: $_isPollingActive');
+      AppLogger.auth('   - mounted: $mounted');
+
+      // Get current URL for cookie extraction
+      final currentUrl = await controller.getUrl();
+      if (currentUrl == null) {
+        AppLogger.auth('❌ No current URL for cookie extraction');
+        return;
+      }
+      AppLogger.auth('   - Current URL: $currentUrl');
+
+      // Get all cookies from CookieManager
+      final cookies = await CookieManager.instance().getCookies(url: currentUrl);
+      AppLogger.auth('📊 Found ${cookies.length} cookies for direct token fetch');
+      AppLogger.debug('   - Cookie names: ${cookies.map((c) => c.name).join(', ')}');
+
+      // Find the sp_dc cookie
+      final spDcCookie = cookies.firstWhere(
+        (cookie) => cookie.name == 'sp_dc',
+        orElse: () => Cookie(name: '', value: ''),
+      );
+
+      if (spDcCookie.name.isEmpty || spDcCookie.value.isEmpty) {
+        AppLogger.auth('❌ No sp_dc cookie found for direct token fetch');
+        AppLogger.auth('   - Cannot proceed without sp_dc cookie');
+        return;
+      }
+
+      AppLogger.auth('✅ sp_dc cookie found: ${_truncate(spDcCookie.value, 20)}');
+
+      // Try WebView-based fetch first (more reliable as it uses the browser's context)
+      AppLogger.auth('🌐 Attempting WebView-based token fetch...');
+      String? accessToken = await _fetchAccessTokenViaWebView(controller);
+
+      // Fallback to native HTTP request if WebView fetch fails
+      if (accessToken == null || accessToken.isEmpty) {
+        AppLogger.auth('⚠️ WebView fetch failed or returned empty, trying native HTTP request as fallback...');
+        accessToken = await _fetchAccessTokenNative(spDcCookie.value);
+      } else {
+        AppLogger.auth('✅ WebView fetch succeeded!');
+      }
+
+      if (accessToken != null && accessToken.isNotEmpty) {
+        AppLogger.auth('🎉 Successfully got access token: ${_truncate(accessToken, 20)}');
+        AppLogger.auth('   - Token length: ${accessToken.length} characters');
+
+        // Update extracted headers with current cookies
+        final cookieString = cookies.map((cookie) => '${cookie.name}=${cookie.value}').join('; ');
+        _extractedHeaders['Cookie'] = cookieString;
+
+        // Cancel timers since we got the token
+        _isPollingActive = false;
+        _pollingTimer?.cancel();
+        _directTokenFetchTimer?.cancel();
+        AppLogger.auth('⏹️ Timers cancelled after successful token fetch');
+
+        // Complete auth with the fetched token
+        if (mounted) {
+          await widget.onAuthComplete(accessToken, _extractedHeaders);
+
+          await Future.delayed(const Duration(milliseconds: 500));
+
+          if (mounted && Navigator.canPop(context)) {
+            AppLogger.auth('Closing WebView after successful direct token fetch');
+            Navigator.of(context).pop();
+          }
+        }
+      } else {
+        AppLogger.auth('❌ Direct token fetch did not return a valid token');
+        AppLogger.auth('   - accessToken was null or empty');
+      }
+    } catch (e) {
+      AppLogger.error('💥 Error in direct token fetch', e);
+      AppLogger.auth('   - Exception: ${e.toString()}');
+    }
+  }
+
+  /// Fetches access token using WebView's JavaScript context via fetch()
+  /// This approach has the proper cookies and browser fingerprinting since it runs within the authenticated WebView
+  Future<String?> _fetchAccessTokenViaWebView(InAppWebViewController controller) async {
+    try {
+      AppLogger.auth('Fetching access token via WebView JavaScript...');
+
+      // Execute JavaScript fetch within the WebView's context
+      final result = await controller.evaluateJavascript(source: '''
+        (async function() {
+          try {
+            console.log('[Spotify Token Fetch] Starting fetch request...');
+            // Try new endpoint first (2025 change), fallback to old endpoint
+            const tokenUrl = 'https://open.spotify.com/api/token';
+            const response = await fetch(tokenUrl, {
+              method: 'GET',
+              credentials: 'include', // Include cookies automatically
+              headers: {
+                'Accept': 'application/json',
+                'App-Platform': 'WebPlayer'
+              }
+            });
+
+            console.log('[Spotify Token Fetch] Response status:', response.status);
+            console.log('[Spotify Token Fetch] Response ok:', response.ok);
+
+            if (!response.ok) {
+              console.error('[Spotify Token Fetch] HTTP Error:', response.status, response.statusText);
+              return JSON.stringify({ error: 'HTTP ' + response.status, status: response.status });
+            }
+
+            const data = await response.json();
+            console.log('[Spotify Token Fetch] Response data keys:', Object.keys(data));
+            console.log('[Spotify Token Fetch] Has accessToken:', 'accessToken' in data);
+            console.log('[Spotify Token Fetch] Has AnonymousToken:', 'AnonymousToken' in data);
+            console.log('[Spotify Token Fetch] accessToken value:', data.accessToken);
+            console.log('[Spotify Token Fetch] Full response:', JSON.stringify(data));
+
+            // Check for different token field names
+            const token = data.accessToken || data.AnonymousToken || data.token;
+
+            if (!token) {
+              console.error('[Spotify Token Fetch] No token found in response');
+              return JSON.stringify({
+                error: 'No token in response',
+                keys: Object.keys(data),
+                hasAccessToken: 'accessToken' in data,
+                hasAnonymousToken: 'AnonymousToken' in data
+              });
+            }
+
+            return JSON.stringify({ success: true, token: token, allKeys: Object.keys(data) });
+          } catch (error) {
+            console.error('[Spotify Token Fetch] Exception:', error.toString());
+            console.error('[Spotify Token Fetch] Stack:', error.stack);
+            return JSON.stringify({ error: error.toString(), errorType: error.name });
+          }
+        })()
+      ''');
+
+      // Log the raw result from JavaScript
+      AppLogger.auth('Raw JavaScript result: $result');
+
+      if (result == null || result is! String) {
+        AppLogger.auth('WebView fetch returned null or invalid result');
+        return null;
+      }
+
+      // Parse the JSON response from JavaScript
+      AppLogger.auth('Parsing JSON result...');
+      final jsonData = convert.jsonDecode(result);
+      AppLogger.auth('Parsed JSON data: $jsonData');
+
+      if (jsonData is Map) {
+        if (jsonData['error'] != null) {
+          AppLogger.auth('WebView fetch returned error: ${jsonData['error']}');
+          if (jsonData['keys'] != null) {
+            AppLogger.auth('Response keys available: ${jsonData['keys']}');
+          }
+          if (jsonData['hasAccessToken'] != null) {
+            AppLogger.auth('Has accessToken field: ${jsonData['hasAccessToken']}');
+          }
+          if (jsonData['hasAnonymousToken'] != null) {
+            AppLogger.auth('Has AnonymousToken field: ${jsonData['hasAnonymousToken']}');
+          }
+          return null;
+        }
+
+        AppLogger.auth('Response successful, all keys: ${jsonData['allKeys']}');
+        final token = jsonData['token'] as String?;
+        AppLogger.auth('Extracted token: $token');
+
+        if (token != null && token.isNotEmpty) {
+          AppLogger.auth('✅ Successfully got token via WebView fetch: ${_truncate(token, 20)}');
+          return token;
+        }
+      }
+
+      AppLogger.auth('WebView fetch did not return valid token data');
+      AppLogger.auth('Final jsonData type: ${jsonData.runtimeType}');
+      return null;
+    } catch (e) {
+      AppLogger.error('Error fetching token via WebView', e);
+      return null;
+    }
+  }
+
+  /// Makes a native HTTP request to Spotify's token endpoint to get an access token
+  /// This bypasses WebView JavaScript context and CORS limitations
+  Future<String?> _fetchAccessTokenNative(String spDcCookie) async {
+    io.HttpClient client = io.HttpClient();
+    try {
+      AppLogger.auth('Making native HTTP request to Spotify token endpoint...');
+
+      // Set up request with proper headers
+      // Note: Spotify changed endpoint from get_access_token to api/token in 2025
+      final request = await client.getUrl(Uri.parse(
+        'https://open.spotify.com/api/token'
+      ));
+
+      // Set required headers
+      request.headers.set('Cookie', 'sp_dc=$spDcCookie');
+      request.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36');
+      request.headers.set('Accept', 'application/json');
+      request.headers.set('App-Platform', 'WebPlayer');
+      request.headers.set('Content-Type', 'application/json');
+      request.headers.set('Referer', 'https://open.spotify.com/');
+      request.headers.set('Origin', 'https://open.spotify.com');
+
+      // Get response
+      final response = await request.close();
+
+      // Read response body
+      final responseBody = await response.transform(convert.utf8.decoder).join();
+
+      AppLogger.auth('Token endpoint response status: ${response.statusCode}');
+      AppLogger.auth('Token endpoint response body: ${_truncate(responseBody, 300)}');
+
+      if (response.statusCode == io.HttpStatus.ok) {
+        try {
+          final jsonData = convert.jsonDecode(responseBody);
+          if (jsonData is Map && jsonData['accessToken'] != null) {
+            return jsonData['accessToken'] as String;
+          } else {
+            AppLogger.auth('Response did not contain accessToken: ${_truncate(responseBody, 200)}');
+          }
+        } catch (e) {
+          AppLogger.error('Error parsing token JSON response', e);
+        }
+      } else {
+        AppLogger.auth('Token endpoint returned status ${response.statusCode}: ${response.reasonPhrase}');
+      }
+    } catch (e) {
+      AppLogger.error('Native HTTP request to token endpoint failed', e);
+    } finally {
+      client.close();
+    }
+    return null;
   }
 
   Future<void> _interceptTokenRequests(InAppWebViewController controller) async {
@@ -760,32 +1085,36 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
   }
 
   void _startTokenPolling(InAppWebViewController controller) {
+    _isPollingActive = true;
     AppLogger.auth('Starting token polling...');
-    
-    Timer.periodic(const Duration(seconds: 1), (timer) async {
-      if (!mounted) {
+
+    _pollingTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
+      if (!mounted || !_isPollingActive) {
         timer.cancel();
         return;
       }
-      
+
       // Check if current URL is still on Spotify domain
       try {
         final currentUrl = await controller.getUrl();
         if (currentUrl != null) {
           Uri uri = Uri.parse(currentUrl.toString());
           bool isSpotifyDomain = uri.host.endsWith('spotify.com');
-          
+
           if (!isSpotifyDomain) {
-            AppLogger.debug('Not on Spotify domain (${uri.host}), skipping token polling...');
             return; // Skip this polling cycle
           }
         }
       } catch (e) {
-        AppLogger.error('Error checking current URL for polling', e);
+        // WebView disposed - stop polling
+        if (e.toString().contains('MissingPluginException')) {
+          _isPollingActive = false;
+          timer.cancel();
+          return;
+        }
       }
-      
+
       try {
-        AppLogger.debug('Polling for captured token...');
         final result = await controller.evaluateJavascript(source: '''
           (function() {
             console.log('🔍 Polling check - capturedBearerToken:', window.capturedBearerToken ? 'EXISTS' : 'null');
@@ -849,7 +1178,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
               AppLogger.auth('Found new sp_dc cookie! Updating headers...');
               _extractedHeaders['Cookie'] = capturedCookie;
               AppLogger.auth('Updated headers with sp_dc cookie');
-              AppLogger.debug('New cookie header: ${capturedCookie.substring(0, 100)}...');
+              AppLogger.debug('New cookie header: ${_truncate(capturedCookie, 100)}');
               
               AppLogger.auth('sp_dc detected in cookie update');
             } else if (hasSpDcNow) {
@@ -860,10 +1189,10 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
           
           if (bearerToken != null && bearerToken.isNotEmpty) {
             AppLogger.auth('Token polling found complete result!');
-            
-            AppLogger.auth('Successfully captured Bearer token: ${bearerToken.substring(0, 20)}...');
+
+            AppLogger.auth('Successfully captured Bearer token: ${_truncate(bearerToken, 20)}');
             AppLogger.debug('Token length: ${bearerToken.length} characters');
-            AppLogger.debug('Final captured cookie: ${capturedCookie?.substring(0, 50) ?? 'none'}...');
+            AppLogger.debug('Final captured cookie: ${_truncate(capturedCookie, 50)}');
             AppLogger.debug('Token data: ${tokenInfo['data']}');
             
             AppLogger.auth('Bearer token found');
@@ -935,7 +1264,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
               ''');
               
               if (clientTokenResult != null) {
-                AppLogger.auth('Client token captured: ${clientTokenResult.toString().substring(0, 20)}...');
+                AppLogger.auth('Client token captured: ${_truncate(clientTokenResult.toString(), 20)}');
                 _extractedHeaders['client-token'] = clientTokenResult.toString();
                 clientTokenFound = true;
               } else {
@@ -984,13 +1313,24 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
           }
         }
       } catch (e) {
-        AppLogger.error('Error checking for captured token', e);
+        // WebView disposed - stop polling silently
+        if (e.toString().contains('MissingPluginException')) {
+          _isPollingActive = false;
+          timer.cancel();
+          return;
+        }
+        // Only log other errors occasionally to reduce spam
+        if (DateTime.now().millisecondsSinceEpoch % 10000 < 1000) {
+          AppLogger.error('Error checking for captured token', e);
+        }
       }
     });
-    
-    // Set a timeout to stop polling after 60 seconds (extended for long idle scenarios)
-    Timer(const Duration(seconds: 60), () {
-      AppLogger.auth('Token polling timeout - stopping...');
+
+    // Set a timeout to stop polling after 120 seconds (increased from 60)
+    Timer(const Duration(seconds: 120), () {
+      _isPollingActive = false;
+      _pollingTimer?.cancel();
+      AppLogger.auth('Token polling timeout after 120 seconds - stopping...');
     });
   }
 
@@ -1012,16 +1352,36 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
         );
 
         if (spDcCookie.name.isNotEmpty && spDcCookie.value.isNotEmpty) {
-          AppLogger.auth('Found sp_dc cookie: ${spDcCookie.value.substring(0, 20)}...');
-          
+          AppLogger.auth('Found sp_dc cookie: ${_truncate(spDcCookie.value, 20)}');
+
           AppLogger.auth('sp_dc detected in cookie check');
-          
+
           // Update the cookie string in headers with the complete set including sp_dc
           final allCookies = cookies.map((cookie) => '${cookie.name}=${cookie.value}').join('; ');
           _extractedHeaders['Cookie'] = allCookies;
-          
+
           AppLogger.auth('Updated headers with sp_dc cookie');
-          AppLogger.debug('New cookie header: ${allCookies.substring(0, 100)}...');
+          AppLogger.debug('New cookie header: ${_truncate(allCookies, 100)}');
+
+          // ALTERNATIVE TOKEN FETCH TRIGGER: Try to fetch token when sp_dc is found in polling
+          // This provides an additional path to token acquisition beyond onLoadStop
+          if (!_directTokenFetchAttempted && _isPollingActive) {
+            _directTokenFetchAttempted = true;
+            AppLogger.auth('🎯 Alternative trigger: sp_dc found in polling, attempting direct token fetch...');
+            AppLogger.auth('   - _directTokenFetchAttempted flag set to prevent duplicates');
+
+            // Delay slightly to ensure cookies are fully set
+            await Future.delayed(const Duration(milliseconds: 500));
+
+            if (mounted && _isPollingActive) {
+              AppLogger.auth('⚡ Executing alternative direct token fetch from polling loop...');
+              await _tryDirectTokenFetch(controller);
+            } else {
+              AppLogger.auth('⚠️ Alternative fetch skipped - mounted=$mounted, _isPollingActive=$_isPollingActive');
+            }
+          } else if (_directTokenFetchAttempted) {
+            AppLogger.debug('ℹ️ sp_dc found but direct token fetch already attempted, skipping');
+          }
         }
       }
     } catch (e) {
