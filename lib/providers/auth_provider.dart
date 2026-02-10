@@ -198,8 +198,13 @@ class AuthProvider extends ChangeNotifier {
       
       // Fetch user profile using Bearer token with retry logic
       AppLogger.auth('Fetching user profile with Bearer token...');
+
+      // Add initial delay to avoid immediate rate limiting after login
+      AppLogger.auth('Waiting 3 seconds before first API call to avoid rate limiting...');
+      await Future.delayed(const Duration(seconds: 3));
+
       User? userProfile;
-      
+
       // Try multiple times to get user profile (sometimes the token needs a moment to propagate)
       // Extended retry logic for long idle scenarios
       for (int attempt = 1; attempt <= 5; attempt++) {

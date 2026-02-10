@@ -7,6 +7,7 @@ import 'package:playtivity/models/user.dart';
 import 'package:playtivity/models/track.dart';
 import 'package:playtivity/models/playlist.dart';
 import 'package:playtivity/models/artist.dart';
+import 'package:playtivity/utils/json_helpers.dart';
 import 'http_interceptor.dart';
 import 'app_logger.dart';
 import 'api_retry_service.dart';
@@ -792,11 +793,14 @@ class SpotifyBuddyService {
 
   /// Gets current user profile using web access token
   /// Gets user profile using Bearer token directly
+  /// Note: As of February 2026, some fields are no longer returned by the API:
+  /// - country, email, followers, product were removed
+  /// We provide default values for these fields to maintain backward compatibility
   Future<User?> getCurrentUserProfileWithToken(String bearerToken) async {
     return ApiRetryService.retryApiCall(
       () async {
         AppLogger.spotify('🔄 Getting user profile with Bearer token...');
-        
+
         final url = 'https://api.spotify.com/v1/me';
         final headers = {
           'Accept': 'application/json',
@@ -814,13 +818,28 @@ class SpotifyBuddyService {
         if (response.statusCode == 200) {
           final data = json.decode(response.body);
           AppLogger.spotify('✅ Successfully fetched user profile: ${data['display_name']}');
-          
-          return User.fromSpotifyApi(data);
+
+          return _parseUserFrom2026Api(data);
         } else {
           throw Exception('Failed to fetch user profile: ${response.statusCode} - ${response.body}');
         }
       },
       operation: 'Get User Profile with Bearer Token',
+    );
+  }
+
+  /// Parses user data from 2026 Spotify API response
+  /// Handles missing fields (country, email, followers were removed in Feb 2026)
+  User _parseUserFrom2026Api(Map<String, dynamic> data) {
+    return User(
+      id: JsonHelpers.getString(data, 'id'),
+      displayName: JsonHelpers.getString(data, 'display_name'),
+      email: data['email'] as String? ?? 'user@spotify.com', // Removed in 2026 API
+      imageUrl: JsonHelpers.getSpotifyImageUrl(data),
+      followers: data['followers'] is Map
+          ? JsonHelpers.getNestedInt(data, ['followers', 'total'])
+          : 0, // Removed in 2026 API
+      country: data['country'] as String? ?? 'US', // Removed in 2026 API
     );
   }
 
