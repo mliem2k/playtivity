@@ -4,6 +4,7 @@ import 'dart:io' as io;
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import '../services/app_logger.dart';
+import '../services/spotify_totp_helper.dart';
 
 /// Safely truncates a string to a max length, avoiding RangeError
 String _truncate(String? text, int maxLength) {
@@ -684,13 +685,24 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
     try {
       AppLogger.auth('Fetching access token via WebView JavaScript...');
 
+      // Try to fetch server time for better TOTP synchronization
+      final serverTime = await _fetchSpotifyServerTime();
+
+      // Generate TOTP parameters using server time
+      final totpParams = SpotifyTotpHelper.generateTotpParams(timestampMillis: serverTime);
+      AppLogger.auth('Generated TOTP parameters: totp=${totpParams['totp']}, totpServer=${totpParams['totpServer']}, totpVer=${totpParams['totpVer']}');
+
+      // Build URL with TOTP parameters
+      final tokenUrl = 'https://open.spotify.com/api/token?reason=transport&productType=web-player&totp=${totpParams['totp']}&totpServer=${totpParams['totpServer']}&totpVer=${totpParams['totpVer']}';
+      AppLogger.auth('Token fetch URL: $tokenUrl');
+
       // Execute JavaScript fetch within the WebView's context
       final result = await controller.evaluateJavascript(source: '''
         (async function() {
           try {
             console.log('[Spotify Token Fetch] Starting fetch request...');
-            // Try new endpoint first (2025 change), fallback to old endpoint
-            const tokenUrl = 'https://open.spotify.com/api/token';
+            // Use URL with TOTP parameters (2025 requirement)
+            const tokenUrl = '$tokenUrl';
             const response = await fetch(tokenUrl, {
               method: 'GET',
               credentials: 'include', // Include cookies automatically
@@ -791,11 +803,27 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
     try {
       AppLogger.auth('Making native HTTP request to Spotify token endpoint...');
 
+      // Try to fetch server time for better TOTP synchronization
+      final serverTime = await _fetchSpotifyServerTime();
+
+      // Generate TOTP parameters using server time
+      final totpParams = SpotifyTotpHelper.generateTotpParams(timestampMillis: serverTime);
+      AppLogger.auth('Generated TOTP parameters for native fetch: totp=${totpParams['totp']}, totpServer=${totpParams['totpServer']}, totpVer=${totpParams['totpVer']}');
+
+      // Build URL with TOTP parameters (2025 requirement)
+      final tokenUrl = Uri.parse('https://open.spotify.com/api/token').replace(
+        queryParameters: {
+          'reason': 'transport',
+          'productType': 'web-player',
+          'totp': totpParams['totp']!,
+          'totpServer': totpParams['totpServer']!,
+          'totpVer': totpParams['totpVer']!,
+        },
+      );
+      AppLogger.auth('Token fetch URL: $tokenUrl');
+
       // Set up request with proper headers
-      // Note: Spotify changed endpoint from get_access_token to api/token in 2025
-      final request = await client.getUrl(Uri.parse(
-        'https://open.spotify.com/api/token'
-      ));
+      final request = await client.getUrl(tokenUrl);
 
       // Set required headers
       request.headers.set('Cookie', 'sp_dc=$spDcCookie');
@@ -835,6 +863,38 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
       client.close();
     }
     return null;
+  }
+
+  /// Fetches Spotify's server time from HTTP Date header
+  /// This helps synchronize TOTP generation with Spotify's servers
+  Future<int> _fetchSpotifyServerTime() async {
+    final client = io.HttpClient();
+    try {
+      AppLogger.auth('Fetching Spotify server time for TOTP synchronization...');
+      final request = await client.getUrl(Uri.parse('https://open.spotify.com/'));
+      final response = await request.close();
+
+      final dateStr = response.headers.value('date');
+      if (dateStr != null) {
+        // Parse RFC 2822 date format
+        try {
+          final serverTime = io.HttpDate.parse(dateStr);
+          final timeMillis = serverTime.millisecondsSinceEpoch;
+          AppLogger.auth('Successfully fetched Spotify server time: $timeMillis');
+          return timeMillis;
+        } catch (e) {
+          AppLogger.error('Error parsing server date header', e);
+        }
+      }
+    } catch (e) {
+      AppLogger.error('Error fetching Spotify server time', e);
+    } finally {
+      client.close();
+    }
+
+    // Fallback to local time if server time fetch fails
+    AppLogger.auth('Failed to fetch server time, using local time');
+    return DateTime.now().millisecondsSinceEpoch;
   }
 
   Future<void> _interceptTokenRequests(InAppWebViewController controller) async {
@@ -1087,6 +1147,16 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
   void _startTokenPolling(InAppWebViewController controller) {
     _isPollingActive = true;
     AppLogger.auth('Starting token polling...');
+
+    // Schedule a fallback direct token fetch after 10 seconds
+    // This ensures we try TOTP-based token fetch even if sp_dc detection fails
+    Timer(const Duration(seconds: 10), () {
+      if (mounted && _isPollingActive && !_directTokenFetchAttempted) {
+        AppLogger.auth('⏰ Fallback timer: 10 seconds elapsed, attempting direct token fetch without sp_dc check...');
+        _directTokenFetchAttempted = true;
+        _tryDirectTokenFetch(controller);
+      }
+    });
 
     _pollingTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
       if (!mounted || !_isPollingActive) {
@@ -1344,12 +1414,19 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
 
       // Get current cookies from the browser
       final currentUrl = await controller.getUrl();
+      AppLogger.debug('_checkForSpDcCookie: currentUrl=$currentUrl');
+
       if (currentUrl != null) {
         final cookies = await CookieManager.instance().getCookies(url: currentUrl);
+        AppLogger.debug('_checkForSpDcCookie: found ${cookies.length} cookies');
+        AppLogger.debug('_checkForSpDcCookie: cookie names: ${cookies.map((c) => c.name).join(', ')}');
+
         final spDcCookie = cookies.firstWhere(
           (cookie) => cookie.name == 'sp_dc',
           orElse: () => Cookie(name: '', value: ''),
         );
+
+        AppLogger.debug('_checkForSpDcCookie: spDcCookie found=${spDcCookie.name.isNotEmpty}');
 
         if (spDcCookie.name.isNotEmpty && spDcCookie.value.isNotEmpty) {
           AppLogger.auth('Found sp_dc cookie: ${_truncate(spDcCookie.value, 20)}');
@@ -1383,6 +1460,8 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
             AppLogger.debug('ℹ️ sp_dc found but direct token fetch already attempted, skipping');
           }
         }
+      } else {
+        AppLogger.debug('_checkForSpDcCookie: currentUrl is null, skipping cookie check');
       }
     } catch (e) {
       AppLogger.error('Error checking for sp_dc cookie', e);
