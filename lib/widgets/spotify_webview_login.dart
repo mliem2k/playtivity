@@ -185,7 +185,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                           allowUniversalAccessFromFileURLs: true,
                         ),
                         initialUrlRequest: URLRequest(
-                          url: WebUri('https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F__noul__%2F'),
+                          url: WebUri('https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F'),
                           headers: {
                             'sec-ch-ua': '"Google Chrome";v="137", "Chromium";v="137", "Not/A)Brand";v="24"',
                             'sec-ch-ua-mobile': '?0',
