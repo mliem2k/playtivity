@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'app_logger.dart';
+import 'spotify_totp_helper.dart';
 
 class SpotifySecretsService {
   static const String _remoteUrl =
@@ -16,9 +17,8 @@ class SpotifySecretsService {
   static Future<Map<String, List<int>>?> loadAndApply() async {
     final secrets = await _loadSecrets();
     if (secrets != null) {
-      // TODO: Task 2 will add applySecrets() and activeVersion to SpotifyTotpHelper
-      // SpotifyTotpHelper.applySecrets(secrets);
-      // AppLogger.info('TOTP secrets loaded (version: ${SpotifyTotpHelper.activeVersion})');
+      SpotifyTotpHelper.applySecrets(secrets);
+      AppLogger.info('TOTP secrets loaded (version: ${SpotifyTotpHelper.activeVersion})');
     }
     return secrets;
   }
