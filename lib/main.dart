@@ -17,20 +17,24 @@ import 'utils/theme.dart';
 import 'utils/auth_utils.dart';
 import 'dart:async';
 import 'services/app_logger.dart';
+import 'services/spotify_secrets_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
-  
+
   // Initialize widget service
   await WidgetService.initialize();
-  
+
   // Initialize background service
   await BackgroundService.initialize();
-  
+
+  // Fetch and apply Spotify TOTP secrets before starting the app
+  await SpotifySecretsService.loadAndApply();
+
   // Check for updates on startup if needed
   _checkForUpdatesOnStartup();
-  
+
   runApp(MyApp(prefs: prefs));
 }
 
