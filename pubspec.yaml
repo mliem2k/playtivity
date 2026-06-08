@@ -83,6 +83,7 @@ dev_dependencies:
 
   # Code generation for Hive
   hive_generator: ^2.0.1
+  # Pinned to ^2.4.13 — hive_generator requires analyzer <7.0.0, incompatible with build_runner ^2.15.0
   build_runner: ^2.4.13
 
   # Testing
