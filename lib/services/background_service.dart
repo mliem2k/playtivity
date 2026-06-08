@@ -12,10 +12,7 @@ class BackgroundService {
   
   // Initialize background service
   static Future<void> initialize() async {
-    await Workmanager().initialize(
-      callbackDispatcher,
-      isInDebugMode: false, // Set to false in production
-    );
+    await Workmanager().initialize(callbackDispatcher);
   }
   
   // Register periodic widget update task
