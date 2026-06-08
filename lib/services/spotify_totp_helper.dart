@@ -138,9 +138,11 @@ class SpotifyTotpHelper {
     return result;
   }
 
-  /// Converts integer to 4-byte big-endian representation
+  /// Converts integer to 8-byte big-endian representation (RFC 6238 standard).
+  /// The high 4 bytes are always zero for time steps within the current era.
   static List<int> _intToBytes(int value) {
     return [
+      0, 0, 0, 0,
       (value >> 24) & 0xff,
       (value >> 16) & 0xff,
       (value >> 8) & 0xff,
