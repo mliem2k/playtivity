@@ -27,6 +27,36 @@ class SpotifyTokenService {
     return DateTime.now().millisecondsSinceEpoch;
   }
 
+  /// Builds the /api/token URL with the given TOTP query parameters.
+  static Uri buildTokenUrl(Map<String, String> totpParams) {
+    return Uri.parse('https://open.spotify.com/api/token').replace(
+      queryParameters: {
+        'reason': 'transport',
+        'productType': 'web-player',
+        'totp': totpParams['totp']!,
+        'totpServer': totpParams['totpServer']!,
+        'totpVer': totpParams['totpVer']!,
+      },
+    );
+  }
+
+  /// Parses a /api/token HTTP response and returns the accessToken string,
+  /// or null if the status is not 200-OK, the body is malformed, or
+  /// Spotify returned only an anonymous token (sp_dc expired/invalid).
+  static String? parseTokenResponse(int statusCode, String body) {
+    if (statusCode != io.HttpStatus.ok) return null;
+    if (body.isEmpty) return null;
+    try {
+      final json = convert.jsonDecode(body);
+      if (json is! Map) return null;
+      final token = json['accessToken'];
+      if (token is! String || token.isEmpty) return null;
+      return token;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Fetches a Bearer access token using a stored sp_dc cookie value.
   /// Returns null if the request fails or sp_dc has expired.
   static Future<String?> fetchBearerToken(String spDc) async {
@@ -36,15 +66,7 @@ class SpotifyTokenService {
       final serverTime = await fetchServerTime();
       final totpParams = SpotifyTotpHelper.generateTotpParams(timestampMillis: serverTime);
 
-      final tokenUrl = Uri.parse('https://open.spotify.com/api/token').replace(
-        queryParameters: {
-          'reason': 'transport',
-          'productType': 'web-player',
-          'totp': totpParams['totp']!,
-          'totpServer': totpParams['totpServer']!,
-          'totpVer': totpParams['totpVer']!,
-        },
-      );
+      final tokenUrl = buildTokenUrl(totpParams);
 
       final request = await client.getUrl(tokenUrl);
       request.headers.set('Cookie', 'sp_dc=$spDc');
@@ -60,12 +82,10 @@ class SpotifyTokenService {
 
       AppLogger.auth('Token endpoint status: ${response.statusCode}');
 
-      if (response.statusCode == io.HttpStatus.ok) {
-        final json = convert.jsonDecode(body);
-        if (json is Map && json['accessToken'] != null) {
-          AppLogger.auth('Silent token refresh succeeded');
-          return json['accessToken'] as String;
-        }
+      final token = parseTokenResponse(response.statusCode, body);
+      if (token != null) {
+        AppLogger.auth('Silent token refresh succeeded');
+        return token;
       }
       AppLogger.warning('Silent token refresh failed: HTTP ${response.statusCode}');
     } catch (e) {

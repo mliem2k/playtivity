@@ -3,14 +3,17 @@ import 'package:crypto/crypto.dart';
 /// Helper class for generating Spotify TOTP codes
 /// Spotify added TOTP requirement in March 2025 for token extraction
 class SpotifyTotpHelper {
-  /// Current TOTP secrets (v13, v14) - these expire periodically
+  /// Current TOTP secrets (v59-v61) - these expire periodically and are updated via
+  /// SpotifySecretsService.loadAndApply() at startup. These hardcoded values are
+  /// the last-known-good fallback if the remote fetch fails.
   static const Map<String, List<int>> secretCipherDict = {
-    '14': [62, 54, 109, 83, 107, 77, 41, 103, 45, 93, 114, 38, 41, 97, 64, 51, 95, 94, 95, 94],
-    '13': [59, 92, 64, 70, 99, 78, 117, 75, 99, 103, 116, 67, 103, 51, 87, 63, 93, 59, 70, 45, 32],
+    '59': [123, 105, 79, 70, 110, 59, 52, 125, 60, 49, 80, 70, 89, 75, 80, 86, 63, 53, 123, 37, 117, 49, 52, 93, 77, 62, 47, 86, 48, 104, 68, 72],
+    '60': [79, 109, 69, 123, 90, 65, 46, 74, 94, 34, 58, 48, 70, 71, 92, 85, 122, 63, 91, 64, 87, 87],
+    '61': [44, 55, 47, 42, 70, 40, 34, 114, 76, 74, 50, 111, 120, 97, 75, 76, 94, 102, 43, 69, 49, 120, 118, 80, 64, 78],
   };
 
-  /// Current TOTP version
-  static const String totpVer = '14';
+  /// Current TOTP version (highest in secretCipherDict, used as hardcoded fallback)
+  static const String totpVer = '61';
 
   /// TOTP time interval in seconds
   static const int totpInterval = 30;
