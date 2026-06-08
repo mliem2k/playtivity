@@ -68,4 +68,110 @@ void main() {
       expect(headers['Origin'], 'https://open.spotify.com');
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // parseTokenResponse — response parsing for the /api/token endpoint
+  // ---------------------------------------------------------------------------
+
+  group('SpotifyTokenService.parseTokenResponse', () {
+    test('returns accessToken from a valid 200 response', () {
+      const body = '{"accessToken":"Bearer.abc.123","isAnonymous":false}';
+      expect(SpotifyTokenService.parseTokenResponse(200, body), 'Bearer.abc.123');
+    });
+
+    test('returns null for 401 regardless of body', () {
+      const body = '{"accessToken":"should-be-ignored"}';
+      expect(SpotifyTokenService.parseTokenResponse(401, body), isNull);
+    });
+
+    test('returns null for 400', () {
+      expect(SpotifyTokenService.parseTokenResponse(400, '{}'), isNull);
+    });
+
+    test('returns null for 403', () {
+      expect(SpotifyTokenService.parseTokenResponse(403, '{"error":"forbidden"}'), isNull);
+    });
+
+    test('returns null when 200 body has only AnonymousToken (sp_dc expired)', () {
+      // AnonymousToken means Spotify rejected the sp_dc — the correct
+      // response is null so the caller can fall back to re-authentication.
+      const body = '{"AnonymousToken":"anon-tok","isAnonymous":true}';
+      expect(SpotifyTokenService.parseTokenResponse(200, body), isNull);
+    });
+
+    test('returns null when 200 body has no accessToken field', () {
+      const body = '{"someOtherField":"value"}';
+      expect(SpotifyTokenService.parseTokenResponse(200, body), isNull);
+    });
+
+    test('returns null for empty body', () {
+      expect(SpotifyTokenService.parseTokenResponse(200, ''), isNull);
+    });
+
+    test('returns null for malformed JSON', () {
+      expect(SpotifyTokenService.parseTokenResponse(200, 'not-json{{{'), isNull);
+    });
+
+    test('returns null when accessToken is null in JSON', () {
+      const body = '{"accessToken":null}';
+      expect(SpotifyTokenService.parseTokenResponse(200, body), isNull);
+    });
+
+    test('returns null when accessToken is empty string', () {
+      const body = '{"accessToken":""}';
+      expect(SpotifyTokenService.parseTokenResponse(200, body), isNull);
+    });
+
+    test('returns null for 500 server error', () {
+      expect(SpotifyTokenService.parseTokenResponse(500, '{"error":"server error"}'), isNull);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // buildTokenUrl — URL construction for the /api/token endpoint
+  // ---------------------------------------------------------------------------
+
+  group('SpotifyTokenService.buildTokenUrl', () {
+    final sampleParams = {
+      'totp': '123456',
+      'totpServer': '654321',
+      'totpVer': '14',
+    };
+
+    test('targets the correct Spotify /api/token endpoint', () {
+      final url = SpotifyTokenService.buildTokenUrl(sampleParams);
+      expect(url.host, 'open.spotify.com');
+      expect(url.path, '/api/token');
+    });
+
+    test('includes reason=transport query parameter', () {
+      final url = SpotifyTokenService.buildTokenUrl(sampleParams);
+      expect(url.queryParameters['reason'], 'transport');
+    });
+
+    test('includes productType=web-player query parameter', () {
+      final url = SpotifyTokenService.buildTokenUrl(sampleParams);
+      expect(url.queryParameters['productType'], 'web-player');
+    });
+
+    test('includes totp parameter from provided params', () {
+      final url = SpotifyTokenService.buildTokenUrl(sampleParams);
+      expect(url.queryParameters['totp'], '123456');
+    });
+
+    test('includes totpServer parameter from provided params', () {
+      final url = SpotifyTokenService.buildTokenUrl(sampleParams);
+      expect(url.queryParameters['totpServer'], '654321');
+    });
+
+    test('includes totpVer parameter from provided params', () {
+      final url = SpotifyTokenService.buildTokenUrl(sampleParams);
+      expect(url.queryParameters['totpVer'], '14');
+    });
+
+    test('uses HTTPS scheme', () {
+      final url = SpotifyTokenService.buildTokenUrl(sampleParams);
+      expect(url.scheme, 'https');
+    });
+  });
 }
