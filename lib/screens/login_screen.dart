@@ -173,43 +173,9 @@ class LoginScreen extends StatelessWidget {
           builder: (context) => SpotifyWebViewLogin(
             onAuthComplete: (bearerToken, headers) async {
               AppLogger.auth('Login screen received auth completion callback');
-              try {
-                // Process authentication without immediate navigation
-                await authProvider.handleAuthComplete(bearerToken, headers);
-                AppLogger.auth('Authentication handling completed successfully');
-                
-                // Add a small delay to ensure state is fully updated
-                await Future.delayed(const Duration(milliseconds: 200));
-                
-                // Verify authentication was successful before proceeding
-                if (authProvider.isAuthenticated) {
-                  AppLogger.auth('Authentication verified - ready to proceed');
-                  
-                  // Return success to the WebView (but don't navigate yet)
-                  if (context.mounted && Navigator.canPop(context)) {
-                    Navigator.of(context).pop(true);
-                  }
-                } else {
-                  AppLogger.auth('Authentication failed - auth provider not authenticated');
-                  throw Exception('Authentication verification failed');
-                }
-              } catch (e) {
-                AppLogger.auth('Error in auth completion', e);
-                if (context.mounted) {
-                  // Pop the WebView first
-                  if (Navigator.canPop(context)) {
-                    Navigator.of(context).pop(false);
-                  }
-                  
-                  // Show error message
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Login failed: ${e.toString()}'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              }
+              // Exceptions propagate to _tryDirectTokenFetch which handles the pop.
+              await authProvider.handleAuthComplete(bearerToken, headers);
+              AppLogger.auth('Authentication handling completed successfully');
             },
             onCancel: () {
               Navigator.of(context).pop(false);

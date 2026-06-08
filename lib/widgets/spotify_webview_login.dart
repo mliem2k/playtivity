@@ -562,13 +562,17 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
 
         // Complete auth with the fetched token
         if (mounted) {
-          await widget.onAuthComplete(accessToken, _extractedHeaders);
-
-          await Future.delayed(const Duration(milliseconds: 500));
-
-          if (mounted && Navigator.canPop(context)) {
-            AppLogger.auth('Closing WebView after successful direct token fetch');
-            Navigator.of(context).pop();
+          try {
+            await widget.onAuthComplete(accessToken, _extractedHeaders);
+            if (mounted && Navigator.canPop(context)) {
+              AppLogger.auth('Closing WebView after successful auth completion');
+              Navigator.of(context).pop(true);
+            }
+          } catch (e) {
+            AppLogger.error('Auth completion failed, closing WebView', e);
+            if (mounted && Navigator.canPop(context)) {
+              Navigator.of(context).pop(false);
+            }
           }
         }
       } else {
@@ -628,6 +632,11 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
             console.log('[Spotify Token Fetch] Has AnonymousToken:', 'AnonymousToken' in data);
             console.log('[Spotify Token Fetch] accessToken value:', data.accessToken);
             console.log('[Spotify Token Fetch] Full response:', JSON.stringify(data));
+
+            if (data.isAnonymous === true) {
+              console.log('[Spotify Token Fetch] Anonymous token received - sp_dc not valid, rejecting');
+              return JSON.stringify({ error: 'Anonymous token', isAnonymous: true });
+            }
 
             const token = data.accessToken;
 
