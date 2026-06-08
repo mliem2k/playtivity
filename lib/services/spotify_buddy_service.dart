@@ -475,6 +475,99 @@ class SpotifyBuddyService {
     );
   }
 
+  /// Pure JSON parser for the Spotify buddylist API response.
+  /// Converts the raw `responseBody` into a sorted list of [Activity] objects
+  /// without any network calls or caching side effects.
+  ///
+  /// [nowMs] overrides the current timestamp for [isCurrentlyPlaying] calculations.
+  /// Defaults to [DateTime.now] when omitted. Exposed as a static method so
+  /// tests can call it directly with a fixed clock.
+  static List<Activity> parseFriendsJson(String responseBody, {int? nowMs}) {
+    try {
+      final data = json.decode(responseBody);
+      final friends = data['friends'] as List?;
+      if (friends == null) return [];
+
+      final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
+      final activities = <Activity>[];
+
+      for (final friend in friends) {
+        final userInfo = friend['user'];
+        final rawTimestamp = friend['timestamp'];
+        final ts = rawTimestamp is int ? rawTimestamp : now;
+
+        final userUri = userInfo['uri'] ?? '';
+        final userId = userUri.startsWith('spotify:user:')
+            ? userUri.substring('spotify:user:'.length)
+            : userUri;
+
+        final user = User(
+          id: userId,
+          displayName: userInfo['name'] ?? 'Unknown User',
+          email: '',
+          imageUrl: userInfo['imageUrl'] as String?,
+          followers: 0,
+          country: '',
+        );
+
+        final trackInfo = friend['track'];
+        final playlistInfo = friend['playlist'];
+
+        if (playlistInfo != null) {
+          final playlist = Playlist(
+            id: (playlistInfo['uri'] as String?)?.split(':').last ?? '',
+            name: playlistInfo['name'] ?? 'Unknown Playlist',
+            description: playlistInfo['description'] as String?,
+            imageUrl: playlistInfo['imageUrl'] as String?,
+            trackCount: playlistInfo['trackCount'] ?? 0,
+            uri: playlistInfo['uri'] ?? '',
+            ownerId: playlistInfo['owner']?['id'] ?? '',
+            ownerName: playlistInfo['owner']?['name'] ?? 'Unknown',
+            isPublic: playlistInfo['public'] ?? false,
+          );
+          activities.add(Activity(
+            user: user,
+            playlist: playlist,
+            timestamp: DateTime.fromMillisecondsSinceEpoch(ts),
+            isCurrentlyPlaying: false,
+            type: ActivityType.playlist,
+          ));
+        } else if (trackInfo != null) {
+          final albumInfo = trackInfo['album'] ?? <String, dynamic>{};
+          final artistInfo = trackInfo['artist'] ?? <String, dynamic>{};
+          final durationMs = trackInfo['duration_ms'] as int? ?? 0;
+
+          final elapsedMs = now - ts;
+          final isCurrentlyPlaying =
+              durationMs > 0 && elapsedMs >= 0 && elapsedMs < (durationMs + 5000);
+
+          final track = Track(
+            id: trackInfo['uri'] ?? '',
+            name: trackInfo['name'] ?? 'Unknown Track',
+            artists: [artistInfo['name'] as String? ?? 'Unknown Artist'],
+            album: albumInfo['name'] ?? 'Unknown Album',
+            albumUri: albumInfo['uri'] as String?,
+            imageUrl: (trackInfo['imageUrl'] ?? albumInfo['imageUrl']) as String?,
+            durationMs: durationMs,
+            uri: trackInfo['uri'] ?? '',
+          );
+          activities.add(Activity(
+            user: user,
+            track: track,
+            timestamp: DateTime.fromMillisecondsSinceEpoch(ts),
+            isCurrentlyPlaying: isCurrentlyPlaying,
+            type: ActivityType.track,
+          ));
+        }
+      }
+
+      activities.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      return activities;
+    } catch (_) {
+      return [];
+    }
+  }
+
   Future<List<Activity>> _parseActivityResponse(
     String responseBody, {
     bool fastLoad = false,
