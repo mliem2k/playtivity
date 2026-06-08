@@ -15,8 +15,9 @@ class LRUCache<K, V> {
       return null;
     }
     
-    // Move to end (most recently used)
-    final value = _cache.remove(key) as V;
+    // Move to end (most recently used) — value is non-null: containsKey guard above ensures presence
+    // ignore: null_check_on_nullable_type_parameter
+    final value = _cache.remove(key)!;
     _cache[key] = value;
     return value;
   }
