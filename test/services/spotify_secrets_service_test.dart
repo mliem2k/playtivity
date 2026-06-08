@@ -100,8 +100,8 @@ void main() {
     tearDown(() => SpotifyTotpHelper.clearRuntimeSecrets());
 
     test('activeVersion returns highest hardcoded version when no runtime secrets', () {
-      // hardcoded dict has keys '14' and '13' — max is '14'
-      expect(SpotifyTotpHelper.activeVersion, '14');
+      // hardcoded dict has keys '59', '60', '61' — max is '61'
+      expect(SpotifyTotpHelper.activeVersion, '61');
     });
 
     test('activeVersion returns highest version from applied secrets', () {
@@ -129,7 +129,8 @@ void main() {
       });
       expect(SpotifyTotpHelper.activeVersion, '15');
       SpotifyTotpHelper.clearRuntimeSecrets();
-      expect(SpotifyTotpHelper.activeVersion, '14');
+      // After clearing, reverts to the highest hardcoded version (currently '61')
+      expect(SpotifyTotpHelper.activeVersion, '61');
     });
 
     test('generateTotpParams totpVer reflects activeVersion', () {
@@ -149,19 +150,19 @@ void main() {
     tearDown(() => SpotifyTotpHelper.clearRuntimeSecrets());
 
     test('loadAndApply with fresh valid cache applies secrets to SpotifyTotpHelper', () async {
-      // Pre-populate a fresh cache
+      // Pre-populate a fresh cache with current-era secrets
       final freshTs = DateTime.now().millisecondsSinceEpoch - (1 * 60 * 60 * 1000); // 1h ago
       SharedPreferences.setMockInitialValues({
         'spotify_totp_secrets_ts': freshTs,
-        'spotify_totp_secrets': '{"14": [62, 54, 109, 83, 107, 77, 41, 103, 45, 93, 114, 38, 41, 97, 64, 51, 95, 94, 95, 94]}',
+        'spotify_totp_secrets': '{"61": [44, 55, 47, 42, 70, 40, 34, 114, 76, 74, 50, 111, 120, 97, 75, 76, 94, 102, 43, 69, 49, 120, 118, 80, 64, 78]}',
       });
 
       final result = await SpotifySecretsService.loadAndApply();
 
       expect(result, isNotNull);
-      expect(result!['14'], isA<List<int>>());
+      expect(result!['61'], isA<List<int>>());
       // After loadAndApply, SpotifyTotpHelper uses the applied secrets
-      expect(SpotifyTotpHelper.activeVersion, '14');
+      expect(SpotifyTotpHelper.activeVersion, '61');
     });
 
     test('loadAndApply with stale cache returns null, hardcoded fallback intact', () async {

@@ -33,6 +33,21 @@ void main() {
     });
   });
 
+  group('SpotifyTotpHelper hardcoded secrets freshness', () {
+    test('secretCipherDict contains versions >= 50 (Spotify requires v59+ as of mid-2025)', () {
+      final maxVersion = SpotifyTotpHelper.secretCipherDict.keys
+          .map(int.parse)
+          .reduce((a, b) => a > b ? a : b);
+      expect(maxVersion, greaterThanOrEqualTo(50),
+          reason: 'Spotify rotated TOTP secrets to v59+ in 2025; v14 and older are rejected by the API');
+    });
+
+    test('totpVer constant is not stuck at a stale version', () {
+      expect(int.parse(SpotifyTotpHelper.totpVer), greaterThanOrEqualTo(50),
+          reason: 'totpVer must match a currently accepted Spotify version (v59+ as of mid-2025)');
+    });
+  });
+
   group('SpotifyTotpHelper.generateTotpParams', () {
     test('returns map with totp, totpServer, totpVer keys', () {
       const ts = 1700000000000;
