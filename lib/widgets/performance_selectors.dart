@@ -6,7 +6,7 @@ import '../models/activity.dart';
 import '../models/user.dart';
 
 /// High-performance selector widgets that only rebuild when specific data changes
-/// Eliminates unnecessary widget rebuilds caused by Consumer2<AuthProvider, SpotifyProvider>
+/// Eliminates unnecessary widget rebuilds caused by `Consumer2<AuthProvider, SpotifyProvider>`
 
 class AuthStatusSelector extends StatelessWidget {
   final Widget Function(BuildContext context, bool isAuthenticated) builder;

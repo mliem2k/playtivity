@@ -225,7 +225,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       trailing: Switch(
         value: _isNightlyEnabled!,
-        activeColor: Colors.orange,
+        activeThumbColor: Colors.orange,
         onChanged: (value) async {
           // Update local state immediately for instant UI feedback
           setState(() {

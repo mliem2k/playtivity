@@ -95,10 +95,11 @@ class UpdateModal {
     {String? message}
   ) async {
     final isNightly = await UpdateService.getNightlyBuildPreference();
-    final latestInfo = isNightly 
-        ? UpdateService.getLatestNightlyInfo() 
+    final latestInfo = isNightly
+        ? UpdateService.getLatestNightlyInfo()
         : UpdateService.getLatestReleaseInfo();
 
+    if (!context.mounted) return;
     return showDialog<void>(
       context: context,
       builder: (BuildContext dialogContext) {
@@ -418,7 +419,8 @@ class UpdateModal {
         } catch (_) {
           // If we can't get current version, pass null
         }
-        
+
+        if (!context.mounted) return;
         await _showErrorDialog(
           context,
           e.toString(),
