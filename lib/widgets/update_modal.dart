@@ -396,6 +396,7 @@ class UpdateModal {
         }
       } else if (updateResult.error != null) {
         // Error occurred
+        if (!context.mounted) return;
         await _showErrorDialog(
           context,
           updateResult.error!,
@@ -403,6 +404,7 @@ class UpdateModal {
         );
       } else {
         // No updates available
+        if (!context.mounted) return;
         await _showNoUpdatesDialog(context, currentVersion);
       }
     } catch (e) {
