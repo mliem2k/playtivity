@@ -15,6 +15,28 @@ class SpotifyTotpHelper {
   /// TOTP time interval in seconds
   static const int totpInterval = 30;
 
+  // Runtime secrets — set by SpotifySecretsService.loadAndApply(), override hardcoded fallback
+  static Map<String, List<int>>? _runtimeSecrets;
+
+  /// Applies remotely-fetched cipher secrets. Called once at startup.
+  static void applySecrets(Map<String, List<int>> secrets) {
+    _runtimeSecrets = secrets;
+  }
+
+  /// Clears runtime secrets, reverting generateTotp to the hardcoded fallback.
+  static void clearRuntimeSecrets() {
+    _runtimeSecrets = null;
+  }
+
+  /// Highest version key present in the active secrets source.
+  static String get activeVersion {
+    final source = _runtimeSecrets ?? secretCipherDict;
+    return source.keys
+        .map(int.parse)
+        .reduce((a, b) => a > b ? a : b)
+        .toString();
+  }
+
   /// Generates TOTP using XOR transformation
   ///
   /// [timestampMillis] Optional timestamp in milliseconds (defaults to current time)
@@ -24,7 +46,8 @@ class SpotifyTotpHelper {
     final seconds = (t / 1000).floor();
 
     // XOR transformation based on index
-    final secretCipherBytes = secretCipherDict[totpVer] ?? secretCipherDict['14']!;
+    final source = _runtimeSecrets ?? secretCipherDict;
+    final secretCipherBytes = source[activeVersion]!;
     final transformed = List.generate(
       secretCipherBytes.length,
       (i) => secretCipherBytes[i] ^ ((i % 33) + 9),
@@ -60,7 +83,7 @@ class SpotifyTotpHelper {
     return {
       'totp': totp,
       'totpServer': totpServer,
-      'totpVer': totpVer,
+      'totpVer': activeVersion,
     };
   }
 
