@@ -99,6 +99,20 @@ void main() {
       expect(SpotifyTokenService.parseTokenResponse(200, body), isNull);
     });
 
+    test('returns null when isAnonymous is true even though accessToken is present', () {
+      // Spotify includes accessToken in the response body even for anonymous sessions
+      // (no valid sp_dc). Accepting an anonymous token causes every subsequent API
+      // call to fail with 401 because the token lacks user-scoped permissions.
+      // We must check isAnonymous and reject the token regardless of accessToken presence.
+      const body =
+          '{"accessToken":"BQ-anonymous","isAnonymous":true,"clientId":"d8a5ed958d274c2e8ee717e6a4b0971d"}';
+      expect(
+        SpotifyTokenService.parseTokenResponse(200, body),
+        isNull,
+        reason: 'Anonymous tokens must be rejected even when accessToken field is populated',
+      );
+    });
+
     test('returns null when 200 body has no accessToken field', () {
       const body = '{"someOtherField":"value"}';
       expect(SpotifyTokenService.parseTokenResponse(200, body), isNull);

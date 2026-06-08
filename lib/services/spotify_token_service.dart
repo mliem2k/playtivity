@@ -49,6 +49,7 @@ class SpotifyTokenService {
     try {
       final json = convert.jsonDecode(body);
       if (json is! Map) return null;
+      if (json['isAnonymous'] == true) return null;
       final token = json['accessToken'];
       if (token is! String || token.isEmpty) return null;
       return token;
