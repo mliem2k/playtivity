@@ -33,6 +33,24 @@ void main() {
     });
   });
 
+  group('SpotifyTotpHelper TOTP algorithm correctness', () {
+    // Reference value verified against the live Spotify web player via Playwright
+    // on 2026-06-09: at unix timestamp 1780948075s (timeStep 59364935),
+    // with v61 secrets and an 8-byte counter, the code must be 159457.
+    // The 4-byte implementation produced 000165 (wrong) — confirmed by intercepting
+    // the real web player's /api/token request which returned 159457 and got 200 OK.
+    test('generates the Spotify-verified code 159457 for v61 at timeStep 59364935', () {
+      SpotifyTotpHelper.applySecrets({
+        '61': [44,55,47,42,70,40,34,114,76,74,50,111,120,97,75,76,94,102,43,69,49,120,118,80,64,78],
+      });
+      // 1780948075000 ms → timeStep 59364935
+      final totp = SpotifyTotpHelper.generateTotp(timestampMillis: 1780948075000);
+      SpotifyTotpHelper.clearRuntimeSecrets();
+      expect(totp, '159457',
+          reason: '8-byte counter (RFC 6238) is required; 4-byte counter produces 000165');
+    });
+  });
+
   group('SpotifyTotpHelper hardcoded secrets freshness', () {
     test('secretCipherDict contains versions >= 50 (Spotify requires v59+ as of mid-2025)', () {
       final maxVersion = SpotifyTotpHelper.secretCipherDict.keys
