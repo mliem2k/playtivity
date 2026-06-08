@@ -77,6 +77,102 @@ void main() {
     });
   });
 
+  group('AuthProvider.handleAuthComplete — full WebView auth flow', () {
+    test('sets isAuthenticated to true after valid token and profile fetch', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final provider = AuthProvider(prefs);
+      provider.userProfileFetchOverride = (_) async => _fakeUser();
+      await _waitForInit(provider);
+
+      await provider.handleAuthComplete(
+        'Bearer.token.abc1234567890123456789012345678901234567890',
+        {'Cookie': 'sp_dc=validSpDc; sp_t=trackVal'},
+      );
+
+      expect(provider.isAuthenticated, isTrue);
+    });
+
+    test('sets currentUser after successful handleAuthComplete', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final provider = AuthProvider(prefs);
+      provider.userProfileFetchOverride = (_) async => _fakeUser();
+      await _waitForInit(provider);
+
+      await provider.handleAuthComplete(
+        'Bearer.token.abc1234567890123456789012345678901234567890',
+        {'Cookie': 'sp_dc=validSpDc'},
+      );
+
+      expect(provider.currentUser, isNotNull);
+      expect(provider.currentUser!.id, 'user_123');
+    });
+
+    test('persists bearer token to SharedPreferences after handleAuthComplete', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final provider = AuthProvider(prefs);
+      provider.userProfileFetchOverride = (_) async => _fakeUser();
+      await _waitForInit(provider);
+
+      const token = 'Bearer.token.abc1234567890123456789012345678901234567890';
+      await provider.handleAuthComplete(
+        token,
+        {'Cookie': 'sp_dc=validSpDc'},
+      );
+
+      expect(prefs.getString('spotify_bearer_token'), token);
+    });
+
+    test('throws when bearer token is too short (< 50 chars)', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final provider = AuthProvider(prefs);
+      provider.userProfileFetchOverride = (_) async => _fakeUser();
+      await _waitForInit(provider);
+
+      await expectLater(
+        provider.handleAuthComplete('short-token', {'Cookie': 'sp_dc=x'}),
+        throwsA(isA<Exception>()),
+      );
+      expect(provider.isAuthenticated, isFalse);
+    });
+
+    test('throws and stays unauthenticated when profile fetch always returns null', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final provider = AuthProvider(prefs);
+      provider.userProfileFetchOverride = (_) async => null;
+      await _waitForInit(provider);
+
+      // handleAuthComplete rethrows when all profile fetch attempts return null
+      await expectLater(
+        provider.handleAuthComplete(
+          'Bearer.token.abc1234567890123456789012345678901234567890',
+          {'Cookie': 'sp_dc=validSpDc'},
+        ),
+        throwsA(isA<Exception>()),
+      );
+
+      expect(provider.isAuthenticated, isFalse);
+      expect(provider.currentUser, isNull);
+    });
+
+    test('stores bearer token in bearerToken getter after successful auth', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final provider = AuthProvider(prefs);
+      provider.userProfileFetchOverride = (_) async => _fakeUser();
+      await _waitForInit(provider);
+
+      const token = 'Bearer.token.abc1234567890123456789012345678901234567890';
+      await provider.handleAuthComplete(token, {'Cookie': 'sp_dc=x'});
+
+      expect(provider.bearerToken, token);
+    });
+  });
+
   group('AuthProvider.logout — sp_dc cleared', () {
     test('removes sp_dc from SharedPreferences on logout', () async {
       SharedPreferences.setMockInitialValues({
