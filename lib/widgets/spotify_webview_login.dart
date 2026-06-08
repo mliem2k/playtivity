@@ -629,8 +629,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
             console.log('[Spotify Token Fetch] accessToken value:', data.accessToken);
             console.log('[Spotify Token Fetch] Full response:', JSON.stringify(data));
 
-            // Check for different token field names
-            const token = data.accessToken || data.AnonymousToken || data.token;
+            const token = data.accessToken;
 
             if (!token) {
               console.error('[Spotify Token Fetch] No token found in response');

@@ -81,11 +81,10 @@ class SpotifyTotpHelper {
   static Map<String, String> generateTotpParams({int? timestampMillis}) {
     final t = timestampMillis ?? DateTime.now().millisecondsSinceEpoch;
     final totp = generateTotp(timestampMillis: t);
-    final totpServer = (t ~/ 1000).toString();
 
     return {
       'totp': totp,
-      'totpServer': totpServer,
+      'totpServer': totp, // Spotify requires totpServer == totp (same 6-digit code)
       'totpVer': activeVersion,
     };
   }
