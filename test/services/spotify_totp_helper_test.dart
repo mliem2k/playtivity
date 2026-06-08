@@ -75,10 +75,25 @@ void main() {
       expect(params.containsKey('totpVer'), isTrue);
     });
 
-    test('totpServer is the unix timestamp in seconds', () {
+    test('totpServer equals totp — Spotify API requires both to be the same 6-digit code', () {
       const ts = 1700000000000;
       final params = SpotifyTotpHelper.generateTotpParams(timestampMillis: ts);
-      expect(params['totpServer'], '1700000000');
+      expect(
+        params['totpServer'],
+        params['totp'],
+        reason: 'Spotify /api/token rejects requests where totpServer != totp '
+            '(verified live: totp=totpServer=6-digit-code → 200; unix-timestamp → 400)',
+      );
+    });
+
+    test('totpServer is a 6-digit numeric string, not a unix timestamp', () {
+      const ts = 1700000000000;
+      final params = SpotifyTotpHelper.generateTotpParams(timestampMillis: ts);
+      expect(
+        RegExp(r'^\d{6}$').hasMatch(params['totpServer']!),
+        isTrue,
+        reason: 'totpServer must be the 6-digit TOTP code; a 10-digit unix timestamp is rejected',
+      );
     });
 
     test('totpVer matches the current configured version', () {
