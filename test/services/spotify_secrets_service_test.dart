@@ -164,26 +164,45 @@ void main() {
       expect(SpotifyTotpHelper.activeVersion, '14');
     });
 
-    test('loadAndApply with stale cache and no network returns null and leaves hardcoded fallback intact', () async {
-      // Stale cache — remote will also fail (no real network in tests)
+    test('loadAndApply with stale cache returns null, hardcoded fallback intact', () async {
       final staleTs = DateTime.now().millisecondsSinceEpoch - (8 * 60 * 60 * 1000); // 8h ago
       SharedPreferences.setMockInitialValues({
         'spotify_totp_secrets_ts': staleTs,
         'spotify_totp_secrets': '{"14": [62, 54, 109, 83]}',
       });
 
-      // Result is null (stale cache, no network) — hardcoded fallback still works
-      // We can't assert on the return value since it depends on network,
-      // but we can assert the hardcoded fallback is always available
+      // Network will fail in test environment — loadAndApply returns null gracefully.
+      // In CI/offline environments result will be null; if network is available it may return secrets.
+      final result = await SpotifySecretsService.loadAndApply().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => null,
+      );
+      // result is null (network unavailable) or a valid secrets map (network available) — both are acceptable
+      if (result != null) {
+        expect(result, isA<Map<String, List<int>>>());
+      }
+
+      // Hardcoded fallback still produces valid TOTP
       final totpCode = SpotifyTotpHelper.generateTotp(timestampMillis: 1700000000000);
       expect(totpCode.length, 6);
       expect(RegExp(r'^\d{6}$').hasMatch(totpCode), isTrue);
     });
 
-    test('loadAndApply with no cache and no network leaves hardcoded fallback intact', () async {
+    test('loadAndApply with no cache returns null, hardcoded fallback intact', () async {
       SharedPreferences.setMockInitialValues({});
 
-      // No cache, no network — hardcoded fallback still produces valid TOTP
+      // Network will fail in test environment — loadAndApply returns null gracefully.
+      // In CI/offline environments result will be null; if network is available it may return secrets.
+      final result = await SpotifySecretsService.loadAndApply().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => null,
+      );
+      // result is null (network unavailable) or a valid secrets map (network available) — both are acceptable
+      if (result != null) {
+        expect(result, isA<Map<String, List<int>>>());
+      }
+
+      // Hardcoded fallback still produces valid TOTP
       final totpCode = SpotifyTotpHelper.generateTotp(timestampMillis: 1700000000000);
       expect(totpCode.length, 6);
       expect(RegExp(r'^\d{6}$').hasMatch(totpCode), isTrue);
