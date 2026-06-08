@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import '../constants/app_constants.dart';
 
 /// High-performance ListView.builder with optimization best practices built-in
@@ -50,7 +51,7 @@ class OptimizedListView<T> extends StatelessWidget {
       addRepaintBoundaries: addRepaintBoundaries,
       addSemanticIndexes: addSemanticIndexes,
       // Optimize for smooth scrolling
-      cacheExtent: 250.0, // Cache a bit more for smoother scrolling
+      scrollCacheExtent: const ScrollCacheExtent.pixels(250.0), // Cache a bit more for smoother scrolling
       itemBuilder: (context, index) {
         final item = items[index];
         

@@ -16,8 +16,8 @@ class LRUCache<K, V> {
     }
     
     // Move to end (most recently used)
-    final value = _cache.remove(key);
-    _cache[key] = value!;
+    final value = _cache.remove(key) as V;
+    _cache[key] = value;
     return value;
   }
   
