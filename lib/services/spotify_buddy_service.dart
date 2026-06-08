@@ -52,6 +52,9 @@ class SpotifyBuddyService {
     // Spotify service for fetching track details
   // final SpotifyService _spotifyService = SpotifyService();
   
+  static String _trunc(String s, int max) =>
+      s.length > max ? s.substring(0, max) : s;
+
   // High-performance LRU caches with automatic memory management
   late final LRUCache<String, int> _trackDurationCache;
   late final LRUCache<String, Map<String, dynamic>> _artistDetailsCache;
@@ -204,29 +207,30 @@ class SpotifyBuddyService {
   /// Sets the Bearer token and headers directly (bypasses TOTP generation)
   void setBearerToken(String bearerToken, Map<String, String> headers) {
     AppLogger.spotify('🔧 setBearerToken called with:');
-    AppLogger.spotify('   - bearerToken: ${bearerToken.substring(0, 20)}... (length: ${bearerToken.length})');
+    AppLogger.spotify('   - bearerToken: ${_trunc(bearerToken, 20)}... (length: ${bearerToken.length})');
     AppLogger.spotify('   - headers keys: ${headers.keys.join(', ')}');
-    
+
     _directBearerToken = bearerToken;
-    
+
     // Store the complete cookie string
     _completeCookieString = headers['Cookie'] ?? '';
-    
+
     // Store the client token if present
     if (headers['client-token'] != null) {
       _clientToken = headers['client-token'];
       AppLogger.spotify('✅ Client token stored (length: ${_clientToken?.length ?? 0})');
     }
-    
+
     AppLogger.spotify('✅ Bearer token and headers set directly');
     AppLogger.spotify('   Token length: ${bearerToken.length}');
     AppLogger.spotify('   Headers: ${headers.keys.join(', ')}');
     AppLogger.spotify('   Cookie key exists: ${headers.containsKey('Cookie')}');
-    AppLogger.spotify('   Cookie value: ${headers['Cookie']?.substring(0, 100) ?? 'null'}...');
+    final cookieVal = headers['Cookie'];
+    AppLogger.spotify('   Cookie value: ${cookieVal == null ? 'null' : _trunc(cookieVal, 100)}...');
     AppLogger.spotify('   Cookie length: ${_completeCookieString?.length ?? 0}');
-    AppLogger.spotify('   Final _completeCookieString: ${_completeCookieString?.isNotEmpty == true ? '${_completeCookieString!.substring(0, 100)}...' : 'EMPTY'}');
-    AppLogger.spotify('_directBearerToken stored: ${_directBearerToken?.substring(0, 20)}...');
-    AppLogger.spotify('_clientToken stored: ${_clientToken != null ? '${_clientToken!.substring(0, 20)}...' : 'null'}');
+    AppLogger.spotify('   Final _completeCookieString: ${_completeCookieString?.isNotEmpty == true ? '${_trunc(_completeCookieString!, 100)}...' : 'EMPTY'}');
+    AppLogger.spotify('_directBearerToken stored: ${_directBearerToken == null ? 'null' : _trunc(_directBearerToken!, 20)}...');
+    AppLogger.spotify('_clientToken stored: ${_clientToken != null ? '${_trunc(_clientToken!, 20)}...' : 'null'}');
   }
 
   /// Gets the current Bearer token (direct only)

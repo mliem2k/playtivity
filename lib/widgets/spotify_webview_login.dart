@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:convert' as convert;
-import 'dart:io' as io;
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import '../services/app_logger.dart';
+import '../services/spotify_token_service.dart';
 import '../services/spotify_totp_helper.dart';
 
 /// Safely truncates a string to a max length, avoiding RangeError
@@ -30,8 +30,6 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
   bool _isLoading = true;
   String? _error;
   Map<String, String> _extractedHeaders = {};
-  bool _showOverlay = false;
-  Timer? _overlayTimer;
   Timer? _pollingTimer;
   Timer? _directTokenFetchTimer;
   bool _isPollingActive = false;
@@ -39,23 +37,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
   bool _directTokenFetchAttempted = false;
 
   @override
-  void initState() {
-    super.initState();
-    
-    // Failsafe: Hide overlay after 10 seconds to prevent permanently blocking login
-    _overlayTimer = Timer(const Duration(seconds: 10), () {
-      if (mounted && _showOverlay) {
-        AppLogger.debug('Overlay timeout - hiding overlay to prevent blocking login');
-        setState(() {
-          _showOverlay = false;
-        });
-      }
-    });
-  }
-
-  @override
   void dispose() {
-    _overlayTimer?.cancel();
     _pollingTimer?.cancel();
     _directTokenFetchTimer?.cancel();
     _isPollingActive = false;
@@ -302,20 +284,6 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                           AppLogger.auth('   - _isPollingActive: $_isPollingActive');
                           AppLogger.auth('   - _directTokenFetchTimer: ${_directTokenFetchTimer != null ? "EXISTS" : "NULL"}');
 
-                          // Don't show overlay if we don't have authentication cookies
-                          bool newShowOverlay = isMainSpotifyApp && !isLoginFlow && hasSpDcCookie;
-
-                          setState(() {
-                            AppLogger.debug('Overlay logic: host=${uri.host}, isMainApp=$isMainSpotifyApp, isLoginFlow=$isLoginFlow, hasSpDc=$hasSpDcCookie, showOverlay=$newShowOverlay');
-                            _showOverlay = newShowOverlay;
-
-                            // Reset timer when we detect we're in login flow
-                            if (isLoginFlow && _overlayTimer != null) {
-                              _overlayTimer?.cancel();
-                              _overlayTimer = null;
-                            }
-                          });
-
                           // When on main Spotify page WITH sp_dc cookie, try direct token fetch as fallback
                           // This is more reliable than JavaScript interception
                           if (isMainSpotifyApp && hasSpDcCookie && _directTokenFetchTimer == null) {
@@ -419,10 +387,6 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                           }
                           */
 
-                          // Additional check: inspect page content to ensure we're not blocking login forms
-                          if (!newShowOverlay) {
-                            await _checkForLoginFormPresence(controller);
-                          }
                         },                        onReceivedError: (controller, request, error) {
                           setState(() {
                             _error = 'Failed to load page: ${error.description}';
@@ -473,69 +437,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                         },
                       ),
                       
-                      // Loading overlay from the beginning until login page is reached
-                      if (_showOverlay)
-                        Container(
-                          color: Theme.of(context).scaffoldBackgroundColor,
-                          child: Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                SizedBox(
-                                  width: 60,
-                                  height: 60,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 4,
-                                    color: Theme.of(context).primaryColor,
-                                  ),
-                                ),
-                                const SizedBox(height: 24),
-                                Text(
-                                  'Logging you in...',
-                                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Please wait while we complete your authentication',
-                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: Theme.of(context).textTheme.bodyMedium?.color?.withValues(alpha: 179), // 0.7 * 255 ≈ 179
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                                const SizedBox(height: 32),
-                                // Spotify branding with theme-aware colors
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                  decoration: BoxDecoration(
-                                    color: Colors.green.withValues(alpha: 38), // 0.15 * 255 ≈ 38
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(
-                                        Icons.music_note,
-                                        color: Colors.green,
-                                        size: 16,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      const Text(
-                                        'Connecting to Spotify',
-                                        style: TextStyle(
-                                          color: Colors.green,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),                    ],
+                    ],
                   ),
           ),
         ],
@@ -686,7 +588,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
       AppLogger.auth('Fetching access token via WebView JavaScript...');
 
       // Try to fetch server time for better TOTP synchronization
-      final serverTime = await _fetchSpotifyServerTime();
+      final serverTime = await SpotifyTokenService.fetchServerTime();
 
       // Generate TOTP parameters using server time
       final totpParams = SpotifyTotpHelper.generateTotpParams(timestampMillis: serverTime);
@@ -796,106 +698,9 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
     }
   }
 
-  /// Makes a native HTTP request to Spotify's token endpoint to get an access token
-  /// This bypasses WebView JavaScript context and CORS limitations
-  Future<String?> _fetchAccessTokenNative(String spDcCookie) async {
-    io.HttpClient client = io.HttpClient();
-    try {
-      AppLogger.auth('Making native HTTP request to Spotify token endpoint...');
-
-      // Try to fetch server time for better TOTP synchronization
-      final serverTime = await _fetchSpotifyServerTime();
-
-      // Generate TOTP parameters using server time
-      final totpParams = SpotifyTotpHelper.generateTotpParams(timestampMillis: serverTime);
-      AppLogger.auth('Generated TOTP parameters for native fetch: totp=${totpParams['totp']}, totpServer=${totpParams['totpServer']}, totpVer=${totpParams['totpVer']}');
-
-      // Build URL with TOTP parameters (2025 requirement)
-      final tokenUrl = Uri.parse('https://open.spotify.com/api/token').replace(
-        queryParameters: {
-          'reason': 'transport',
-          'productType': 'web-player',
-          'totp': totpParams['totp']!,
-          'totpServer': totpParams['totpServer']!,
-          'totpVer': totpParams['totpVer']!,
-        },
-      );
-      AppLogger.auth('Token fetch URL: $tokenUrl');
-
-      // Set up request with proper headers
-      final request = await client.getUrl(tokenUrl);
-
-      // Set required headers
-      request.headers.set('Cookie', 'sp_dc=$spDcCookie');
-      request.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36');
-      request.headers.set('Accept', 'application/json');
-      request.headers.set('App-Platform', 'WebPlayer');
-      request.headers.set('Content-Type', 'application/json');
-      request.headers.set('Referer', 'https://open.spotify.com/');
-      request.headers.set('Origin', 'https://open.spotify.com');
-
-      // Get response
-      final response = await request.close();
-
-      // Read response body
-      final responseBody = await response.transform(convert.utf8.decoder).join();
-
-      AppLogger.auth('Token endpoint response status: ${response.statusCode}');
-      AppLogger.auth('Token endpoint response body: ${_truncate(responseBody, 300)}');
-
-      if (response.statusCode == io.HttpStatus.ok) {
-        try {
-          final jsonData = convert.jsonDecode(responseBody);
-          if (jsonData is Map && jsonData['accessToken'] != null) {
-            return jsonData['accessToken'] as String;
-          } else {
-            AppLogger.auth('Response did not contain accessToken: ${_truncate(responseBody, 200)}');
-          }
-        } catch (e) {
-          AppLogger.error('Error parsing token JSON response', e);
-        }
-      } else {
-        AppLogger.auth('Token endpoint returned status ${response.statusCode}: ${response.reasonPhrase}');
-      }
-    } catch (e) {
-      AppLogger.error('Native HTTP request to token endpoint failed', e);
-    } finally {
-      client.close();
-    }
-    return null;
-  }
-
-  /// Fetches Spotify's server time from HTTP Date header
-  /// This helps synchronize TOTP generation with Spotify's servers
-  Future<int> _fetchSpotifyServerTime() async {
-    final client = io.HttpClient();
-    try {
-      AppLogger.auth('Fetching Spotify server time for TOTP synchronization...');
-      final request = await client.getUrl(Uri.parse('https://open.spotify.com/'));
-      final response = await request.close();
-
-      final dateStr = response.headers.value('date');
-      if (dateStr != null) {
-        // Parse RFC 2822 date format
-        try {
-          final serverTime = io.HttpDate.parse(dateStr);
-          final timeMillis = serverTime.millisecondsSinceEpoch;
-          AppLogger.auth('Successfully fetched Spotify server time: $timeMillis');
-          return timeMillis;
-        } catch (e) {
-          AppLogger.error('Error parsing server date header', e);
-        }
-      }
-    } catch (e) {
-      AppLogger.error('Error fetching Spotify server time', e);
-    } finally {
-      client.close();
-    }
-
-    // Fallback to local time if server time fetch fails
-    AppLogger.auth('Failed to fetch server time, using local time');
-    return DateTime.now().millisecondsSinceEpoch;
-  }
+  /// Fetches a Bearer token via a native HTTP request using the sp_dc cookie.
+  Future<String?> _fetchAccessTokenNative(String spDcCookie) =>
+      SpotifyTokenService.fetchBearerToken(spDcCookie);
 
   Future<void> _interceptTokenRequests(InAppWebViewController controller) async {
     try {
@@ -1468,60 +1273,4 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
     }
   }
 
-  Future<void> _checkForLoginFormPresence(InAppWebViewController controller) async {
-    try {
-      // Check if the page actually contains login form elements
-      final hasLoginForm = await controller.evaluateJavascript(source: '''
-        (function() {
-          // Look for common login form indicators
-          const loginSelectors = [
-            'input[type="email"]',
-            'input[type="password"]',
-            'input[name="username"]',
-            'input[name="password"]',
-            'input[id*="login"]',
-            'input[id*="email"]',
-            'input[id*="password"]',
-            'form[action*="login"]',
-            'button[type="submit"]',
-            '[data-testid*="login"]',
-            '.login-form',
-            '#login-form'
-          ];
-
-          for (const selector of loginSelectors) {
-            if (document.querySelector(selector)) {
-              console.log('Found login form element:', selector);
-              return true;
-            }
-          }
-
-          // Check for specific Spotify login text
-          const bodyText = document.body.textContent || '';
-          const hasLoginText = bodyText.includes('Log in to Spotify') ||
-                              bodyText.includes('Sign up') ||
-                              bodyText.includes('Continue with') ||
-                              bodyText.includes('Email or username');
-
-          if (hasLoginText) {
-            console.log('Found login-related text content');
-            return true;
-          }
-
-          return false;
-        })();
-      ''');
-
-      if (hasLoginForm == true) {
-        AppLogger.debug('Login form detected on page - ensuring overlay is hidden');
-        if (mounted) {
-          setState(() {
-            _showOverlay = false;
-          });
-        }
-      }
-    } catch (e) {
-      AppLogger.error('Error checking for login form presence', e);
-    }
-  }
 }
