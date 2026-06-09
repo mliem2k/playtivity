@@ -39,18 +39,18 @@ Future<void> _waitForInit(AuthProvider provider) async {
 // ---------------------------------------------------------------------------
 
 void main() {
-  group('AuthProvider.handleAuthComplete — sp_dc extraction', () {
+  group('AuthProvider.loginComplete — sp_dc extraction', () {
     test('stores sp_dc when Cookie header contains it', () async {
       SharedPreferences.setMockInitialValues({});
       final prefs = await SharedPreferences.getInstance();
       final provider = AuthProvider(prefs);
-      // Override profile fetch so handleAuthComplete doesn't make real calls
+      // Override profile fetch so loginComplete doesn't make real calls
       provider.userProfileFetchOverride = (_) async => _fakeUser();
-      // Wait for init before calling handleAuthComplete (mirrors real app flow —
+      // Wait for init before calling loginComplete (mirrors real app flow —
       // the WebView is never shown until init finishes)
       await _waitForInit(provider);
 
-      await provider.handleAuthComplete(
+      await provider.loginComplete(
         'Bearer.token.abc1234567890123456789012345678901234567890',
         {
           'Cookie':
@@ -68,7 +68,7 @@ void main() {
       provider.userProfileFetchOverride = (_) async => _fakeUser();
       await _waitForInit(provider);
 
-      await provider.handleAuthComplete(
+      await provider.loginComplete(
         'Bearer.token.abc1234567890123456789012345678901234567890',
         {'Cookie': 'sp_t=trackVal; sp_key=keyVal'},
       );
@@ -77,7 +77,7 @@ void main() {
     });
   });
 
-  group('AuthProvider.handleAuthComplete — full WebView auth flow', () {
+  group('AuthProvider.loginComplete — full WebView auth flow', () {
     test('sets isAuthenticated to true after valid token and profile fetch', () async {
       SharedPreferences.setMockInitialValues({});
       final prefs = await SharedPreferences.getInstance();
@@ -85,7 +85,7 @@ void main() {
       provider.userProfileFetchOverride = (_) async => _fakeUser();
       await _waitForInit(provider);
 
-      await provider.handleAuthComplete(
+      await provider.loginComplete(
         'Bearer.token.abc1234567890123456789012345678901234567890',
         {'Cookie': 'sp_dc=validSpDc; sp_t=trackVal'},
       );
@@ -93,14 +93,14 @@ void main() {
       expect(provider.isAuthenticated, isTrue);
     });
 
-    test('sets currentUser after successful handleAuthComplete', () async {
+    test('sets currentUser after successful loginComplete', () async {
       SharedPreferences.setMockInitialValues({});
       final prefs = await SharedPreferences.getInstance();
       final provider = AuthProvider(prefs);
       provider.userProfileFetchOverride = (_) async => _fakeUser();
       await _waitForInit(provider);
 
-      await provider.handleAuthComplete(
+      await provider.loginComplete(
         'Bearer.token.abc1234567890123456789012345678901234567890',
         {'Cookie': 'sp_dc=validSpDc'},
       );
@@ -109,7 +109,7 @@ void main() {
       expect(provider.currentUser!.id, 'user_123');
     });
 
-    test('persists bearer token to SharedPreferences after handleAuthComplete', () async {
+    test('persists bearer token to SharedPreferences after loginComplete', () async {
       SharedPreferences.setMockInitialValues({});
       final prefs = await SharedPreferences.getInstance();
       final provider = AuthProvider(prefs);
@@ -117,7 +117,7 @@ void main() {
       await _waitForInit(provider);
 
       const token = 'Bearer.token.abc1234567890123456789012345678901234567890';
-      await provider.handleAuthComplete(
+      await provider.loginComplete(
         token,
         {'Cookie': 'sp_dc=validSpDc'},
       );
@@ -133,7 +133,7 @@ void main() {
       await _waitForInit(provider);
 
       await expectLater(
-        provider.handleAuthComplete('short-token', {'Cookie': 'sp_dc=x'}),
+        provider.loginComplete('short-token', {'Cookie': 'sp_dc=x'}),
         throwsA(isA<Exception>()),
       );
       expect(provider.isAuthenticated, isFalse);
@@ -146,9 +146,9 @@ void main() {
       provider.userProfileFetchOverride = (_) async => null;
       await _waitForInit(provider);
 
-      // handleAuthComplete rethrows when all profile fetch attempts return null
+      // loginComplete rethrows when all profile fetch attempts return null
       await expectLater(
-        provider.handleAuthComplete(
+        provider.loginComplete(
           'Bearer.token.abc1234567890123456789012345678901234567890',
           {'Cookie': 'sp_dc=validSpDc'},
         ),
@@ -167,7 +167,7 @@ void main() {
       await _waitForInit(provider);
 
       const token = 'Bearer.token.abc1234567890123456789012345678901234567890';
-      await provider.handleAuthComplete(token, {'Cookie': 'sp_dc=x'});
+      await provider.loginComplete(token, {'Cookie': 'sp_dc=x'});
 
       expect(provider.bearerToken, token);
     });
@@ -189,7 +189,7 @@ void main() {
     });
   });
 
-  group('AuthProvider.reAuthenticate — silent refresh', () {
+  group('AuthProvider.refreshIfNeeded — silent refresh', () {
     test('returns true and sets isAuthenticated when token fetch succeeds',
         () async {
       SharedPreferences.setMockInitialValues({
@@ -201,7 +201,7 @@ void main() {
       provider.userProfileFetchOverride = (_) async => _fakeUser();
       await _waitForInit(provider);
 
-      final result = await provider.reAuthenticate();
+      final result = await provider.refreshIfNeeded();
 
       expect(result, isTrue);
       expect(provider.isAuthenticated, isTrue);
@@ -214,7 +214,7 @@ void main() {
       final provider = AuthProvider(prefs);
       await _waitForInit(provider);
 
-      final result = await provider.reAuthenticate();
+      final result = await provider.refreshIfNeeded();
 
       expect(result, isFalse);
       expect(provider.isAuthenticated, isFalse);
@@ -229,7 +229,7 @@ void main() {
       provider.tokenFetchOverride = (_) async => null;
       await _waitForInit(provider);
 
-      final result = await provider.reAuthenticate();
+      final result = await provider.refreshIfNeeded();
 
       expect(result, isFalse);
       expect(provider.isAuthenticated, isFalse);
@@ -247,7 +247,7 @@ void main() {
       provider.userProfileFetchOverride = (_) async => null; // profile failed
       await _waitForInit(provider);
 
-      final result = await provider.reAuthenticate();
+      final result = await provider.refreshIfNeeded();
 
       expect(result, isFalse);
       expect(provider.isAuthenticated, isFalse);
@@ -304,7 +304,7 @@ void main() {
 
     test('sp_dc is NOT removed from SharedPreferences when token validation fails',
         () async {
-      // sp_dc should survive token expiry so next reAuthenticate can use it
+      // sp_dc should survive token expiry so next refreshIfNeeded can use it
       final savedUser = json.encode(TestFixtures.userJson());
       SharedPreferences.setMockInitialValues({
         'spotify_bearer_token': 'expiredToken',
@@ -320,7 +320,7 @@ void main() {
 
       await _waitForInit(provider);
 
-      // sp_dc must still be in prefs so a future reAuthenticate can try again
+      // sp_dc must still be in prefs so a future refreshIfNeeded can try again
       expect(prefs.getString('spotify_sp_dc'), 'myDc');
       expect(provider.isAuthenticated, isFalse);
     });
