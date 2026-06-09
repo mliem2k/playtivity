@@ -105,7 +105,7 @@ Future<void> _updateWidgetInBackground(Map<String, dynamic>? inputData) async { 
     final buddyService = SpotifyBuddyService.instance;
     
     // Fetch friends' activities
-    final friendsActivities = await buddyService.getFriendActivity();
+    final friendsActivities = await buddyService.getFriendActivity(bearerToken);
       if (friendsActivities.isNotEmpty) {
       AppLogger.background('Fetched ${friendsActivities.length} activities');
       
