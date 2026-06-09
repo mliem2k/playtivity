@@ -44,18 +44,7 @@ class AuthProvider extends ChangeNotifier {
       AppLogger.auth('isAuthenticated: false (not initialized)');
       return false;
     }
-    
-    // Check for Bearer token authentication
-    final hasToken = _bearerToken != null && _bearerToken!.isNotEmpty;
-    final hasUser = _currentUser != null;
-    
-    // Also verify the buddy service has the token
-    final buddyServiceToken = _buddyService.getBearerToken();
-    final buddyServiceHasToken = buddyServiceToken != null && buddyServiceToken.isNotEmpty;
-    
-    final tokenAuth = hasToken && hasUser && buddyServiceHasToken;
-    
-    return tokenAuth;
+    return _bearerToken != null && _currentUser != null;
   }
   bool get isLoading => _isLoading;
   bool get isInitialized => _isInitialized;
@@ -80,7 +69,6 @@ class AuthProvider extends ChangeNotifier {
         try {
           _bearerToken = savedBearerToken;
           _headers = Map<String, String>.from(json.decode(savedHeadersJson));
-          _buddyService.setBearerToken(savedBearerToken, _headers!);
           AppLogger.auth('Restored saved Bearer token and headers');
 
           // Try to load saved user profile
@@ -216,18 +204,6 @@ class AuthProvider extends ChangeNotifier {
       _bearerToken = bearerToken;
       _headers = headers;
 
-      // Set the Bearer token directly in buddy service
-      _buddyService.setBearerToken(bearerToken, headers);
-      
-      // Verify the buddy service has the token properly set
-      AppLogger.auth('Verifying buddy service token after setting...');
-      final buddyServiceToken = _buddyService.getBearerToken();
-      if (buddyServiceToken == null || buddyServiceToken.isEmpty) {
-        throw Exception('Failed to set Bearer token in buddy service');
-      } else {
-        AppLogger.auth('Buddy service token verified: ${buddyServiceToken.length > 20 ? buddyServiceToken.substring(0, 20) : buddyServiceToken}...');
-      }
-      
       // Fetch user profile using Bearer token with retry logic
       AppLogger.auth('Fetching user profile with Bearer token...');
 
@@ -302,23 +278,20 @@ class AuthProvider extends ChangeNotifier {
       // Removed complex retry logic that was causing race conditions
       await Future.delayed(const Duration(milliseconds: 100));
       
-      // Final verification with more robust error handling for long idle scenarios
+      // Final verification
       final hasToken = _bearerToken != null && _bearerToken!.isNotEmpty;
       final hasUser = _currentUser != null;
       final isInitComplete = _isInitialized;
-      final finalBuddyServiceToken = _buddyService.getBearerToken();
-      final buddyServiceHasToken = finalBuddyServiceToken != null && finalBuddyServiceToken.isNotEmpty;
-      
+
       AppLogger.auth('Final verification check:');
       AppLogger.auth('   - hasToken: $hasToken');
       AppLogger.auth('   - hasUser: $hasUser');
       AppLogger.auth('   - isInitialized: $isInitComplete');
-      AppLogger.auth('   - buddyServiceHasToken: $buddyServiceHasToken');
-      
-      if (!hasToken || !hasUser || !isInitComplete || !buddyServiceHasToken) {
-        throw Exception('Authentication verification failed after completion - Token: $hasToken, User: $hasUser, Init: $isInitComplete, BuddyService: $buddyServiceHasToken');
+
+      if (!hasToken || !hasUser || !isInitComplete) {
+        throw Exception('Authentication verification failed after completion - Token: $hasToken, User: $hasUser, Init: $isInitComplete');
       }
-      
+
       AppLogger.auth('Authentication flow completed successfully');
       
     } catch (e) {
@@ -391,8 +364,8 @@ class AuthProvider extends ChangeNotifier {
     await _prefs.remove(_spDcKey);
     _spDc = null;
 
-    // Clean up buddy service (this now clears all cached data)
-    _buddyService.clearBearerToken();
+    // Clean up buddy service activity cache
+    _buddyService.clearActivityCache();
     
     // Ensure all state is properly reset
     _isLoading = false;
@@ -425,7 +398,7 @@ class AuthProvider extends ChangeNotifier {
       _bearerToken = null;
       _headers = null;
       _currentUser = null;
-      _buddyService.clearBearerToken();
+      _buddyService.clearActivityCache();
 
       _isLoading = true;
       notifyListeners();
@@ -495,7 +468,6 @@ class AuthProvider extends ChangeNotifier {
     _spDc = spDc;
     _bearerToken = newToken;
     _headers = SpotifyTokenService.headersFromSpDc(spDc);
-    _buddyService.setBearerToken(newToken, _headers!);
 
     try {
       final profileFetcher = userProfileFetchOverride ??
@@ -509,7 +481,6 @@ class AuthProvider extends ChangeNotifier {
       AppLogger.warning('Silent refresh produced token but could not fetch user profile');
       _bearerToken = null;
       _headers = null;
-      _buddyService.clearBearerToken();
       return false;
     }
 
@@ -542,8 +513,8 @@ class AuthProvider extends ChangeNotifier {
       // Clear all stored authentication data
       await _clearStoredData();
       
-      // Clear buddy service state and caches
-      _buddyService.clearBearerToken();
+      // Clear buddy service activity cache
+      _buddyService.clearActivityCache();
       
       // Reset internal state variables
       _bearerToken = null;
