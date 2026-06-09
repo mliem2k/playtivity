@@ -66,14 +66,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<SpotifyProvider>(
-      builder: (context, spotifyProvider, child) {
-        if (spotifyProvider.hasAuthError) {
+    return Selector<SpotifyProvider, bool>(
+      selector: (_, sp) => sp.hasAuthError,
+      builder: (context, hasAuthError, child) {
+        if (hasAuthError) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            spotifyProvider.clearAuthError();
+            if (!mounted) return;
+            final sp = context.read<SpotifyProvider>();
+            final errorMessage = sp.authErrorMessage;
+            sp.clearAuthError();
             AuthUtils.handleAuthenticationError(
               context,
-              errorMessage: spotifyProvider.authErrorMessage,
+              errorMessage: errorMessage,
             );
           });
         }
