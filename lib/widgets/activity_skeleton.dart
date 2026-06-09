@@ -1,44 +1,16 @@
 import 'package:flutter/material.dart';
 import '../utils/theme.dart';
 
-class ActivitySkeleton extends StatefulWidget {
-  const ActivitySkeleton({super.key});
+class ActivitySkeleton extends StatelessWidget {
+  final Animation<double> animation;
 
-  @override
-  State<ActivitySkeleton> createState() => _ActivitySkeletonState();
-}
-
-class _ActivitySkeletonState extends State<ActivitySkeleton>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _opacity;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    )..repeat(reverse: true);
-    _opacity = Tween<double>(begin: 0.4, end: 0.8).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
+  const ActivitySkeleton({super.key, required this.animation});
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _opacity,
-      builder: (_, _) => Opacity(
-        opacity: _opacity.value,
-        child: const _SkeletonRow(),
-      ),
+    return FadeTransition(
+      opacity: animation,
+      child: const _SkeletonRow(),
     );
   }
 }
@@ -53,10 +25,8 @@ class _SkeletonRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Avatar
           _block(44, 44, isCircle: true),
           const SizedBox(width: 16),
-          // Info column
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -72,7 +42,6 @@ class _SkeletonRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          // Album art
           _block(48, 48, radius: 4),
         ],
       ),
@@ -91,4 +60,4 @@ class _SkeletonRow extends StatelessWidget {
       ),
     );
   }
-} 
+}
