@@ -5,6 +5,7 @@ import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/spotify_provider.dart';
 import '../services/update_service.dart';
+import '../widgets/update/update_dialogs.dart';
 import '../utils/version_utils.dart';
 import '../services/app_logger.dart';
 
@@ -464,14 +465,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         
         if (shouldDownload && context.mounted) {
           // Show download dialog and get the downloaded file path
-          final filePath = await UpdateService.showDownloadDialog(
+          final filePath = await showDownloadDialog(
             context,
             updateResult.updateInfo!,
           );
-          
+
           if (filePath != null && context.mounted) {
             // Show installation dialog
-            await UpdateService.showInstallDialog(context, filePath);
+            await showInstallDialog(context, filePath);
           }
         }
       } else if (updateResult.error != null) {

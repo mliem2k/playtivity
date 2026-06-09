@@ -40,9 +40,6 @@ class AppConstants {
   // Format patterns
   static const String timeFormatPattern = 'mm:ss';
   
-  // Test data URLs (for development/testing)
-  static const String testImageBaseUrl = 'https://picsum.photos';
-  
   // Widget refresh intervals
   static const Duration widgetRefreshInterval = Duration(minutes: 15);
   

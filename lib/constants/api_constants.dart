@@ -9,8 +9,7 @@ class ApiConstants {
   
   // GitHub API URLs
   static const String githubReleasesApi = 'https://api.github.com/repos/mliem2k/playtivity/releases';
-  static const String githubRawContentBase = 'https://github.com/mliem/playtivity/raw/main';
-  
+
   // Endpoints
   static const String currentUserEndpoint = '/me';
   static const String currentlyPlayingEndpoint = '/me/player/currently-playing';
@@ -32,10 +31,8 @@ class ApiConstants {
     'User-Agent': 'okhttp/4.9.2',
   };
   
-  // Common URLs builders
+  // Common URL builders
   static String spotifyTrackUrl(String trackId) => '$spotifyApiBaseUrl/tracks/$trackId';
   static String spotifyArtistUrl(String artistId) => '$spotifyApiBaseUrl/artists/$artistId';
   static String spotifyUserWebUrl(String userId) => '$spotifyWebUrl/user/$userId';
-  static String githubNightlyApkUrl(String fileName) => '$githubRawContentBase/nightly/$fileName';
-  static String githubReleaseApkUrl(String fileName) => '$githubRawContentBase/releases/$fileName';
 }

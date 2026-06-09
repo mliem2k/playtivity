@@ -11,21 +11,6 @@ import '../helpers/test_fixtures.dart';
 
 User _fakeUser() => User.fromJson(TestFixtures.userJson());
 
-/// Builds an [AuthProvider] with real SharedPreferences but injectable
-/// network seams so no real HTTP calls are made.
-Future<AuthProvider> _makeProvider({
-  Map<String, Object> prefsValues = const {},
-  Future<String?> Function(String)? tokenFetcher,
-  Future<User?> Function(String)? profileFetcher,
-}) async {
-  SharedPreferences.setMockInitialValues(prefsValues);
-  final prefs = await SharedPreferences.getInstance();
-  final provider = AuthProvider(prefs);
-  if (tokenFetcher != null) provider.tokenFetchOverride = tokenFetcher;
-  if (profileFetcher != null) provider.userProfileFetchOverride = profileFetcher;
-  return provider;
-}
-
 /// Waits for [AuthProvider.isInitialized] to become true.
 Future<void> _waitForInit(AuthProvider provider) async {
   for (var i = 0; i < 50; i++) {

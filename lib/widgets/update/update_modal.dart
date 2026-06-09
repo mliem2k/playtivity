@@ -1,7 +1,14 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
-import '../services/update_service.dart';
+import '../../services/update_service.dart';
+import 'update_dialogs.dart';
 
 class UpdateModal {
+  // Cached download path from the most recent download attempt.
+  // Keyed by version string so a stale cache from an older run is ignored
+  // when a newer version is found.
+  static String? _cachedFilePath;
+  static String? _cachedVersion;
   /// Show a loading dialog while checking for updates
   static Future<void> _showLoadingDialog(BuildContext context, String message) async {
     showDialog(
@@ -432,36 +439,48 @@ class UpdateModal {
     }
   }
 
-  /// Handle the download and installation process
+  /// Handle the download and installation process, reusing a previously
+  /// downloaded APK if the version matches and the file still exists.
   static Future<void> _handleDownloadProcess(
     BuildContext context,
     UpdateInfo updateInfo,
   ) async {
     try {
-      // Start download with progress dialog
-      final downloadedFilePath = await UpdateService.showDownloadDialog(
-        context,
-        updateInfo,
-      );
-      
-      if (downloadedFilePath != null && context.mounted) {
-        // Show installation dialog
-        final shouldInstall = await UpdateService.showInstallDialog(
-          context,
-          downloadedFilePath,
-        );
-        
-        if (shouldInstall && context.mounted) {
-          // Show success message
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Installing update... The app will restart.'),
-              backgroundColor: Colors.green,
-            ),
-          );
+      // Reuse cached file if it's for the same version and still on disk.
+      String? filePath;
+      if (_cachedVersion == updateInfo.version &&
+          _cachedFilePath != null &&
+          await File(_cachedFilePath!).exists()) {
+        filePath = _cachedFilePath;
+      } else {
+        // Clear stale cache before downloading.
+        _cachedFilePath = null;
+        _cachedVersion = null;
+        if (!context.mounted) return;
+        filePath = await showDownloadDialog(context, updateInfo);
+        if (filePath != null) {
+          _cachedFilePath = filePath;
+          _cachedVersion = updateInfo.version;
         }
+      }
+
+      if (filePath != null && context.mounted) {
+        final installed = await showInstallDialog(context, filePath);
+        if (installed) {
+          // Clear cache — installation started, file will be consumed.
+          _cachedFilePath = null;
+          _cachedVersion = null;
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Installing update... The app will restart.'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        }
+        // If cancelled, cache is kept so the next call reuses the file.
       } else if (context.mounted) {
-        // Download was cancelled or failed
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Download cancelled or failed.'),

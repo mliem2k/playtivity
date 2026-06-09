@@ -4,7 +4,7 @@ import '../providers/auth_provider.dart';
 import '../utils/theme.dart';
 import '../widgets/spotify_webview_login.dart';
 import '../services/update_service.dart';
-import '../services/app_logger.dart';
+import '../widgets/update/update_dialogs.dart';
 
 class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
@@ -220,14 +220,14 @@ class LoginScreen extends StatelessWidget {
         
         if (shouldUpdate && context.mounted) {
           // Start download with progress dialog
-          final downloadedFilePath = await UpdateService.showDownloadDialog(
+          final downloadedFilePath = await showDownloadDialog(
             context,
             updateResult.updateInfo!,
           );
-          
+
           if (downloadedFilePath != null && context.mounted) {
             // Show installation dialog
-            final shouldInstall = await UpdateService.showInstallDialog(
+            final shouldInstall = await showInstallDialog(
               context,
               downloadedFilePath,
             );
