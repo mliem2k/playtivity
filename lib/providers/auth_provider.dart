@@ -221,6 +221,22 @@ class AuthProvider extends ChangeNotifier {
         throw Exception('Could not load profile. Please try logging in again.');
       }
 
+      // Enrich with email/country if WebView JS didn't capture them.
+      if ((userProfile.email.isEmpty || userProfile.country.isEmpty) && _spDc != null) {
+        final acct = await SpotifyTokenService.fetchAccountProfile(_spDc!);
+        if (acct != null) {
+          userProfile = User(
+            id: userProfile.id,
+            displayName: userProfile.displayName,
+            email: acct.email.isNotEmpty ? acct.email : userProfile.email,
+            imageUrl: userProfile.imageUrl,
+            followers: userProfile.followers,
+            country: acct.country.isNotEmpty ? acct.country : userProfile.country,
+          );
+          _addEvent('Email/country enriched from account-settings: ${userProfile.email}');
+        }
+      }
+
       _currentUser = userProfile;
       await _saveStoredData();
 
@@ -308,8 +324,8 @@ class AuthProvider extends ChangeNotifier {
     _headers = SpotifyTokenService.headersFromSpDc(spDc);
 
     // Only fetch profile when we don't already have one. Existing profile was
-    // obtained via WebView JS injection and is correct; server-side /v1/me is
-    // rate-limited (429) and spclient/profile/me returns a different account.
+    // obtained via WebView JS injection and is correct; spclient/profile/me
+    // returns a different account (social profile, not account settings).
     if (_currentUser == null) {
       try {
         final profileFetcher = userProfileFetchOverride ??
@@ -325,6 +341,23 @@ class AuthProvider extends ChangeNotifier {
         _bearerToken = null;
         _headers = null;
         return false;
+      }
+    }
+
+    // Enrich with email/country when missing — spclient doesn't return these.
+    // account-settings/v1/profile works with just sp_dc, no OAuth scopes needed.
+    if (_currentUser!.email.isEmpty || _currentUser!.country.isEmpty) {
+      final acct = await SpotifyTokenService.fetchAccountProfile(spDc);
+      if (acct != null) {
+        _currentUser = User(
+          id: _currentUser!.id,
+          displayName: _currentUser!.displayName,
+          email: acct.email.isNotEmpty ? acct.email : _currentUser!.email,
+          imageUrl: _currentUser!.imageUrl,
+          followers: _currentUser!.followers,
+          country: acct.country.isNotEmpty ? acct.country : _currentUser!.country,
+        );
+        _addEvent('Silent refresh: email/country enriched (${_currentUser!.email})');
       }
     }
 

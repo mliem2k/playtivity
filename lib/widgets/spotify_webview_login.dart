@@ -171,38 +171,49 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                 }
 
                 if (userId) {
-                  // Call spclient (name/image/followers) and /v1/me (email/country) in parallel.
-                  // spclient is a social-profile endpoint and doesn't expose email or country;
-                  // /v1/me from the browser session is not rate-limited the way server-side Dart is.
-                  const [spResult, meResult] = await Promise.allSettled([
+                  // Call spclient (name/image/followers) and account-settings (email/country) in parallel.
+                  // account-settings uses browser cookies automatically — no Authorization header,
+                  // no rate limiting, and not affected by the Feb 2026 /v1/me scope removal.
+                  const [spResult, accountResult] = await Promise.allSettled([
                     fetch(
                       'https://guc-spclient.spotify.com/user-profile-view/v3/profile/' + userId,
                       { headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json', 'App-Platform': 'WebPlayer' } }
                     ).then(r => r.ok ? r.json() : null).catch(() => null),
-                    fetch('https://api.spotify.com/v1/me', {
-                      headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' }
+                    fetch('https://www.spotify.com/api/account-settings/v1/profile', {
+                      headers: { 'Accept': 'application/json' }
                     }).then(r => r.ok ? r.json() : null).catch(() => null),
                   ]);
                   const sp = spResult.status === 'fulfilled' ? spResult.value : null;
-                  const me = meResult.status === 'fulfilled' ? meResult.value : null;
+                  const account = accountResult.status === 'fulfilled' ? accountResult.value : null;
+                  const ap = account && account.profile;
                   return {
                     id: userId,
-                    displayName: (sp && sp.name) || (me && me.display_name) || userId,
-                    imageUrl: (sp && sp.image_url) || (me && me.images && me.images.length ? me.images[0].url : null) || null,
-                    email: (me && me.email) || null,
-                    country: (me && me.country) || null,
-                    followers: (sp && sp.followers_count) || (me && me.followers && me.followers.total) || 0,
+                    displayName: (sp && sp.name) || userId,
+                    imageUrl: (sp && sp.image_url) || null,
+                    email: (ap && ap.email) || null,
+                    country: (ap && ap.country) || null,
+                    followers: (sp && sp.followers_count) || 0,
                   };
                 }
 
-                // Fallback: /v1/me from browser context (no localStorage userId found)
+                // Fallback: account-settings gives us userId via profile.username
                 try {
-                  const r = await fetch('https://api.spotify.com/v1/me', {
-                    headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' }
+                  const r = await fetch('https://www.spotify.com/api/account-settings/v1/profile', {
+                    headers: { 'Accept': 'application/json' }
                   });
                   if (r.ok) {
-                    const d = await r.json();
-                    return { id: d.id, displayName: d.display_name, imageUrl: (d.images && d.images.length) ? d.images[0].url : null, email: d.email || null, country: d.country || null, followers: d.followers ? d.followers.total : 0 };
+                    const data = await r.json();
+                    const p = data && data.profile;
+                    if (p && p.username) {
+                      let spFallback = null;
+                      try {
+                        const sr = await fetch('https://guc-spclient.spotify.com/user-profile-view/v3/profile/' + p.username, {
+                          headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json', 'App-Platform': 'WebPlayer' }
+                        });
+                        if (sr.ok) spFallback = await sr.json();
+                      } catch (_) {}
+                      return { id: p.username, displayName: (spFallback && spFallback.name) || p.username, imageUrl: (spFallback && spFallback.image_url) || null, email: p.email || null, country: p.country || null, followers: (spFallback && spFallback.followers_count) || 0 };
+                    }
                   }
                 } catch (_) {}
                 return null;
