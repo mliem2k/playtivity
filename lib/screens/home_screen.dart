@@ -134,7 +134,7 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
   Widget _buildSkeletonSliver() {
     return SliverList(
       delegate: SliverChildBuilderDelegate(
-        (_, __) => const ActivitySkeleton(),
+        (_, _) => const ActivitySkeleton(),
         childCount: 6,
       ),
     );

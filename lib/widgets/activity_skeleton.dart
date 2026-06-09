@@ -35,7 +35,7 @@ class _ActivitySkeletonState extends State<ActivitySkeleton>
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _opacity,
-      builder: (_, __) => Opacity(
+      builder: (_, _) => Opacity(
         opacity: _opacity.value,
         child: const _SkeletonRow(),
       ),

@@ -119,7 +119,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: AppTheme.textPrimary.withOpacity(0.2),
+                    color: AppTheme.textPrimary.withValues(alpha: 0.2),
                     width: 2,
                   ),
                 ),
@@ -196,7 +196,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     return ListView.separated(
       padding: const EdgeInsets.only(top: 8, bottom: 100),
       itemCount: sp.topTracks.length,
-      separatorBuilder: (_, __) =>
+      separatorBuilder: (_, _) =>
           const Divider(height: 1, color: AppTheme.dividerColor),
       itemBuilder: (_, i) => TrackTile(track: sp.topTracks[i], rank: i + 1),
     );
@@ -224,7 +224,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     return ListView.separated(
       padding: const EdgeInsets.only(top: 8, bottom: 100),
       itemCount: sp.topArtists.length,
-      separatorBuilder: (_, __) =>
+      separatorBuilder: (_, _) =>
           const Divider(height: 1, color: AppTheme.dividerColor),
       itemBuilder: (_, i) =>
           ArtistTile(artist: sp.topArtists[i], rank: i + 1),
