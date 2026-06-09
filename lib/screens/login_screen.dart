@@ -163,72 +163,18 @@ class LoginScreen extends StatelessWidget {
   }
 
   Future<void> _handleLogin(BuildContext context) async {
-    final authProvider = context.read<AuthProvider>();
-    authProvider.startLogin();
-    
-    try {
-      // Navigate to WebView login
-      final result = await Navigator.of(context).push<bool>(
-        MaterialPageRoute(
-          builder: (context) => SpotifyWebViewLogin(
-            onAuthComplete: (bearerToken, headers) async {
-              AppLogger.auth('Login screen received auth completion callback');
-              // Exceptions propagate to _tryDirectTokenFetch which handles the pop.
-              await authProvider.handleAuthComplete(bearerToken, headers);
-              AppLogger.auth('Authentication handling completed successfully');
-            },
-            onCancel: () {
-              Navigator.of(context).pop(false);
-              authProvider.cancelLogin();
-            },
-          ),
+    if (!context.mounted) return;
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (context) => SpotifyWebViewLogin(
+          onAuthComplete: (bearerToken, headers) async {
+            final authProvider = context.read<AuthProvider>();
+            await authProvider.loginComplete(bearerToken, headers);
+          },
+          onCancel: () => Navigator.of(context).pop(false),
         ),
-      );
-      
-      // Handle the result from the WebView
-      if (result == true) {
-        // Login was successful, wait a bit more to ensure all state is synced
-        await Future.delayed(const Duration(milliseconds: 300));
-        
-        // Double-check authentication state before navigating
-        if (authProvider.isAuthenticated) {
-          AppLogger.auth('Login successful, navigating to home screen...');
-          if (context.mounted) {
-            // Use pushNamedAndRemoveUntil to ensure clean navigation stack
-            Navigator.of(context).pushNamedAndRemoveUntil(
-              '/',
-              (route) => false,
-            );
-          }
-        } else {
-          AppLogger.auth('Authentication lost after successful login - showing error');
-          authProvider.cancelLogin();
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Login failed: Authentication was not maintained'),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
-        }
-      } else {
-        // Login was cancelled or failed
-        AppLogger.auth('Login was cancelled or failed');
-        authProvider.cancelLogin();
-      }
-    } catch (e) {
-      AppLogger.auth('Error in login flow', e);
-      authProvider.cancelLogin();
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Login failed: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
+      ),
+    );
   }
 
   // Handle the update check process
