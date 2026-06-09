@@ -37,6 +37,7 @@ class AuthProvider extends ChangeNotifier {
     _authEvents.add('[$ts] $msg');
     if (_authEvents.length > 30) _authEvents.removeAt(0);
     AppLogger.auth(msg);
+    notifyListeners();
   }
 
   /// Injectable token fetcher — override in tests to avoid real network calls.
