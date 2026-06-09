@@ -7,7 +7,7 @@ const crypto = require('crypto');
 
 class NightlyBuilder {
     constructor() {
-        this.projectRoot = __dirname;
+        this.projectRoot = path.join(__dirname, '..');
         this.pubspecPath = path.join(this.projectRoot, 'pubspec.yaml');
         this.outputDir = path.join(this.projectRoot, 'nightly');
         this.apkPath = path.join(this.projectRoot, 'build', 'app', 'outputs', 'flutter-apk', 'app-release.apk');

@@ -43,11 +43,10 @@ Available Commands:
   npm run help:nightly-github   # GitHub release help
 
 Direct Script Usage:
-  node build-apk.js [increment-type]
-  node release-apk.js [increment-type] [--no-bundle]
-  node nightly-apk.js [--keep-builds N]
-  node nightly-release.js [increment-type] [--build-id ID]
-  node nightly-github-release.js [--build-id ID] [--stable]
+  node scripts/build-apk.js [increment-type]
+  node scripts/release-apk.js [increment-type] [--no-bundle]
+  node scripts/nightly.js [--keep-builds N]
+  node scripts/nightly-release.js [increment-type] [--build-id ID]
 
 Build Outputs:
   builds/     - Development builds
@@ -68,7 +67,7 @@ try {
     const fs = require('fs');
     const path = require('path');
     
-    const pubspecPath = path.join(__dirname, 'pubspec.yaml');
+    const pubspecPath = path.join(__dirname, '..', 'pubspec.yaml');
     if (fs.existsSync(pubspecPath)) {
         const pubspec = fs.readFileSync(pubspecPath, 'utf8');
         const versionMatch = pubspec.match(/version:\s*(.+)/);
