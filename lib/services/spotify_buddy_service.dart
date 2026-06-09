@@ -275,44 +275,6 @@ class SpotifyBuddyService {
 
 
 
-  /// Determines if a friend is currently playing based on timestamp and song duration
-  bool _isCurrentlyPlaying(Map<String, dynamic> friend, {int? durationMs}) {
-    try {
-      final timestamp = friend['timestamp'];
-      final track = friend['track'];
-      final userName = friend['user']?['display_name'] ?? 'Unknown';
-      
-      if (timestamp == null || track == null) {
-        AppLogger.spotify('❌ $userName: Missing timestamp or track data');
-        return false;
-      }
-      
-      // Get song duration in milliseconds - use provided duration or try to get from track data
-      final trackDurationMs = durationMs ?? track['duration_ms'];
-      if (trackDurationMs == null) {
-        AppLogger.spotify('❌ $userName: Missing duration_ms in track data and no duration provided');
-        AppLogger.spotify('🔍 Track data: $track');
-        return false;
-      }
-      
-      // Convert timestamp to DateTime
-      final friendTimestamp = DateTime.fromMillisecondsSinceEpoch(timestamp);
-      final currentTime = DateTime.now();
-      
-      // Calculate elapsed time since the friend started playing
-      final elapsedMs = currentTime.difference(friendTimestamp).inMilliseconds;
-      
-      // Friend is currently playing if elapsed time is less than song duration
-      // Add a small buffer (5 seconds) to account for network delays
-      final isPlaying = elapsedMs >= 0 && elapsedMs < (trackDurationMs + 5000);
-      
-      return isPlaying;
-    } catch (e) {
-      AppLogger.spotify('❌ Error calculating playback status: $e');
-      return false;
-    }
-  }
-  
   /// Checks if we should refresh the buddy list cache based on cache expiration or track completion
   bool _shouldRefreshBuddyList() {
     final now = DateTime.now();
@@ -372,13 +334,8 @@ class SpotifyBuddyService {
     
     return ApiRetryService.retryApiCall(
       () async {
-        // Preload track duration cache only if not doing fast load
-        if (!fastLoad && _trackDurationCache.isEmpty) {
-          await _loadTrackDurationCache();
-        }
-        
         AppLogger.spotify('✅ Got access token, fetching friend activity...');
-        
+
         // Use the new buddylist endpoint - no hash parameter needed
         final url = '$_baseUrl/presence-view/v1/buddylist';
         final headers = {
@@ -395,25 +352,32 @@ class SpotifyBuddyService {
           // Handle unauthorized response - clear cache and retry once
           if (response.statusCode == 401 || response.statusCode == 403) {
             _completeCookieString = null;
-            
+
             // Use the new buddylist endpoint for retry as well
             final retryUrl = '$_baseUrl/presence-view/v1/buddylist';
             final retryHeaders = {
               'Authorization': 'Bearer $accessToken',
             };
-            
+
             try {
               final retryResponse = await HttpInterceptor.get(
                 Uri.parse(retryUrl),
                 headers: retryHeaders,
               );
-              
+
               if (retryResponse.statusCode == 200) {
-                final activities = await _parseActivityResponse(
-                  retryResponse.body, 
-                  fastLoad: fastLoad,
-                  onActivitiesUpdate: onActivitiesUpdate,
-                );
+                final activities = parseFriendsJson(retryResponse.body);
+                if (!fastLoad) {
+                  final needsDuration = activities
+                      .where((a) =>
+                          a.type == ActivityType.track &&
+                          (a.track?.durationMs ?? 0) == 0 &&
+                          (a.track?.uri.isNotEmpty ?? false))
+                      .toList();
+                  if (needsDuration.isNotEmpty) {
+                    _fetchTrackDurationsProgressively(activities, needsDuration, onActivitiesUpdate);
+                  }
+                }
                 // Cache the successful response
                 _cachedBuddyActivities = activities;
                 _lastBuddyListFetch = DateTime.now();
@@ -427,11 +391,18 @@ class SpotifyBuddyService {
           }
 
           if (response.statusCode == 200) {
-            final activities = await _parseActivityResponse(
-              response.body, 
-              fastLoad: fastLoad,
-              onActivitiesUpdate: onActivitiesUpdate,
-            );
+            final activities = parseFriendsJson(response.body);
+            if (!fastLoad) {
+              final needsDuration = activities
+                  .where((a) =>
+                      a.type == ActivityType.track &&
+                      (a.track?.durationMs ?? 0) == 0 &&
+                      (a.track?.uri.isNotEmpty ?? false))
+                  .toList();
+              if (needsDuration.isNotEmpty) {
+                _fetchTrackDurationsProgressively(activities, needsDuration, onActivitiesUpdate);
+              }
+            }
             // Cache the successful response
             _cachedBuddyActivities = activities;
             _lastBuddyListFetch = DateTime.now();
@@ -540,212 +511,59 @@ class SpotifyBuddyService {
     }
   }
 
-  Future<List<Activity>> _parseActivityResponse(
-    String responseBody, {
-    bool fastLoad = false,
-    Function(List<Activity>)? onActivitiesUpdate,
-  }) async {
-    try {
-      final data = json.decode(responseBody);
-      final friends = data['friends'] as List?;
-      
-      if (friends != null) {
-        final activities = <Activity>[];
-        final tracksNeedingDuration = <int>[];
-        
-        // First pass: Create all activities with basic information
-        for (int i = 0; i < friends.length; i++) {
-          final friend = friends[i];
-          final userInfo = friend['user'];
-          final timestamp = friend['timestamp'] ?? DateTime.now().millisecondsSinceEpoch;
-          
-          // Create User object
-          final userUri = userInfo['uri'] ?? '';
-          final userId = userUri.startsWith('spotify:user:') 
-              ? userUri.substring('spotify:user:'.length)
-              : userUri;
-          
-          final user = User(
-            id: userId,
-            displayName: userInfo['name'] ?? 'Unknown User',
-            email: '', // Not available in buddy list API
-            imageUrl: userInfo['imageUrl'],
-            followers: 0, // Not available in buddy list API
-            country: '', // Not available in buddy list API
-          );
-          
-          // Check if this is a track or playlist activity
-          final trackInfo = friend['track'];
-          final playlistInfo = friend['playlist'];
-          
-          if (playlistInfo != null) {
-            // For playlists, we can't calculate duration-based playback
-            final playlist = Playlist(
-              id: playlistInfo['uri']?.split(':').last ?? '',
-              name: playlistInfo['name'] ?? 'Unknown Playlist',
-              description: playlistInfo['description'],
-              imageUrl: playlistInfo['imageUrl'],
-              trackCount: playlistInfo['trackCount'] ?? 0,
-              uri: playlistInfo['uri'] ?? '',
-              ownerId: playlistInfo['owner']?['id'] ?? '',
-              ownerName: playlistInfo['owner']?['name'] ?? 'Unknown',
-              isPublic: playlistInfo['public'] ?? false,
-            );
-            
-            activities.add(Activity(
-              user: user,
-              playlist: playlist,
-              timestamp: DateTime.fromMillisecondsSinceEpoch(timestamp is int ? timestamp : DateTime.now().millisecondsSinceEpoch),
-              isCurrentlyPlaying: false, // Can't determine for playlists
-              type: ActivityType.playlist,
-            ));
-          } else if (trackInfo != null) {
-            // Get track duration from cache or API response
-            int? durationMs = trackInfo['duration_ms'];
-            final trackUri = trackInfo['uri'] ?? '';
-            bool isCurrentlyPlaying = false;
-            
-            // Check cache first for duration
-            if (durationMs == null && trackUri.isNotEmpty && _trackDurationCache.containsKey(trackUri)) {
-              durationMs = _trackDurationCache.get(trackUri);
-            }
-            
-            // If we have duration, calculate if currently playing
-            if (durationMs != null) {
-              isCurrentlyPlaying = _isCurrentlyPlaying(friend, durationMs: durationMs);
-            } else if (!fastLoad && trackUri.isNotEmpty) {
-              // Mark this track as needing duration fetch
-              tracksNeedingDuration.add(i);
-            }
-            
-            // Create Track object - handle v2 API structure
-            final albumInfo = trackInfo['album'] ?? {};
-            final artistInfo = trackInfo['artist'] ?? {};
-            
-            final track = Track(
-              id: trackInfo['uri'] ?? '',
-              name: trackInfo['name'] ?? 'Unknown Track',
-              artists: [artistInfo['name'] ?? 'Unknown Artist'],
-              album: albumInfo['name'] ?? 'Unknown Album',
-              albumUri: albumInfo['uri'],
-              imageUrl: trackInfo['imageUrl'] ?? albumInfo['imageUrl'] ?? '',
-              durationMs: durationMs ?? 0,
-              uri: trackInfo['uri'] ?? '',
-            );
-            
-            activities.add(Activity(
-              user: user,
-              track: track,
-              timestamp: DateTime.fromMillisecondsSinceEpoch(timestamp is int ? timestamp : DateTime.now().millisecondsSinceEpoch),
-              isCurrentlyPlaying: isCurrentlyPlaying,
-              type: ActivityType.track,
-            ));
-          }
-        }
-        
-        // Sort by timestamp - most recent first
-        activities.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-        
-        // Second pass: Fetch missing track durations in background and update progressively
-        if (tracksNeedingDuration.isNotEmpty && !fastLoad) {
-          _fetchTrackDurationsProgressively(friends, activities, tracksNeedingDuration, onActivitiesUpdate);
-        }
-        
-        // Save cache if it was modified
-        if (_cacheModified) {
-          await _saveTrackDurationCache();
-          _cacheModified = false;
-        }
-        
-        return activities;
-      }
-    } catch (e) {
-      AppLogger.spotify('❌ Error parsing activity response: $e');
-    }
-    
-    return [];
-  }
-
   /// Fetches track durations progressively and updates activities as they become available
   void _fetchTrackDurationsProgressively(
-    List<dynamic> friends,
     List<Activity> activities,
-    List<int> tracksNeedingDuration,
+    List<Activity> needingDuration,
     Function(List<Activity>)? onActivitiesUpdate,
   ) {
-    // Run in background without blocking the main response
     Future.microtask(() async {
-      AppLogger.spotify('🔄 Starting progressive track duration fetch for ${tracksNeedingDuration.length} tracks...');
-      
-      var updatedActivities = List<Activity>.from(activities);
-      
-      for (final friendIndex in tracksNeedingDuration) {
+      var updated = List<Activity>.from(activities);
+
+      for (final activity in needingDuration) {
         try {
-          final friend = friends[friendIndex];
-          final trackInfo = friend['track'];
-          final trackUri = trackInfo['uri'] ?? '';
-          final userName = friend['user']?['name'] ?? 'Unknown';
-          
-          if (trackUri.isEmpty) continue;
-          
-          AppLogger.spotify('🔍 Fetching duration for track: $trackUri (user: $userName)');
+          final trackUri = activity.track!.uri;
           final durationMs = await _getTrackDuration(trackUri);
-          
-          if (durationMs != null) {
-            // Find the corresponding activity and update it
-            final activityIndex = updatedActivities.indexWhere((activity) => 
-              activity.track?.uri == trackUri && 
-              activity.user.displayName == userName
-            );
-            
-            if (activityIndex != -1) {
-              final oldActivity = updatedActivities[activityIndex];
-              final isCurrentlyPlaying = _isCurrentlyPlaying(friend, durationMs: durationMs);
-              
-              // Create updated track with duration
-              final updatedTrack = Track(
-                id: oldActivity.track!.id,
-                name: oldActivity.track!.name,
-                artists: oldActivity.track!.artists,
-                album: oldActivity.track!.album,
-                albumUri: oldActivity.track!.albumUri,
-                imageUrl: oldActivity.track!.imageUrl,
-                durationMs: durationMs,
-                uri: oldActivity.track!.uri,
-              );
-              
-              // Create updated activity
-              updatedActivities[activityIndex] = Activity(
-                user: oldActivity.user,
-                track: updatedTrack,
-                timestamp: oldActivity.timestamp,
-                isCurrentlyPlaying: isCurrentlyPlaying,
-                type: oldActivity.type,
-              );
-              
-              AppLogger.spotify('✅ Updated activity for $userName: ${oldActivity.track!.name} - Currently Playing: $isCurrentlyPlaying');
-              
-              // Update cached activities
-              _cachedBuddyActivities = List<Activity>.from(updatedActivities);
-              
-              // Notify callback with updated activities
-              if (onActivitiesUpdate != null) {
-                onActivitiesUpdate(List<Activity>.from(updatedActivities));
-              }
-            }
-          }
+          if (durationMs == null) continue;
+
+          final idx = updated.indexWhere((a) =>
+              a.track?.uri == trackUri &&
+              a.user.displayName == activity.user.displayName);
+          if (idx == -1) continue;
+
+          final old = updated[idx];
+          final now = DateTime.now().millisecondsSinceEpoch;
+          final elapsed = now - old.timestamp.millisecondsSinceEpoch;
+          final isPlaying = elapsed >= 0 && elapsed < (durationMs + 5000);
+
+          updated[idx] = Activity(
+            user: old.user,
+            track: Track(
+              id: old.track!.id,
+              name: old.track!.name,
+              artists: old.track!.artists,
+              album: old.track!.album,
+              albumUri: old.track!.albumUri,
+              imageUrl: old.track!.imageUrl,
+              durationMs: durationMs,
+              uri: old.track!.uri,
+            ),
+            timestamp: old.timestamp,
+            isCurrentlyPlaying: isPlaying,
+            type: old.type,
+          );
+
+          _cachedBuddyActivities = List<Activity>.from(updated);
+          onActivitiesUpdate?.call(List<Activity>.from(updated));
         } catch (e) {
-          AppLogger.spotify('⚠️ Failed to fetch duration for track at index $friendIndex: $e');
+          AppLogger.spotify('Failed to fetch duration for ${activity.track?.uri}: $e');
         }
       }
-      
-      // Save cache if it was modified
+
       if (_cacheModified) {
         await _saveTrackDurationCache();
         _cacheModified = false;
       }
-      
-      AppLogger.spotify('✅ Completed progressive track duration fetch');
     });
   }
 
