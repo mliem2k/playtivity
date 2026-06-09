@@ -266,11 +266,6 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  // Keep handleAuthComplete as an alias so existing tests continue to pass
-  // until they are updated in Task 8.
-  Future<void> handleAuthComplete(String bearerToken, Map<String, String> headers) =>
-      loginComplete(bearerToken, headers);
-
   Future<void> _saveStoredData() async {
     AppLogger.auth('Saving auth data to storage...');
 
