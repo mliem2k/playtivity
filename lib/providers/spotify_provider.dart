@@ -53,7 +53,6 @@ class SpotifyProvider extends ChangeNotifier {
     return error.contains('401') ||
            error.contains('403') ||
            error.contains('No Bearer token available') ||
-           error.contains('No cookie string available') ||
            error.contains('Authentication expired') ||
            error.contains('Unauthorized') ||
            error.contains('Not authenticated');
