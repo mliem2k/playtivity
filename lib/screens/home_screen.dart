@@ -6,15 +6,12 @@ import '../providers/spotify_provider.dart';
 import '../models/activity.dart';
 import '../widgets/activity_card.dart';
 import '../widgets/activity_skeleton.dart';
-import '../widgets/last_updated_indicator.dart';
 import '../widgets/performance_selectors.dart';
-import '../widgets/optimized_list_view.dart';
-import '../widgets/blurred_app_bar.dart';
 import '../services/debounced_refresh_service.dart';
 import '../utils/auth_utils.dart';
+import '../utils/theme.dart';
 import '../services/app_logger.dart';
 import '../constants/app_constants.dart';
-
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -23,17 +20,13 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> 
-    with DebouncedRefreshMixin {
+class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
   Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
-    // Delay initial data load to ensure providers are fully initialized
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadData();
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadData());
     _startAutoRefresh();
   }
 
@@ -45,12 +38,11 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   void _startAutoRefresh() {
-    // Auto-refresh every 30 seconds with debouncing
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
       if (mounted) {
         DebouncedRefreshService.throttle(
           DebounceKeys.homeRefresh,
-          const Duration(seconds: 5), // Prevent spam refreshes
+          const Duration(seconds: 5),
           _refreshData,
         );
       }
@@ -60,18 +52,12 @@ class _HomeScreenState extends State<HomeScreen>
   Future<void> _loadData() async {
     final authProvider = context.read<AuthProvider>();
     final spotifyProvider = context.read<SpotifyProvider>();
-    
-    // Ensure authentication is initialized before loading data
     if (!authProvider.isInitialized) {
       AppLogger.warning('Authentication not yet initialized, skipping data load');
       return;
     }
-    
     if (authProvider.isAuthenticated) {
-      // Use fast initial load with skeleton
       await spotifyProvider.fastInitialLoad();
-      
-      // Update widget with current user data
       await spotifyProvider.updateWidget(currentUser: authProvider.currentUser);
     } else {
       AppLogger.warning('No authentication available - cannot load friend activities');
@@ -81,229 +67,203 @@ class _HomeScreenState extends State<HomeScreen>
   Future<void> _refreshData() async {
     final authProvider = context.read<AuthProvider>();
     final spotifyProvider = context.read<SpotifyProvider>();
-    
-    // Ensure authentication is initialized before refreshing data
     if (!authProvider.isInitialized) {
       AppLogger.warning('Authentication not yet initialized, skipping data refresh');
       return;
     }
-    
     if (authProvider.isAuthenticated) {
-      // Silent refresh - don't show loading spinner
       await spotifyProvider.silentRefresh();
-      
-      // Update widget with current user data
       await spotifyProvider.updateWidget(currentUser: authProvider.currentUser);
     } else {
       AppLogger.warning('No authentication available - cannot refresh friend activities');
     }
   }
 
-
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: const BlurredAppBar(title: 'Friends\' Activities'),
-      body: SafeArea(
-        child: HomeScreenDataSelector(
-          builder: (context, isAuthenticated, isLoading, activities, error) {
-            if (!isAuthenticated) {
-              return _buildAuthenticationRequired();
-            }
-            
-            return Column(
-              children: [
-                // Last updated indicator
-                LastUpdatedSelector(
-                  builder: (context, lastUpdated) {
-                    return LastUpdatedIndicator(
-                      lastUpdated: lastUpdated,
-                      isRefreshing: isLoading && activities.isNotEmpty,
-                    );
-                  },
-                ),
-                
-                // Main content
-                Expanded(
-                  child: _buildMainContent(isLoading, activities, error),
-                ),
+      body: HomeScreenDataSelector(
+        builder: (context, isAuthenticated, isLoading, activities, error) {
+          if (!isAuthenticated) return _buildUnauthenticated();
+          return RefreshIndicator(
+            onRefresh: _refreshData,
+            color: AppTheme.primary,
+            child: CustomScrollView(
+              slivers: [
+                _buildSliverAppBar(isLoading && activities.isNotEmpty),
+                if (isLoading && activities.isEmpty)
+                  _buildSkeletonSliver()
+                else if (error != null)
+                  SliverFillRemaining(child: _buildError(error))
+                else if (activities.isEmpty)
+                  SliverFillRemaining(child: _buildEmpty())
+                else
+                  _buildActivityList(activities),
               ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildSliverAppBar(bool showProgress) {
+    return SliverAppBar(
+      pinned: true,
+      floating: false,
+      expandedHeight: 0,
+      backgroundColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      scrolledUnderElevation: 0,
+      flexibleSpace: FlexibleSpaceBar(
+        background: Container(color: Colors.transparent),
+      ),
+      bottom: PreferredSize(
+        preferredSize: Size.fromHeight(showProgress ? 2 : 0),
+        child: showProgress
+            ? const LinearProgressIndicator(
+                color: AppTheme.primary,
+                backgroundColor: Colors.transparent,
+              )
+            : const SizedBox.shrink(),
+      ),
+    );
+  }
+
+  Widget _buildSkeletonSliver() {
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (_, __) => const ActivitySkeleton(),
+        childCount: 6,
+      ),
+    );
+  }
+
+  Widget _buildActivityList(List<Activity> activities) {
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (context, index) {
+          if (index == 0) {
+            return const Padding(
+              padding: EdgeInsets.only(left: 24, top: 20, bottom: 12),
+              child: Text(
+                'Friend Activity',
+                style: TextStyle(
+                  color: AppTheme.textPrimary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 18,
+                ),
+              ),
             );
-          },
+          }
+          final activity = activities[index - 1];
+          return Column(
+            children: [
+              RepaintBoundary(child: ActivityCard(activity: activity)),
+              if (index < activities.length)
+                const Divider(height: 1, color: AppTheme.dividerColor),
+            ],
+          );
+        },
+        childCount: activities.length + 1,
+      ),
+    );
+  }
+
+  Widget _buildUnauthenticated() {
+    return const _CenteredState(
+      icon: Icons.lock_outline,
+      title: 'Authentication Required',
+      subtitle: 'Please log in to view friends\' activities',
+    );
+  }
+
+  Widget _buildEmpty() {
+    return const _CenteredState(
+      icon: Icons.people_outline,
+      title: 'No friend activity',
+      subtitle: 'Your friends haven\'t listened recently',
+    );
+  }
+
+  Widget _buildError(String error) {
+    final isAuthError = error.contains('Authentication expired');
+    return _CenteredState(
+      icon: isAuthError ? Icons.lock_outline : Icons.wifi_off,
+      title: isAuthError ? 'Authentication Required' : 'Could not load',
+      subtitle: error,
+      action: isAuthError
+          ? TextButton(
+              onPressed: () async {
+                final ok = await AuthUtils.handleReAuthentication(context);
+                if (ok && mounted) {
+                  debouncedRefresh(
+                      DebounceKeys.homeRefresh,
+                      const Duration(milliseconds: 500),
+                      _loadData);
+                }
+              },
+              child: const Text('Login Again',
+                  style: TextStyle(color: AppTheme.primary)),
+            )
+          : TextButton(
+              onPressed: () {
+                context.read<SpotifyProvider>().clearError();
+                debouncedRefresh(DebounceKeys.homeRefresh,
+                    const Duration(milliseconds: 300), _refreshData);
+              },
+              child: const Text('Try again',
+                  style: TextStyle(color: AppTheme.primary)),
+            ),
+    );
+  }
+}
+
+class _CenteredState extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Widget? action;
+
+  const _CenteredState({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.action,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppConstants.largePadding),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 48, color: AppTheme.textSubdued),
+            const SizedBox(height: 16),
+            Text(
+              title,
+              style: const TextStyle(
+                color: AppTheme.textPrimary,
+                fontWeight: FontWeight.w600,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: AppTheme.textSecondary,
+                fontSize: 13,
+              ),
+            ),
+            if (action != null) ...[const SizedBox(height: 16), action!],
+          ],
         ),
       ),
     );
   }
-  Widget _buildAuthenticationRequired() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(
-            Icons.lock_outline,
-            size: 64,
-            color: Colors.grey,
-          ),
-          const SizedBox(height: AppConstants.defaultPadding),
-          const Text(
-            'Authentication Required',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: AppConstants.smallPadding),
-          const Text(
-            'Please log in to view friends\' activities',
-            style: TextStyle(color: Colors.grey),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMainContent(bool isLoading, List<Activity> activities, String? error) {
-    // Show skeleton loading for initial load
-    if (isLoading && activities.isEmpty) {
-      return _buildSkeletonLoader();
-    }
-
-    if (isLoading && activities.isNotEmpty) {
-      // Show activities with loading indicator
-      return _buildActivitiesList(activities, showLoadingIndicator: true);
-    }
-
-    if (error != null) {
-      return _buildErrorState(error);
-    }
-
-    if (activities.isEmpty) {
-      return _buildEmptyState();
-    }
-
-    return _buildActivitiesList(activities);
-  }
-
-  Widget _buildSkeletonLoader() {
-    return OptimizedListView<int>(
-      items: List.generate(6, (index) => index),
-      itemHeight: 200, // Approximate height of ActivitySkeleton
-      padding: const EdgeInsets.all(AppConstants.defaultPadding),
-      itemBuilder: (context, _, index) => const ActivitySkeleton(),
-    );
-  }
-
-  Widget _buildErrorState(String error) {
-    final isAuthError = error.contains('Authentication expired');
-    
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            isAuthError ? Icons.lock_outline : Icons.error_outline,
-            size: 64,
-            color: Colors.grey,
-          ),
-          const SizedBox(height: AppConstants.defaultPadding),
-          Text(
-            isAuthError ? 'Authentication Required' : 'Error loading activities',
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          const SizedBox(height: AppConstants.smallPadding),
-          Text(
-            error,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Colors.grey,
-            ),
-          ),
-          const SizedBox(height: AppConstants.defaultPadding),
-          if (isAuthError) ...[
-            ElevatedButton(
-              onPressed: () => _handleReAuthentication(),
-              child: const Text('Login Again'),
-            ),
-            const SizedBox(height: AppConstants.smallPadding),
-            TextButton(
-              onPressed: () => _handleRetry(),
-              child: const Text('Retry'),
-            ),
-          ] else ...[
-            ElevatedButton(
-              onPressed: _refreshData,
-              child: const Text('Retry'),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(
-            Icons.music_note_outlined,
-            size: 64,
-            color: Colors.grey,
-          ),
-          const SizedBox(height: AppConstants.defaultPadding),
-          Text(
-            'No recent activities',
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          const SizedBox(height: AppConstants.smallPadding),
-          const Text(
-            'Your friends haven\'t been listening to music recently',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey),
-          ),
-          const SizedBox(height: AppConstants.defaultPadding),
-          ElevatedButton(
-            onPressed: _refreshData,
-            child: const Text('Refresh'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActivitiesList(List<Activity> activities, {bool showLoadingIndicator = false}) {
-    return RefreshIndicator(
-      onRefresh: _refreshData,
-      child: CustomScrollView(
-        slivers: [
-          if (showLoadingIndicator)
-            const SliverToBoxAdapter(
-              child: LinearProgressIndicator(),
-            ),
-          SliverPadding(
-            padding: const EdgeInsets.all(AppConstants.defaultPadding),
-            sliver: OptimizedSliverList<Activity>(
-              items: activities,
-              itemExtent: 200, // Approximate height of ActivityCard
-              itemBuilder: (context, activity, index) => RepaintBoundary(
-                child: ActivityCard(activity: activity),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _handleReAuthentication() async {
-    final success = await AuthUtils.handleReAuthentication(context);
-    if (success && mounted) {
-      debouncedRefresh(DebounceKeys.homeRefresh, const Duration(milliseconds: 500), _loadData);
-    }
-  }
-
-  void _handleRetry() {
-    final spotifyProvider = context.read<SpotifyProvider>();
-    spotifyProvider.clearError();
-    debouncedRefresh(DebounceKeys.homeRefresh, const Duration(milliseconds: 300), _refreshData);
-  }
-} 
+}
