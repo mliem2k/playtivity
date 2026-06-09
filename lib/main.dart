@@ -55,39 +55,33 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => ThemeProvider(prefs)),
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => AuthProvider(prefs)),
         ChangeNotifierProvider(create: (_) => SpotifyProvider()),
       ],
-      child: Consumer<ThemeProvider>(
-        builder: (context, themeProvider, child) {
-          return MaterialApp(
-            title: 'Playtivity',
-            theme: AppTheme.lightTheme,
-            darkTheme: AppTheme.darkTheme,
-            themeMode: themeProvider.themeMode,
-            navigatorKey: navigatorKey,
-            builder: (context, child) => UpdateCheckerWrapper(child: child!),
-            home: const AppWrapper(),
-            routes: {
-              '/login': (context) {
-                AppLogger.info('🔗 Navigating to LoginScreen via route');
-                return const LoginScreen();
-              },
-              '/home': (context) {
-                AppLogger.info('🔗 Navigating to HomeScreen via route');
-                return const HomeScreen();
-              },
-              '/profile': (context) {
-                AppLogger.info('🔗 Navigating to ProfileScreen via route');
-                return const ProfileScreen();
-              },
-              '/settings': (context) {
-                AppLogger.info('🔗 Navigating to SettingsScreen via route');
-                return const SettingsScreen();
-              },
-            },
-          );
+      child: MaterialApp(
+        title: 'Playtivity',
+        theme: AppTheme.darkTheme,
+        navigatorKey: navigatorKey,
+        builder: (context, child) => UpdateCheckerWrapper(child: child!),
+        home: const AppWrapper(),
+        routes: {
+          '/login': (context) {
+            AppLogger.info('🔗 Navigating to LoginScreen via route');
+            return const LoginScreen();
+          },
+          '/home': (context) {
+            AppLogger.info('🔗 Navigating to HomeScreen via route');
+            return const HomeScreen();
+          },
+          '/profile': (context) {
+            AppLogger.info('🔗 Navigating to ProfileScreen via route');
+            return const ProfileScreen();
+          },
+          '/settings': (context) {
+            AppLogger.info('🔗 Navigating to SettingsScreen via route');
+            return const SettingsScreen();
+          },
         },
       ),
     );

@@ -79,8 +79,8 @@ class LoginScreen extends StatelessWidget {
               Text(
                 'See what your friends are listening to',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: AppTheme.getSecondaryTextColor(context),
+                style: const TextStyle(
+                  color: AppTheme.textSecondary,
                   fontSize: 18,
                   fontWeight: FontWeight.w300,
                 ),
@@ -138,8 +138,8 @@ class LoginScreen extends StatelessWidget {
               Text(
                 'You\'ll be redirected to Spotify to authorize this app',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: AppTheme.getSecondaryTextColor(context),
+                style: const TextStyle(
+                  color: AppTheme.textSecondary,
                   fontSize: 14,
                 ),
               ),
@@ -150,8 +150,8 @@ class LoginScreen extends StatelessWidget {
               Text(
                 'Made with ❤️ for music lovers',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: AppTheme.getTertiaryTextColor(context),
+                style: const TextStyle(
+                  color: AppTheme.textSubdued,
                   fontSize: 12,
                 ),
               ),
