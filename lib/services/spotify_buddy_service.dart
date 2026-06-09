@@ -13,7 +13,6 @@ import 'app_logger.dart';
 import 'api_retry_service.dart';
 import 'cache_service.dart';
 import 'lru_cache_service.dart';
-// import 'package:playtivity/services/spotify_service.dart';
 
 class SpotifyBuddyService {
   static const String _baseUrl = 'https://guc-spclient.spotify.com';
@@ -354,32 +353,6 @@ class SpotifyBuddyService {
     return false;
   }
   
-  /// Generates a curl command for debugging API requests
-  String _generateCurlCommand(String method, String url, Map<String, String> headers, {String? body}) {
-    final buffer = StringBuffer();
-    buffer.write("curl '$url'");
-    
-    // Add headers
-    headers.forEach((key, value) {
-      // Escape single quotes in values
-      final escapedValue = value.replaceAll("'", "'\\''");
-      buffer.write(" \\\n  -H '$key: $escapedValue'");
-    });
-    
-    // Add method if not GET
-    if (method != 'GET') {
-      buffer.write(" \\\n  -X $method");
-    }
-    
-    // Add body if present
-    if (body != null && body.isNotEmpty) {
-      // Escape single quotes in body
-      final escapedBody = body.replaceAll("'", "'\\''");
-      buffer.write(" \\\n  --data-raw '$escapedBody'");
-    }
-    
-    return buffer.toString();
-  }
 
   Future<List<Activity>> getFriendActivity({
     bool fastLoad = false,
@@ -777,113 +750,6 @@ class SpotifyBuddyService {
     });
   }
 
-  // Enhanced mock data as fallback
-  List<Activity> getMockActivities() {
-    final mockContent = [
-      {'type': 'track', 'name': 'Bohemian Rhapsody', 'artist': 'Queen', 'user': 'Alex'},
-      {'type': 'playlist', 'name': 'Rock Classics', 'owner': 'Spotify', 'user': 'Sarah'},
-      {'type': 'track', 'name': 'Hotel California', 'artist': 'Eagles', 'user': 'Mike'},
-      {'type': 'playlist', 'name': 'Chill Vibes', 'owner': 'Emma', 'user': 'Emma'},
-      {'type': 'track', 'name': 'Smells Like Teen Spirit', 'artist': 'Nirvana', 'user': 'Josh'},
-      {'type': 'playlist', 'name': 'Workout Mix', 'owner': 'Josh', 'user': 'Lisa'},
-      {'type': 'track', 'name': 'Purple Haze', 'artist': 'Jimi Hendrix', 'user': 'David'},
-      {'type': 'playlist', 'name': 'Study Focus', 'owner': 'David', 'user': 'Anna'},
-    ];
-
-    final activities = List.generate(8, (index) {
-      final content = mockContent[index % mockContent.length];
-      final isPlaylist = content['type'] == 'playlist';
-      
-      // Create more realistic timestamps for testing the duration-based calculation
-      final now = DateTime.now();
-      DateTime activityTimestamp;
-      bool shouldBeCurrentlyPlaying;
-      
-      if (index < 3) {
-        // Recent activities that should be "currently playing"
-        final secondsAgo = Random().nextInt(120) + 30; // 30 seconds to 2.5 minutes ago
-        activityTimestamp = now.subtract(Duration(seconds: secondsAgo));
-        shouldBeCurrentlyPlaying = true;
-      } else if (index < 6) {
-        // Activities that should have finished playing
-        final minutesAgo = Random().nextInt(20) + 5; // 5-25 minutes ago
-        activityTimestamp = now.subtract(Duration(minutes: minutesAgo));
-        shouldBeCurrentlyPlaying = false;
-      } else {
-        // Very recent activities (within last 30 seconds)
-        final secondsAgo = Random().nextInt(30);
-        activityTimestamp = now.subtract(Duration(seconds: secondsAgo));
-        shouldBeCurrentlyPlaying = true;
-      }
-      
-      // Create User object
-      final user = User(
-        id: 'mock_user_$index',
-        displayName: content['user']!,
-        email: '${content['user']!.toLowerCase()}@example.com',
-        imageUrl: null,
-        followers: Random().nextInt(1000),
-        country: 'US',
-      );
-      
-      if (isPlaylist) {
-        // Create Playlist object
-        final playlist = Playlist(
-          id: 'mock_playlist_$index',
-          name: content['name']!,
-          description: 'A great playlist for any occasion',
-          imageUrl: 'https://picsum.photos/64/64?random=${index + 100}',
-          trackCount: Random().nextInt(50) + 10,
-          uri: 'spotify:playlist:mock_$index',
-          ownerId: 'mock_owner_$index',
-          ownerName: content['owner']!,
-          isPublic: true,
-        );
-        
-        return Activity(
-          user: user,
-          playlist: playlist,
-          timestamp: activityTimestamp,
-          isCurrentlyPlaying: shouldBeCurrentlyPlaying, // For playlists, use the intended status
-          type: ActivityType.playlist,
-        );
-      } else {
-        // Create Track object with realistic duration (3-5 minutes)
-        final durationMs = (Random().nextInt(120) + 180) * 1000; // 3-5 minutes in ms
-        final track = Track(
-          id: 'mock_track_$index',
-          name: content['name']!,
-          artists: [content['artist']!],
-          album: '${content['artist']} - Greatest Hits',
-          albumUri: 'spotify:album:mock_album_$index',
-          imageUrl: 'https://picsum.photos/64/64?random=$index',
-          durationMs: durationMs,
-          uri: 'spotify:track:mock_$index',
-        );
-        
-        // For tracks, calculate if currently playing based on timestamp and duration
-        final mockFriend = {
-          'timestamp': activityTimestamp.millisecondsSinceEpoch,
-          'track': {'duration_ms': durationMs},
-          'user': {'display_name': content['user']!}
-        };
-        final calculatedPlaying = _isCurrentlyPlaying(mockFriend);
-        
-        return Activity(
-          user: user,
-          track: track,
-          timestamp: activityTimestamp,
-          isCurrentlyPlaying: calculatedPlaying,
-          type: ActivityType.track,
-        );
-      }
-    });
-    
-    // Sort by timestamp - most recent first
-    activities.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-    
-    return activities;
-  }
 
 
 
@@ -1066,10 +932,6 @@ class SpotifyBuddyService {
             };
             
             try {
-              // Log retry curl command for debugging
-              AppLogger.spotify('📡 Retry request curl command:');
-              AppLogger.spotify(_generateCurlCommand('POST', url, retryHeaders, body: json.encode(requestBody)));
-
               final retryResponse = await HttpInterceptor.post(
                 Uri.parse(url),
                 headers: retryHeaders,
