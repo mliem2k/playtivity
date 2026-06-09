@@ -69,30 +69,12 @@ class ArtistTile extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // if (artist.genres.isNotEmpty)
-            //   Text(
-            //     artist.genres.take(2).join(', '),
-            //     style: TextStyle(
-            //       color: Colors.grey[600],
-            //       fontSize: 13,
-            //     ),
-            //     maxLines: 1,
-            //     overflow: TextOverflow.ellipsis,
-            //   ),
-            // Only show followers count if it's loaded (not -1)
-            if (artist.followers >= 0)
-              Text(
-                '${_formatFollowers(artist.followers)} followers',
-                style: TextStyle(
-                  color: Colors.grey[500],
-                  fontSize: 12,
-                ),
-              ),
-          ],
-        ),
+        subtitle: artist.monthlyListeners >= 0
+            ? Text(
+                '${_formatCount(artist.monthlyListeners)} monthly listeners',
+                style: TextStyle(color: Colors.grey[500], fontSize: 12),
+              )
+            : null,
 
         onTap: () async {
           // Clicking the tile goes to the artist profile without playing
@@ -102,13 +84,9 @@ class ArtistTile extends StatelessWidget {
     );
   }
 
-  String _formatFollowers(int followers) {
-    if (followers >= 1000000) {
-      return '${(followers / 1000000).toStringAsFixed(1)}M';
-    } else if (followers >= 1000) {
-      return '${(followers / 1000).toStringAsFixed(1)}K';
-    } else {
-      return followers.toString();
-    }
+  String _formatCount(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
+    return n.toString();
   }
 } 
