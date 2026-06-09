@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/theme.dart';
 
 class ActivitySkeleton extends StatefulWidget {
   const ActivitySkeleton({super.key});
@@ -9,154 +10,85 @@ class ActivitySkeleton extends StatefulWidget {
 
 class _ActivitySkeletonState extends State<ActivitySkeleton>
     with SingleTickerProviderStateMixin {
-  late AnimationController _animationController;
-  late Animation<double> _animation;
+  late final AnimationController _controller;
+  late final Animation<double> _opacity;
 
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 1500),
+    _controller = AnimationController(
       vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat(reverse: true);
+    _opacity = Tween<double>(begin: 0.4, end: 0.8).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
     );
-    _animation = Tween<double>(begin: 0.3, end: 1.0).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
-    );
-    _animationController.repeat(reverse: true);
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: _animation,
-      builder: (context, child) {
-        final baseColor = Colors.grey[300];
-        final alpha = (_animation.value * 255).toInt();
-        
-        return Card(
-          margin: const EdgeInsets.only(bottom: 16),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
+      animation: _opacity,
+      builder: (_, __) => Opacity(
+        opacity: _opacity.value,
+        child: const _SkeletonRow(),
+      ),
+    );
+  }
+}
+
+class _SkeletonRow extends StatelessWidget {
+  const _SkeletonRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Avatar
+          _block(44, 44, isCircle: true),
+          const SizedBox(width: 16),
+          // Info column
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // User Info Row Skeleton
-                Row(
-                  children: [
-                    // User Avatar Skeleton
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: baseColor?.withAlpha(alpha),
-                      ),
-                    ),
-                    
-                    const SizedBox(width: 12),
-                    
-                    // User Name and Status Skeleton
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            width: 120,
-                            height: 16,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(4),
-                              color: baseColor?.withAlpha(alpha),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Container(
-                            width: 80,
-                            height: 12,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(4),
-                              color: baseColor?.withAlpha(alpha),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                
-                const SizedBox(height: 16),
-                
-                // Content Info Row Skeleton
-                Row(
-                  children: [
-                    // Content Image Skeleton
-                    Container(
-                      width: 60,
-                      height: 60,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(8),
-                        color: baseColor?.withAlpha(alpha),
-                      ),
-                    ),
-                    
-                    const SizedBox(width: 16),
-                    
-                    // Content Details Skeleton
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            width: double.infinity,
-                            height: 16,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(4),
-                              color: baseColor?.withAlpha(alpha),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Container(
-                            width: 150,
-                            height: 14,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(4),
-                              color: baseColor?.withAlpha(alpha),
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Container(
-                            width: 100,
-                            height: 12,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(4),
-                              color: baseColor?.withAlpha(alpha),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    
-                    // Play button skeleton
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: baseColor?.withAlpha(alpha),
-                      ),
-                    ),
-                  ],
-                ),
+                _block(120, 12),
+                const SizedBox(height: 6),
+                _block(80, 10),
+                const SizedBox(height: 6),
+                _block(double.infinity, 12),
+                const SizedBox(height: 4),
+                _block(160, 10),
               ],
             ),
           ),
-        );
-      },
+          const SizedBox(width: 12),
+          // Album art
+          _block(48, 48, radius: 4),
+        ],
+      ),
+    );
+  }
+
+  Widget _block(double width, double height,
+      {bool isCircle = false, double radius = 4}) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceElevated,
+        shape: isCircle ? BoxShape.circle : BoxShape.rectangle,
+        borderRadius: isCircle ? null : BorderRadius.circular(radius),
+      ),
     );
   }
 } 
