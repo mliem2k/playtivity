@@ -59,6 +59,9 @@ dependencies:
   # Logging framework
   logger: ^2.7.0
 
+  # Google Fonts for Montserrat typography
+  google_fonts: ^6.2.0
+
   # Package information
   package_info_plus: ^10.1.0
 
