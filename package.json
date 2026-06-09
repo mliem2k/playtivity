@@ -25,7 +25,8 @@
     "help": "node scripts/build-apk.js --help",
     "help:release": "node scripts/release-apk.js --help",
     "help:nightly": "node scripts/nightly.js --help",
-    "help:nightly-promote": "node scripts/nightly-release.js --help"
+    "help:nightly-promote": "node scripts/nightly-release.js --help",
+    "test:identity": "node tests/user-identity.test.js"
   },
   "engines": {
     "node": ">=14.0.0"

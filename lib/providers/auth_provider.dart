@@ -170,10 +170,10 @@ class AuthProvider extends ChangeNotifier {
             userProfile = User(
               id: id,
               displayName: m['displayName'] as String? ?? id,
-              email: 'user@spotify.com',
+              email: m['email'] as String? ?? '',
               imageUrl: m['imageUrl'] as String?,
               followers: m['followers'] as int? ?? 0,
-              country: m['country'] as String? ?? 'US',
+              country: m['country'] as String? ?? '',
             );
             _addEvent('Profile from WebView JS: ${userProfile.displayName}');
           }

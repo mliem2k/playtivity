@@ -171,29 +171,38 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                 }
 
                 if (userId) {
-                  // Fetch full profile from spclient with the real user ID (not rate-limited)
-                  try {
-                    const r = await fetch(
+                  // Call spclient (name/image/followers) and /v1/me (email/country) in parallel.
+                  // spclient is a social-profile endpoint and doesn't expose email or country;
+                  // /v1/me from the browser session is not rate-limited the way server-side Dart is.
+                  const [spResult, meResult] = await Promise.allSettled([
+                    fetch(
                       'https://guc-spclient.spotify.com/user-profile-view/v3/profile/' + userId,
                       { headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json', 'App-Platform': 'WebPlayer' } }
-                    );
-                    if (r.ok) {
-                      const p = await r.json();
-                      return { id: userId, displayName: p.name || userId, imageUrl: p.image_url || null, country: 'US', followers: p.followers_count || 0 };
-                    }
-                  } catch (_) {}
-                  // spclient failed but we have the ID — return minimal
-                  return { id: userId, displayName: userId, imageUrl: null, country: 'US', followers: 0 };
+                    ).then(r => r.ok ? r.json() : null).catch(() => null),
+                    fetch('https://api.spotify.com/v1/me', {
+                      headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' }
+                    }).then(r => r.ok ? r.json() : null).catch(() => null),
+                  ]);
+                  const sp = spResult.status === 'fulfilled' ? spResult.value : null;
+                  const me = meResult.status === 'fulfilled' ? meResult.value : null;
+                  return {
+                    id: userId,
+                    displayName: (sp && sp.name) || (me && me.display_name) || userId,
+                    imageUrl: (sp && sp.image_url) || (me && me.images && me.images.length ? me.images[0].url : null) || null,
+                    email: (me && me.email) || null,
+                    country: (me && me.country) || null,
+                    followers: (sp && sp.followers_count) || (me && me.followers && me.followers.total) || 0,
+                  };
                 }
 
-                // Fallback: /v1/me from browser context (works when device IP not rate-limited)
+                // Fallback: /v1/me from browser context (no localStorage userId found)
                 try {
                   const r = await fetch('https://api.spotify.com/v1/me', {
                     headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' }
                   });
                   if (r.ok) {
                     const d = await r.json();
-                    return { id: d.id, displayName: d.display_name, imageUrl: (d.images && d.images.length) ? d.images[0].url : null, country: d.country || null, followers: d.followers ? d.followers.total : 0 };
+                    return { id: d.id, displayName: d.display_name, imageUrl: (d.images && d.images.length) ? d.images[0].url : null, email: d.email || null, country: d.country || null, followers: d.followers ? d.followers.total : 0 };
                   }
                 } catch (_) {}
                 return null;
