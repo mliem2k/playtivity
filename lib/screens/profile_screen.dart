@@ -57,7 +57,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     return Scaffold(
       extendBodyBehindAppBar: true,
       body: NestedScrollView(
-        headerSliverBuilder: (context, innerBoxIsScrolled) => [
+        headerSliverBuilder: (sliverContext, innerBoxIsScrolled) => [
           SliverToBoxAdapter(
             child: Selector2<AuthProvider, SpotifyProvider,
                 ({User? user, Track? currentlyPlaying})>(
@@ -65,8 +65,11 @@ class _ProfileScreenState extends State<ProfileScreen>
                 user: auth.currentUser,
                 currentlyPlaying: sp.currentlyPlaying,
               ),
+              shouldRebuild: (prev, next) =>
+                  !identical(prev.user, next.user) ||
+                  prev.currentlyPlaying?.uri != next.currentlyPlaying?.uri,
               builder: (ctx, data, _) =>
-                  _buildHeader(context, data.user, data.currentlyPlaying),
+                  _buildHeader(data.user, data.currentlyPlaying),
             ),
           ),
           SliverPersistentHeader(
@@ -86,6 +89,10 @@ class _ProfileScreenState extends State<ProfileScreen>
             topArtists: sp.topArtists,
             isLoading: sp.isLoading,
           ),
+          shouldRebuild: (prev, next) =>
+              !identical(prev.topTracks, next.topTracks) ||
+              !identical(prev.topArtists, next.topArtists) ||
+              prev.isLoading != next.isLoading,
           builder: (ctx, data, _) => TabBarView(
             controller: _tabController,
             children: [
@@ -98,7 +105,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  Widget _buildHeader(BuildContext context, User? user, Track? currentlyPlaying) {
+  Widget _buildHeader(User? user, Track? currentlyPlaying) {
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
