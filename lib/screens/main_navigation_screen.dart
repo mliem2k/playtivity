@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -16,7 +15,8 @@ class MainNavigationScreen extends StatefulWidget {
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
 }
 
-class _MainNavigationScreenState extends State<MainNavigationScreen> with WidgetsBindingObserver {
+class _MainNavigationScreenState extends State<MainNavigationScreen>
+    with WidgetsBindingObserver {
   int _currentIndex = 0;
 
   final List<Widget> _screens = [
@@ -66,7 +66,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Widget
 
   @override
   Widget build(BuildContext context) {
-    AppLogger.debug('🏠 MainNavigationScreen building with tab index: $_currentIndex');
     return Consumer<SpotifyProvider>(
       builder: (context, spotifyProvider, child) {
         if (spotifyProvider.hasAuthError) {
@@ -78,48 +77,30 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Widget
             );
           });
         }
-        return _buildMainScaffold();
+        return _buildScaffold();
       },
     );
   }
 
-  Widget _buildMainScaffold() {
+  Widget _buildScaffold() {
     return Scaffold(
       extendBody: true,
       body: _screens[_currentIndex],
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
-              blurRadius: 10,
-              offset: const Offset(0, -2),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: BottomNavigationBar(
-              currentIndex: _currentIndex,
-              onTap: (index) {
-                setState(() {
-                  _currentIndex = index;
-                });
-              },
-              items: const [
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.home),
-                  label: 'Activities',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.person),
-                  label: 'Profile',
-                ),
-              ],
-            ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        onTap: (index) => setState(() => _currentIndex = index),
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home_outlined),
+            activeIcon: Icon(Icons.home),
+            label: 'Activities',
           ),
-        ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person_outline),
+            activeIcon: Icon(Icons.person),
+            label: 'Profile',
+          ),
+        ],
       ),
     );
   }
