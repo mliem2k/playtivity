@@ -284,8 +284,14 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                           AppLogger.auth('   - _isPollingActive: $_isPollingActive');
                           AppLogger.auth('   - _directTokenFetchTimer: ${_directTokenFetchTimer != null ? "EXISTS" : "NULL"}');
 
+                          // Re-inject JS intercept into open.spotify.com so the web player's
+                          // own Bearer-token API requests are captured by the polling loop.
+                          // _startTokenPolling is guarded against double-start.
+                          if (isMainSpotifyApp) {
+                            await _interceptTokenRequests(controller);
+                          }
+
                           // When on main Spotify page WITH sp_dc cookie, try direct token fetch as fallback
-                          // This is more reliable than JavaScript interception
                           if (isMainSpotifyApp && hasSpDcCookie && _directTokenFetchTimer == null) {
                             AppLogger.auth('✅ On main Spotify page with sp_dc, scheduling direct token fetch...');
                             _directTokenFetchTimer = Timer(const Duration(seconds: 1), () {
@@ -958,6 +964,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
   }
 
   void _startTokenPolling(InAppWebViewController controller) {
+    if (_isPollingActive) return;
     _isPollingActive = true;
     AppLogger.auth('Starting token polling...');
 
