@@ -209,17 +209,7 @@ class SpotifyProvider extends ChangeNotifier {
 
       // Get friend activities using Bearer token
       try {
-        // Use fast load when showing skeleton to avoid slow API calls
-        final useFastLoad = showSkeleton;
-        activities = await _buddyService.getFriendActivity(
-          token,
-          fastLoad: useFastLoad,
-          onActivitiesUpdate: (updatedActivities) {
-            // Update activities progressively as track durations are fetched
-            _friendsActivities = updatedActivities;
-            notifyListeners();
-          },
-        );
+        activities = await _buddyService.getFriendActivity(token);
       } catch (e) {
         AppLogger.error('Failed to fetch friend activities', e);
 
@@ -331,13 +321,7 @@ class SpotifyProvider extends ChangeNotifier {
         await Future.delayed(const Duration(milliseconds: 100));
       }
 
-      // Load basic friends activities data (fast mode)
-      await loadFriendsActivities(
-        showSkeleton: _friendsActivities.isEmpty
-      );
-
-      // After fast load, enhance with detailed info in background
-      _enhanceActivitiesInBackground();
+      await loadFriendsActivities(showSkeleton: _friendsActivities.isEmpty);
 
       _lastUpdated = DateTime.now();
       notifyListeners();
@@ -349,52 +333,6 @@ class SpotifyProvider extends ChangeNotifier {
       _error = e.toString();
       _isSkeletonLoading = false;
       notifyListeners();
-    }
-  }
-
-  /// Enhances activities with detailed information in the background
-  Future<void> _enhanceActivitiesInBackground() async {
-    // Wait a bit to let the UI settle
-    await Future.delayed(const Duration(milliseconds: 500));
-
-    final token = _bearerToken;
-    if (token == null) return;
-
-    try {
-      AppLogger.debug('Enhancing activities with detailed info...');
-      // Load detailed activities (with duration checks)
-      final detailedActivities = await _buddyService.getFriendActivity(
-        token,
-        fastLoad: false, // Full load with duration checks
-        onActivitiesUpdate: (updatedActivities) {
-          // Update activities progressively as track durations are fetched
-          _friendsActivities = updatedActivities;
-          notifyListeners();
-          // Reduced logging frequency for background enhancements
-          if (updatedActivities.length <= 5 || updatedActivities.length % 10 == 0) {
-            AppLogger.debug('Background enhancement update: ${updatedActivities.length} activities updated');
-          }
-        },
-      );
-
-      if (detailedActivities.isNotEmpty) {
-        _friendsActivities = detailedActivities;
-        _lastUpdated = DateTime.now();
-        notifyListeners();
-        AppLogger.debug('Enhanced ${detailedActivities.length} activities with detailed info');
-      }
-    } catch (e) {
-      AppLogger.error('Failed to enhance activities', e);
-
-      // Check if this is an authentication error
-      final errorMessage = e.toString();
-      if (_isAuthenticationError(errorMessage)) {
-        AppLogger.auth('Authentication error detected during enhancement');
-        _error = 'Authentication expired. Please login again.';
-        await _handleAuthenticationError(errorMessage);
-        notifyListeners();
-      }
-      // Don't update error state for other errors since we already have basic data
     }
   }
 

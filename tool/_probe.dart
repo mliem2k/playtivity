@@ -19,14 +19,7 @@ String _totp() {
   final bytes = [for (var i = 0; i < hex.length; i += 2) int.parse(hex.substring(i, i + 2), radix: 16)];
   var bits = 0, len = 0;
   final b32 = StringBuffer();
-  for (final b in bytes) {
-    bits = (bits << 8) | b;
-    len += 8;
-    while (len >= 5) {
-      len -= 5;
-      b32.write(chars[(bits >> len) & 0x1f]);
-    }
-  }
+  for (final b in bytes) { bits = (bits << 8) | b; len += 8; while (len >= 5) { len -= 5; b32.write(chars[(bits >> len) & 0x1f]); } }
   if (len > 0) b32.write(chars[(bits << (5 - len)) & 0x1f]);
   final secret = b32.toString();
   final step = DateTime.now().millisecondsSinceEpoch ~/ 1000 ~/ 30;
@@ -49,42 +42,66 @@ String _totp() {
   return code.toString().padLeft(6, '0');
 }
 
+Future<({int status, String body})> _get(String url, Map<String, String> headers) async {
+  final client = HttpClient();
+  try {
+    final req = await client.getUrl(Uri.parse(url));
+    req.followRedirects = true;
+    headers.forEach(req.headers.set);
+    final res = await req.close();
+    final body = await res.transform(utf8.decoder).join();
+    return (status: res.statusCode, body: body);
+  } finally {
+    client.close();
+  }
+}
+
 Future<void> main() async {
   final spDc = Platform.environment['SPOTIFY_SP_DC']!;
   final totp = _totp();
 
-  // Fetch token
-  final c1 = HttpClient();
-  final url = 'https://open.spotify.com/api/token?reason=transport&productType=web-player&totp=$totp&totpServer=$totp&totpVer=61';
-  final r1 = await c1.getUrl(Uri.parse(url));
-  r1.headers.set('Cookie', 'sp_dc=$spDc');
-  r1.headers.set('User-Agent', ua);
-  r1.headers.set('Accept', 'application/json');
-  r1.headers.set('App-Platform', 'WebPlayer');
-  final rr1 = await r1.close();
-  final body1 = await rr1.transform(utf8.decoder).join();
-  c1.close();
-  final tokenJson = jsonDecode(body1) as Map<String, dynamic>;
-  final token = tokenJson['accessToken'] as String?;
-  if (token == null) { print('No token: $body1'); return; }
-  print('Token fetched (len=${token.length})');
+  final t1 = await _get(
+    'https://open.spotify.com/api/token?reason=transport&productType=web-player&totp=$totp&totpServer=$totp&totpVer=61',
+    {'Cookie': 'sp_dc=$spDc', 'User-Agent': ua, 'Accept': 'application/json', 'App-Platform': 'WebPlayer'},
+  );
+  final tokenJson = jsonDecode(t1.body) as Map<String, dynamic>;
+  final token = tokenJson['accessToken'] as String? ?? '';
+  if (token.isEmpty) { print('No token: ${t1.body}'); return; }
+  print('Token OK (len=${token.length})');
 
-  // Full spclient /me response
-  final c2 = HttpClient();
-  final r2 = await c2.getUrl(Uri.parse('https://guc-spclient.spotify.com/user-profile-view/v3/profile/me'));
-  r2.headers.set('Authorization', 'Bearer $token');
-  r2.headers.set('Accept', 'application/json');
-  r2.headers.set('App-Platform', 'WebPlayer');
-  r2.headers.set('User-Agent', ua);
-  final rr2 = await r2.close();
-  final body2 = await rr2.transform(utf8.decoder).join();
-  c2.close();
-  print('\n=== guc-spclient /me FULL (${rr2.statusCode}) ===');
-  try {
-    final data = jsonDecode(body2) as Map<String, dynamic>;
-    data.forEach((k, v) {
-      final val = v is String && v.length > 120 ? '${v.substring(0, 120)}...' : v;
-      print('  $k: $val');
-    });
-  } catch (_) { print(body2); }
+  // Test api.spotify.com/v1/me — the correct current-user endpoint
+  final me = await _get('https://api.spotify.com/v1/me', {
+    'Authorization': 'Bearer $token',
+    'Accept': 'application/json',
+    'App-Platform': 'WebPlayer',
+    'User-Agent': ua,
+  });
+  print('\n=== api.spotify.com/v1/me === status=${me.status}');
+  if (me.status == 200) {
+    final d = jsonDecode(me.body) as Map<String, dynamic>;
+    print('id: ${d['id']}');
+    print('display_name: ${d['display_name']}');
+    print('country: ${d['country']}');
+    print('followers: ${d['followers']?['total']}');
+    final images = d['images'] as List? ?? [];
+    print('image: ${images.isNotEmpty ? images[0]['url'] : null}');
+  } else {
+    print(me.body.substring(0, me.body.length.clamp(0, 300)));
+  }
+
+  // Also probe buddylist to confirm token works for spclient
+  final bl = await _get('https://guc-spclient.spotify.com/presence-view/v1/buddylist', {
+    'Authorization': 'Bearer $token',
+    'Accept': 'application/json',
+    'App-Platform': 'WebPlayer',
+    'User-Agent': ua,
+  });
+  print('\n=== buddylist === status=${bl.status}');
+  if (bl.status == 200) {
+    final d = jsonDecode(bl.body) as Map<String, dynamic>;
+    final friends = d['friends'] as List? ?? [];
+    print('${friends.length} friends returned');
+  } else {
+    print(bl.body.substring(0, bl.body.length.clamp(0, 300)));
+  }
 }
