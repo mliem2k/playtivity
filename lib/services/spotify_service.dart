@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:async';
 import '../models/user.dart';
 import '../models/track.dart';
-import 'spotify_buddy_service.dart';
 import 'http_interceptor.dart';
 import 'app_logger.dart';
 import 'api_retry_service.dart';
@@ -42,10 +41,7 @@ class SpotifyService {
     return ApiRetryService.retryApiCall(
       () async {
         final url = ApiConstants.spotifyApiBaseUrl + ApiConstants.currentlyPlayingEndpoint;
-        
-        // Get stored cookie from SpotifyBuddyService
-        final cookieString = SpotifyBuddyService.instance.getCookieString();
-        
+
         final headers = {
           'Authorization': 'Bearer $accessToken',
           'Accept': 'application/json, text/plain, */*',
@@ -54,11 +50,6 @@ class SpotifyService {
           'Host': 'api.spotify.com',
           'User-Agent': 'okhttp/4.9.2',
         };
-        
-        // Add cookie if available
-        if (cookieString != null && cookieString.isNotEmpty) {
-          headers['Cookie'] = cookieString;
-        }
 
         try {
         final response = await HttpInterceptor.get(

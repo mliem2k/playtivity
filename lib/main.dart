@@ -131,6 +131,14 @@ class _AppWrapperState extends State<AppWrapper> {
     
     return Consumer<AuthProvider>(
       builder: (context, authProvider, child) {
+        // Sync bearer token into SpotifyProvider whenever auth state changes
+        final spotifyProvider = context.read<SpotifyProvider>();
+        if (authProvider.isAuthenticated && authProvider.bearerToken != null) {
+          spotifyProvider.setBearer(authProvider.bearerToken!);
+        } else if (authProvider.isInitialized && !authProvider.isAuthenticated) {
+          spotifyProvider.clearBearer();
+        }
+
         // Debug logging for troubleshooting
         AppLogger.debug('🔍 AppWrapper rebuild - AuthProvider state:');
         AppLogger.debug('   - isInitialized: ${authProvider.isInitialized}');
