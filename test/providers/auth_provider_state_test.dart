@@ -219,8 +219,8 @@ void main() {
       await provider.loginComplete(
         _validToken,
         _headersWithUser({
-          'id': 'mliem2k',
-          'displayName': 'Michael Liem',
+          'id': 'spotify-user-abc123',
+          'displayName': 'Test Display Name',
           'imageUrl': null,
           'country': 'AU',
           'followers': 12,
@@ -228,8 +228,7 @@ void main() {
       );
 
       expect(provider.authState, AuthState.authenticated);
-      expect(provider.currentUser?.id, 'mliem2k');
-      expect(provider.currentUser?.displayName, 'Michael Liem');
+      expect(provider.currentUser?.displayName, 'Test Display Name');
       expect(profileFetcherCalled, isFalse,
           reason: 'profileFetcher must be skipped when prefetched user is valid');
     });
@@ -241,8 +240,8 @@ void main() {
       await provider.loginComplete(
         _validToken,
         _headersWithUser({
-          'id': 'mliem2k',
-          'displayName': 'Michael Liem',
+          'id': 'spotify-user-abc123',
+          'displayName': 'Test Display Name',
           'imageUrl': 'https://i.scdn.co/image/abc123',
           'country': 'AU',
           'followers': 42,
@@ -250,8 +249,8 @@ void main() {
       );
 
       final user = provider.currentUser!;
-      expect(user.id, 'mliem2k');
-      expect(user.displayName, 'Michael Liem');
+      expect(user.id, 'spotify-user-abc123');
+      expect(user.displayName, 'Test Display Name');
       expect(user.imageUrl, 'https://i.scdn.co/image/abc123');
       expect(user.country, 'AU');
       expect(user.followers, 42);
