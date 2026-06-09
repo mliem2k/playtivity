@@ -37,7 +37,7 @@ void main() {
     });
 
     test('clearError notifies once', () async {
-      provider.loadFriendsActivities(); // sets error
+      await provider.loadFriendsActivities(); // sets error
       await Future.microtask(() {});
 
       int notifyCount = 0;
@@ -45,6 +45,17 @@ void main() {
       provider.clearError();
 
       expect(notifyCount, 1);
+    });
+
+    test('loadTopTracks without token sets error state and notifies once', () async {
+      int notifyCount = 0;
+      provider.addListener(() => notifyCount++);
+
+      await provider.loadTopTracks(showLoading: true);
+
+      expect(provider.isLoading, isFalse);
+      expect(provider.error, isNotNull);
+      expect(notifyCount, equals(1));
     });
   });
 }
