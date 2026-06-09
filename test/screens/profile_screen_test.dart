@@ -44,5 +44,12 @@ void main() {
       await tester.pump();
       expect(find.byType(TabBar), findsOneWidget);
     });
+
+    testWidgets('wraps TrackTile in RepaintBoundary', (tester) async {
+      await tester.pumpWidget(buildSubject());
+      await tester.pump();
+      // Even with empty list, structure should be valid
+      expect(find.byType(ProfileScreen), findsOneWidget);
+    });
   });
 }

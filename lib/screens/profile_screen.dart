@@ -214,9 +214,13 @@ class _ProfileScreenState extends State<ProfileScreen>
     return ListView.separated(
       padding: const EdgeInsets.only(top: 8, bottom: 100),
       itemCount: topTracks.length,
+      addAutomaticKeepAlives: false,
+      addRepaintBoundaries: false,
       separatorBuilder: (_, _) =>
           const Divider(height: 1, color: AppTheme.dividerColor),
-      itemBuilder: (_, i) => TrackTile(track: topTracks[i], rank: i + 1),
+      itemBuilder: (_, i) => RepaintBoundary(
+        child: TrackTile(track: topTracks[i], rank: i + 1),
+      ),
     );
   }
 
@@ -242,10 +246,13 @@ class _ProfileScreenState extends State<ProfileScreen>
     return ListView.separated(
       padding: const EdgeInsets.only(top: 8, bottom: 100),
       itemCount: topArtists.length,
+      addAutomaticKeepAlives: false,
+      addRepaintBoundaries: false,
       separatorBuilder: (_, _) =>
           const Divider(height: 1, color: AppTheme.dividerColor),
-      itemBuilder: (_, i) =>
-          ArtistTile(artist: topArtists[i], rank: i + 1),
+      itemBuilder: (_, i) => RepaintBoundary(
+        child: ArtistTile(artist: topArtists[i], rank: i + 1),
+      ),
     );
   }
 }
