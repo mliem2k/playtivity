@@ -89,6 +89,22 @@ class AuthProvider extends ChangeNotifier {
             // call and trigger _trySilentRefresh at that point.
             final userMap = json.decode(savedUserJson);
             _currentUser = User.fromJson(userMap);
+
+            // One-time migration: scrub placeholder values written by older app
+            // versions that hardcoded 'user@spotify.com' and 'US' as fallbacks.
+            if (_currentUser!.email == 'user@spotify.com') {
+              _currentUser = User(
+                id: _currentUser!.id,
+                displayName: _currentUser!.displayName,
+                email: '',
+                imageUrl: _currentUser!.imageUrl,
+                followers: _currentUser!.followers,
+                country: _currentUser!.country == 'US' ? '' : _currentUser!.country,
+              );
+              await _prefs.setString(_userKey, json.encode(_currentUser!.toJson()));
+              _addEvent('Scrubbed stale placeholder email/country from stored profile');
+            }
+
             _addEvent('Restored: ${_currentUser!.displayName}');
           } else {
             // Token present but no user — try silent refresh to obtain profile.
