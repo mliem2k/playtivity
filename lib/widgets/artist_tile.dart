@@ -1,85 +1,84 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/artist.dart';
+import '../utils/theme.dart';
 import '../utils/spotify_launcher.dart';
 
 class ArtistTile extends StatelessWidget {
   final Artist artist;
   final int? rank;
 
-  const ArtistTile({
-    super.key,
-    required this.artist,
-    this.rank,
-  });
+  const ArtistTile({super.key, required this.artist, this.rank});
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 6),
-      child: ListTile(
-        dense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        leading: Row(
-          mainAxisSize: MainAxisSize.min,
+    return InkWell(
+      onTap: () async => SpotifyLauncher.launchSpotifyUri(artist.uri),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Rank number
             if (rank != null)
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Theme.of(context).primaryColor,
-                ),
-                child: Center(
-                  child: Text(
-                    '$rank',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
+              SizedBox(
+                width: 24,
+                child: Text(
+                  '$rank',
+                  style: const TextStyle(
+                    color: AppTheme.textSubdued,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
                   ),
+                  textAlign: TextAlign.center,
                 ),
               ),
-            
             if (rank != null) const SizedBox(width: 12),
-            
-            // Artist Image
+            // Artist photo
             CircleAvatar(
               radius: 24,
-              backgroundColor: Colors.grey[300],
+              backgroundColor: AppTheme.surfaceElevated,
               backgroundImage: artist.imageUrl != null
                   ? CachedNetworkImageProvider(artist.imageUrl!)
                   : null,
               child: artist.imageUrl == null
                   ? const Icon(
                       Icons.person,
-                      color: Colors.grey,
+                      color: AppTheme.textSubdued,
                       size: 24,
                     )
                   : null,
             ),
+            const SizedBox(width: 12),
+            // Name + listeners
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    artist.name,
+                    style: const TextStyle(
+                      color: AppTheme.textPrimary,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 14,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (artist.monthlyListeners >= 0) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      '${_formatCount(artist.monthlyListeners)} monthly listeners',
+                      style: const TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ],
         ),
-        title: Text(
-          artist.name,
-          style: const TextStyle(fontWeight: FontWeight.w600),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: artist.monthlyListeners >= 0
-            ? Text(
-                '${_formatCount(artist.monthlyListeners)} monthly listeners',
-                style: TextStyle(color: Colors.grey[500], fontSize: 12),
-              )
-            : null,
-
-        onTap: () async {
-          // Clicking the tile goes to the artist profile without playing
-          await SpotifyLauncher.launchSpotifyUri(artist.uri);
-        },
       ),
     );
   }
@@ -89,4 +88,4 @@ class ArtistTile extends StatelessWidget {
     if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
     return n.toString();
   }
-} 
+}
