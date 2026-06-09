@@ -7,7 +7,7 @@ const crypto = require('crypto');
 
 class APKReleaser {
     constructor() {
-        this.projectRoot = __dirname;
+        this.projectRoot = path.join(__dirname, '..');
         this.pubspecPath = path.join(this.projectRoot, 'pubspec.yaml');
         this.outputDir = path.join(this.projectRoot, 'releases');
         this.keystorePath = path.join(this.projectRoot, 'release-key.jks');

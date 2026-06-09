@@ -7,7 +7,7 @@ const crypto = require('crypto');
 
 class NightlyReleaser {
     constructor() {
-        this.projectRoot = __dirname;
+        this.projectRoot = path.join(__dirname, '..');
         this.pubspecPath = path.join(this.projectRoot, 'pubspec.yaml');
         this.nightlyDir = path.join(this.projectRoot, 'nightly');
         this.releasesDir = path.join(this.projectRoot, 'releases');

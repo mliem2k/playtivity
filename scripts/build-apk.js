@@ -6,7 +6,7 @@ const { execSync } = require('child_process');
 
 class APKBuilder {
     constructor() {
-        this.projectRoot = __dirname;
+        this.projectRoot = path.join(__dirname, '..');
         this.pubspecPath = path.join(this.projectRoot, 'pubspec.yaml');
         this.outputDir = path.join(this.projectRoot, 'builds');
         this.apkPath = path.join(this.projectRoot, 'build', 'app', 'outputs', 'flutter-apk', 'app-release.apk');
