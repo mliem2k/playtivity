@@ -108,29 +108,18 @@ async function test(name, fn) {
 
 console.log('\ngetUser — localStorage + spclient + /v1/me primary path\n');
 
-await test('returns real email from /v1/me when userId found via localStorage', async () => {
+await test('returns michael_liem2000@yahoo.com and ID (Indonesia) from /v1/me', async () => {
   const getUser = makeGetUser({
     localStorage: makeLocalStorage(['21fvdxlt6ejvha6jnrgdwamja:setting', 'anonymous:other']),
     fetch: makeFetch({
       spClient: { name: 'Michael Liem', image_url: 'https://img', followers_count: 48 },
-      me: { id: '21fvdxlt6ejvha6jnrgdwamja', display_name: 'Michael Liem', email: 'michael@example.com', country: 'AU', followers: { total: 48 }, images: [] },
+      me: { id: '21fvdxlt6ejvha6jnrgdwamja', display_name: 'Michael Liem', email: 'michael_liem2000@yahoo.com', country: 'ID', followers: { total: 48 }, images: [] },
     }),
   });
   const result = await getUser('tok123');
-  assert.strictEqual(result.email, 'michael@example.com', 'email should come from /v1/me');
+  assert.strictEqual(result.email, 'michael_liem2000@yahoo.com', 'email should come from /v1/me');
+  assert.strictEqual(result.country, 'ID', 'country should be ID (Indonesia)');
   assert.notStrictEqual(result.email, 'user@spotify.com', 'must not be hardcoded placeholder');
-});
-
-await test('returns real country from /v1/me when userId found via localStorage', async () => {
-  const getUser = makeGetUser({
-    localStorage: makeLocalStorage(['21fvdxlt6ejvha6jnrgdwamja:setting']),
-    fetch: makeFetch({
-      spClient: { name: 'Michael Liem', followers_count: 48 },
-      me: { id: '21fvdxlt6ejvha6jnrgdwamja', display_name: 'Michael Liem', email: 'michael@example.com', country: 'AU', followers: { total: 48 }, images: [] },
-    }),
-  });
-  const result = await getUser('tok123');
-  assert.strictEqual(result.country, 'AU', 'country should come from /v1/me');
   assert.notStrictEqual(result.country, 'US', 'must not be hardcoded US');
 });
 

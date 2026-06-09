@@ -27,7 +27,7 @@ Map<String, String> _headersWithPrefetch(Map<String, dynamic> prefetch) => {
 
 void main() {
   group('AuthProvider.loginComplete — prefetched user email and country', () {
-    test('uses real email from x-prefetched-user (not hardcoded placeholder)', () async {
+    test('returns real email michael_liem2000@yahoo.com from x-prefetched-user', () async {
       final provider = await _makeProvider();
 
       await provider.loginComplete(
@@ -35,17 +35,17 @@ void main() {
         _headersWithPrefetch({
           'id': '21fvdxlt6ejvha6jnrgdwamja',
           'displayName': 'Michael Liem',
-          'email': 'michael@example.com',
-          'country': 'AU',
+          'email': 'michael_liem2000@yahoo.com',
+          'country': 'ID',
           'followers': 48,
         }),
       );
 
-      expect(provider.currentUser?.email, 'michael@example.com');
+      expect(provider.currentUser?.email, 'michael_liem2000@yahoo.com');
       expect(provider.currentUser?.email, isNot('user@spotify.com'));
     });
 
-    test('uses real country from x-prefetched-user (not hardcoded US)', () async {
+    test('returns real country ID (Indonesia) from x-prefetched-user', () async {
       final provider = await _makeProvider();
 
       await provider.loginComplete(
@@ -53,13 +53,13 @@ void main() {
         _headersWithPrefetch({
           'id': '21fvdxlt6ejvha6jnrgdwamja',
           'displayName': 'Michael Liem',
-          'email': 'michael@example.com',
-          'country': 'AU',
+          'email': 'michael_liem2000@yahoo.com',
+          'country': 'ID',
           'followers': 48,
         }),
       );
 
-      expect(provider.currentUser?.country, 'AU');
+      expect(provider.currentUser?.country, 'ID');
       expect(provider.currentUser?.country, isNot('US'));
     });
 
@@ -88,16 +88,16 @@ void main() {
       await provider.loginComplete(
         _kValidToken,
         _headersWithPrefetch({
-          'id': 'abc123def456ghi789jkl012',
-          'displayName': 'Jane Smith',
-          'email': 'jane@example.com',
-          'country': 'GB',
-          'followers': 10,
+          'id': '21fvdxlt6ejvha6jnrgdwamja',
+          'displayName': 'Michael Liem',
+          'email': 'michael_liem2000@yahoo.com',
+          'country': 'ID',
+          'followers': 48,
         }),
       );
 
-      expect(provider.currentUser?.displayName, 'Jane Smith');
-      expect(provider.currentUser?.id, 'abc123def456ghi789jkl012');
+      expect(provider.currentUser?.displayName, 'Michael Liem');
+      expect(provider.currentUser?.id, '21fvdxlt6ejvha6jnrgdwamja');
     });
 
     test('falls back to profileFetcher when x-prefetched-user header is absent', () async {
@@ -120,6 +120,59 @@ void main() {
         throwsA(isA<Exception>()),
       );
       expect(provider.isAuthenticated, isFalse);
+    });
+  });
+
+  group('AuthProvider._initializeAuth — stale placeholder migration', () {
+    test('scrubs user@spotify.com email and US country stored from old app version', () async {
+      // Simulate stored data from an older build that wrote hardcoded placeholders.
+      SharedPreferences.setMockInitialValues({
+        'spotify_bearer_token': _kValidToken,
+        'spotify_headers': jsonEncode({'Cookie': 'sp_dc=validSpDc'}),
+        'spotify_user': jsonEncode({
+          'id': '21fvdxlt6ejvha6jnrgdwamja',
+          'display_name': 'Michael Liem',
+          'email': 'user@spotify.com',
+          'country': 'US',
+          'image_url': null,
+          'followers': 48,
+        }),
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final provider = AuthProvider(prefs);
+      for (var i = 0; i < 50; i++) {
+        if (provider.isInitialized) break;
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+
+      expect(provider.currentUser?.email, '');
+      expect(provider.currentUser?.country, '');
+      expect(provider.currentUser?.displayName, 'Michael Liem');
+    });
+
+    test('leaves real US country intact when email is also real (not a placeholder)', () async {
+      // A genuine US user must not have their country cleared.
+      SharedPreferences.setMockInitialValues({
+        'spotify_bearer_token': _kValidToken,
+        'spotify_headers': jsonEncode({'Cookie': 'sp_dc=validSpDc'}),
+        'spotify_user': jsonEncode({
+          'id': 'realuserid1234567890',
+          'display_name': 'Real User',
+          'email': 'real@gmail.com',
+          'country': 'US',
+          'image_url': null,
+          'followers': 5,
+        }),
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final provider = AuthProvider(prefs);
+      for (var i = 0; i < 50; i++) {
+        if (provider.isInitialized) break;
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+
+      expect(provider.currentUser?.email, 'real@gmail.com');
+      expect(provider.currentUser?.country, 'US');
     });
   });
 }
