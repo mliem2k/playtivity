@@ -16,48 +16,45 @@ class EqualizerIcon extends StatefulWidget {
 }
 
 class _EqualizerIconState extends State<EqualizerIcon>
-    with TickerProviderStateMixin {
-  late final List<AnimationController> _controllers;
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
   late final List<Animation<double>> _animations;
-
-  static const List<int> _delays = [0, 200, 100];
 
   @override
   void initState() {
     super.initState();
-    _controllers = List.generate(
-      3,
-      (_) => AnimationController(
-        vsync: this,
-        duration: const Duration(milliseconds: 600),
-      ),
-    );
-    _animations = _controllers
-        .map(
-          (c) => Tween<double>(begin: 0.3, end: 1.0).animate(
-            CurvedAnimation(parent: c, curve: Curves.easeInOut),
-          ),
-        )
-        .toList();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    )..repeat(reverse: true);
 
-    for (int i = 0; i < 3; i++) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_delays[i] > 0) {
-          Future.delayed(Duration(milliseconds: _delays[i]), () {
-            if (mounted) _controllers[i].repeat(reverse: true);
-          });
-        } else {
-          if (mounted) _controllers[i].repeat(reverse: true);
-        }
-      });
-    }
+    // Original delays: bar 0 = 0ms, bar 1 = 200ms, bar 2 = 100ms
+    // Expressed as fractions of the 600ms cycle: 200/600 = 0.333, 100/600 = 0.167
+    _animations = [
+      Tween<double>(begin: 0.3, end: 1.0).animate(
+        CurvedAnimation(
+          parent: _controller,
+          curve: const Interval(0.0, 1.0, curve: Curves.easeInOut),
+        ),
+      ),
+      Tween<double>(begin: 0.3, end: 1.0).animate(
+        CurvedAnimation(
+          parent: _controller,
+          curve: const Interval(0.333, 1.0, curve: Curves.easeInOut),
+        ),
+      ),
+      Tween<double>(begin: 0.3, end: 1.0).animate(
+        CurvedAnimation(
+          parent: _controller,
+          curve: const Interval(0.167, 1.0, curve: Curves.easeInOut),
+        ),
+      ),
+    ];
   }
 
   @override
   void dispose() {
-    for (final c in _controllers) {
-      c.dispose();
-    }
+    _controller.dispose();
     super.dispose();
   }
 
