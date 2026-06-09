@@ -342,77 +342,33 @@ class SpotifyBuddyService {
           'Authorization': 'Bearer $accessToken',
         };
 
-        try {
-          final response = await HttpInterceptor.get(
-            Uri.parse(url),
-            headers: headers,
-          );
+        final response = await HttpInterceptor.get(
+          Uri.parse(url),
+          headers: headers,
+        );
 
-          // Only log status code for debugging
-          // Handle unauthorized response - clear cache and retry once
-          if (response.statusCode == 401 || response.statusCode == 403) {
-            _completeCookieString = null;
-
-            // Use the new buddylist endpoint for retry as well
-            final retryUrl = '$_baseUrl/presence-view/v1/buddylist';
-            final retryHeaders = {
-              'Authorization': 'Bearer $accessToken',
-            };
-
-            try {
-              final retryResponse = await HttpInterceptor.get(
-                Uri.parse(retryUrl),
-                headers: retryHeaders,
-              );
-
-              if (retryResponse.statusCode == 200) {
-                final activities = parseFriendsJson(retryResponse.body);
-                if (!fastLoad) {
-                  final needsDuration = activities
-                      .where((a) =>
-                          a.type == ActivityType.track &&
-                          (a.track?.durationMs ?? 0) == 0 &&
-                          (a.track?.uri.isNotEmpty ?? false))
-                      .toList();
-                  if (needsDuration.isNotEmpty) {
-                    _fetchTrackDurationsProgressively(activities, needsDuration, onActivitiesUpdate);
-                  }
-                }
-                // Cache the successful response
-                _cachedBuddyActivities = activities;
-                _lastBuddyListFetch = DateTime.now();
-                return activities;
-              } else {
-                throw Exception('Failed to fetch friend activity: ${retryResponse.statusCode}');
-              }
-            } catch (retryError) {
-              throw Exception('Network error during retry: $retryError');
-            }
-          }
-
-          if (response.statusCode == 200) {
-            final activities = parseFriendsJson(response.body);
-            if (!fastLoad) {
-              final needsDuration = activities
-                  .where((a) =>
-                      a.type == ActivityType.track &&
-                      (a.track?.durationMs ?? 0) == 0 &&
-                      (a.track?.uri.isNotEmpty ?? false))
-                  .toList();
-              if (needsDuration.isNotEmpty) {
-                _fetchTrackDurationsProgressively(activities, needsDuration, onActivitiesUpdate);
-              }
-            }
-            // Cache the successful response
-            _cachedBuddyActivities = activities;
-            _lastBuddyListFetch = DateTime.now();
-            return activities;
-          } else {
-            throw Exception('Failed to fetch friend activity: ${response.statusCode}');
-          }
-        } catch (e) {
-          return [];
+        if (response.statusCode == 401 || response.statusCode == 403) {
+          throw Exception('Authentication error: ${response.statusCode}');
         }
+        if (response.statusCode != 200) {
+          throw Exception('Failed to fetch friend activity: ${response.statusCode}');
+        }
+
+        final activities = parseFriendsJson(response.body);
+        if (!fastLoad) {
+          final needsDuration = activities
+              .where((a) =>
+                  a.type == ActivityType.track &&
+                  (a.track?.durationMs ?? 0) == 0 &&
+                  (a.track?.uri.isNotEmpty ?? false))
+              .toList();
+          if (needsDuration.isNotEmpty) {
+            _fetchTrackDurationsProgressively(activities, needsDuration, onActivitiesUpdate);
+          }
+        }
+        _cachedBuddyActivities = activities;
+        _lastBuddyListFetch = DateTime.now();
+        return activities;
       },
       operation: 'Get Friend Activity',
     );
@@ -712,72 +668,13 @@ class SpotifyBuddyService {
 
           AppLogger.spotify('📡 Top content API response: ${response.statusCode}');
           
-          if (response.statusCode == 200) {
-            final data = json.decode(response.body);
-            final topArtistsCount = data['data']?['me']?['profile']?['topArtists']?['totalCount'] ?? 0;
-            final topTracksCount = data['data']?['me']?['profile']?['topTracks']?['totalCount'] ?? 0;
-            AppLogger.spotify('✅ Successfully fetched top content (artists: $topArtistsCount, tracks: $topTracksCount)');
-            return data;
-          } else if (response.statusCode == 401 || response.statusCode == 403) {
-            AppLogger.spotify('🔄 Access token unauthorized, clearing cache and retrying...');
-            AppLogger.spotify('Response body: ${response.body}');
-            _completeCookieString = null;
-            
-            // Retry with the same request
-            final retryHeaders = {
-              'accept': 'application/json',
-              'accept-language': 'en',
-              'app-platform': 'WebPlayer',
-              'authorization': 'Bearer $accessToken',
-              'cache-control': 'no-cache',
-              'client-token': _generateClientToken(),
-              'content-type': 'application/json;charset=UTF-8',
-              'dnt': '1',
-              'origin': 'https://open.spotify.com',
-              'pragma': 'no-cache',
-              'priority': 'u=1, i',
-              'referer': 'https://open.spotify.com/',
-              'sec-ch-ua': '"Google Chrome";v="137", "Chromium";v="137", "Not/A)Brand";v="24"',
-              'sec-ch-ua-mobile': '?0',
-              'sec-ch-ua-platform': '"Windows"',
-              'sec-fetch-dest': 'empty',
-              'sec-fetch-mode': 'cors',
-              'sec-fetch-site': 'same-site',
-              'spotify-app-version': '1.2.67.546.ga043c80d',
-              'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
-              'Cookie': _completeCookieString!,
-            };
-            
-            try {
-              final retryResponse = await HttpInterceptor.post(
-                Uri.parse(url),
-                headers: retryHeaders,
-                body: json.encode(requestBody),
-              );
-              
-              AppLogger.spotify('📡 Retry response: ${retryResponse.statusCode}');
-              
-              if (retryResponse.statusCode == 200) {
-                final data = json.decode(retryResponse.body);
-                final topArtistsCount = data['data']?['me']?['profile']?['topArtists']?['totalCount'] ?? 0;
-                final topTracksCount = data['data']?['me']?['profile']?['topTracks']?['totalCount'] ?? 0;
-                AppLogger.spotify('✅ Successfully fetched top content on retry:');
-                AppLogger.spotify('   - Total artists available: $topArtistsCount');
-                AppLogger.spotify('   - Total tracks available: $topTracksCount');
-                return data;
-              } else {
-                AppLogger.spotify('❌ Retry also failed with status: ${retryResponse.statusCode}');
-                throw Exception('Failed to fetch top content: ${retryResponse.statusCode}');
-              }
-            } catch (retryError) {
-              AppLogger.spotify('❌ Error during retry request: $retryError');
-              throw Exception('Network error during retry: $retryError');
-            }
-          } else {
-            AppLogger.spotify('❌ Failed to fetch top content: ${response.statusCode}');
-            AppLogger.spotify('   Response body: ${response.body}');
+          if (response.statusCode == 401 || response.statusCode == 403) {
+            throw Exception('Authentication error: ${response.statusCode}');
+          }
+          if (response.statusCode != 200) {
             throw Exception('Failed to fetch top content: ${response.statusCode} - ${response.body}');
           }
+          return json.decode(response.body) as Map<String, dynamic>;
         },
         operation: 'Get Top Content',
       );
