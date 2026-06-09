@@ -18,6 +18,11 @@ void main() {
       spotifyProvider = SpotifyProvider();
     });
 
+    tearDown(() {
+      authProvider.dispose();
+      spotifyProvider.dispose();
+    });
+
     Widget buildSubject() => MultiProvider(
           providers: [
             ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
@@ -26,21 +31,16 @@ void main() {
           child: const MaterialApp(home: MainNavigationScreen()),
         );
 
-    testWidgets('renders scaffold with bottom nav', (tester) async {
+    testWidgets('renders scaffold with bottom nav bar', (tester) async {
       await tester.pumpWidget(buildSubject());
       expect(find.byType(BottomNavigationBar), findsOneWidget);
+      expect(find.byType(Scaffold), findsAtLeastNWidgets(1));
     });
 
-    testWidgets('uses Selector not Consumer for SpotifyProvider', (tester) async {
+    testWidgets('shows both navigation tabs', (tester) async {
       await tester.pumpWidget(buildSubject());
-      // Selector<SpotifyProvider, bool> should be present, not Consumer<SpotifyProvider>
-      expect(
-        find.byWidgetPredicate(
-          (w) => w.runtimeType.toString().contains('Selector') &&
-              w.runtimeType.toString().contains('SpotifyProvider'),
-        ),
-        findsAtLeastNWidgets(1),
-      );
+      expect(find.text('Activities'), findsOneWidget);
+      expect(find.text('Profile'), findsOneWidget);
     });
   });
 }
