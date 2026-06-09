@@ -137,6 +137,38 @@ class SpotifyTokenService {
     return null;
   }
 
+  /// Fetches email and country from Spotify's account-settings endpoint.
+  /// Unlike /v1/me, this endpoint is not rate-limited and works with just
+  /// the sp_dc cookie — no bearer token or OAuth scopes needed.
+  static Future<({String email, String country})?> fetchAccountProfile(String spDc) async {
+    final client = io.HttpClient();
+    try {
+      final req = await client.getUrl(
+        Uri.parse('https://www.spotify.com/api/account-settings/v1/profile'),
+      );
+      req.headers.set('Cookie', 'sp_dc=$spDc');
+      req.headers.set('User-Agent', userAgent);
+      req.headers.set('Accept', 'application/json');
+      req.headers.set('Referer', 'https://www.spotify.com/account/overview/');
+      final resp = await req.close();
+      if (resp.statusCode != io.HttpStatus.ok) return null;
+      final body = await resp.transform(convert.utf8.decoder).join();
+      final data = convert.jsonDecode(body);
+      if (data is! Map) return null;
+      final profile = data['profile'];
+      if (profile is! Map) return null;
+      return (
+        email: profile['email'] as String? ?? '',
+        country: profile['country'] as String? ?? '',
+      );
+    } catch (e) {
+      AppLogger.auth('fetchAccountProfile failed: $e');
+      return null;
+    } finally {
+      client.close();
+    }
+  }
+
   /// Builds a minimal headers map from an sp_dc value for API calls.
   static Map<String, String> headersFromSpDc(String spDc) => {
     'Cookie': 'sp_dc=$spDc',
