@@ -68,7 +68,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   Widget build(BuildContext context) {
     return Selector<SpotifyProvider, bool>(
       selector: (_, sp) => sp.hasAuthError,
-      builder: (context, hasAuthError, child) {
+      builder: (ctx, hasAuthError, child) {
         if (hasAuthError) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
