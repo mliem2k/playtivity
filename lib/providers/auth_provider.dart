@@ -323,46 +323,16 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Re-authenticate when token expires or is invalid.
-  /// Tries silent refresh first; returns false only if WebView login is required.
-  Future<bool> reAuthenticate() async {
-    AppLogger.auth('Re-authentication requested...');
-
-    try {
-      _bearerToken = null;
-      _headers = null;
-      _currentUser = null;
-      _buddyService.clearActivityCache();
-
-      _authState = AuthState.loading;
-      notifyListeners();
-
-      final didRefresh = await _trySilentRefresh();
-      if (didRefresh) {
-        AppLogger.auth('Silent re-authentication succeeded');
-        return true;
-      }
-
-      AppLogger.warning('Silent refresh failed — WebView login required');
-      return false;
-    } catch (e) {
-      AppLogger.error('Error during re-authentication', e);
-      return false;
-    } finally {
-      if (_authState == AuthState.loading) {
-        _authState = _bearerToken != null && _currentUser != null
-            ? AuthState.authenticated
-            : AuthState.unauthenticated;
-        notifyListeners();
-      }
-    }
-  }
-
   /// Refresh the token if currently authenticated. Returns false if not
   /// authenticated or if the silent refresh fails.
   Future<bool> refreshIfNeeded() async {
     if (_authState != AuthState.authenticated) return false;
-    return _trySilentRefresh();
+    final ok = await _trySilentRefresh();
+    if (!ok) {
+      _authState = AuthState.unauthenticated;
+      notifyListeners();
+    }
+    return ok;
   }
 
   /// Attempts to silently obtain a fresh Bearer token using the stored sp_dc.
