@@ -11,7 +11,9 @@ import '../models/user.dart';
 class SpotifyProvider extends ChangeNotifier {
   final SpotifyBuddyService _buddyService = SpotifyBuddyService();
   final SpotifyService _spotifyService = SpotifyService();
-  
+
+  String? _bearerToken;
+
   List<Track> _topTracks = [];
   List<Artist> _topArtists = [];
   List<Activity> _friendsActivities = [];
@@ -21,7 +23,7 @@ class SpotifyProvider extends ChangeNotifier {
   bool _isSkeletonLoading = false;
   String? _error;
   DateTime? _lastUpdated;
-  
+
   // Flag to indicate if an authentication error occurred
   bool _hasAuthError = false;
   String? _authErrorMessage;
@@ -37,14 +39,23 @@ class SpotifyProvider extends ChangeNotifier {
   bool get hasAuthError => _hasAuthError;
   String? get authErrorMessage => _authErrorMessage;
 
+  void setBearer(String token) {
+    _bearerToken = token;
+  }
+
+  void clearBearer() {
+    _bearerToken = null;
+    clearData();
+  }
+
   /// Check if error is authentication-related and handle accordingly
   bool _isAuthenticationError(String error) {
-    return error.contains('401') || 
-           error.contains('403') || 
-           error.contains('No Bearer token available') || 
-           error.contains('No cookie string available') ||
+    return error.contains('401') ||
+           error.contains('403') ||
+           error.contains('No Bearer token available') ||
            error.contains('Authentication expired') ||
-           error.contains('Unauthorized');
+           error.contains('Unauthorized') ||
+           error.contains('Not authenticated');
   }
 
   /// Handle authentication errors by setting flag for UI to handle
@@ -52,14 +63,14 @@ class SpotifyProvider extends ChangeNotifier {
     AppLogger.error('Authentication error detected in provider', error);
     _hasAuthError = true;
     _authErrorMessage = error;
-    
+
     // Clear all cached data in this provider since authentication failed
     _topTracks = [];
     _topArtists = [];
     _friendsActivities = [];
     _currentlyPlaying = null;
     _error = 'Authentication expired. Please login again.';
-    
+
     notifyListeners();
   }
 
@@ -78,20 +89,19 @@ class SpotifyProvider extends ChangeNotifier {
       }
       _error = null;
 
-      // Get Bearer token from buddy service
-      final accessToken = _buddyService.getBearerToken();
-      if (accessToken != null) {
-        final track = await _spotifyService.getCurrentlyPlaying(accessToken);
+      final token = _bearerToken;
+      if (token != null) {
+        final track = await _spotifyService.getCurrentlyPlaying(token);
         _currentlyPlaying = track;
       } else {
         _currentlyPlaying = null;
       }
-      
+
       if (showLoading) {
         _isLoading = false;
       }
       notifyListeners();
-      
+
       // Update widget with new currently playing data
       await _updateWidget();
     } catch (e) {
@@ -108,6 +118,13 @@ class SpotifyProvider extends ChangeNotifier {
   }
 
   Future<void> loadTopTracks({String timeRange = 'medium_term', bool showLoading = false}) async {
+    final token = _bearerToken;
+    if (token == null) {
+      _error = 'Not authenticated';
+      notifyListeners();
+      return;
+    }
+
     try {
       if (showLoading) {
         _isLoading = true;
@@ -115,9 +132,9 @@ class SpotifyProvider extends ChangeNotifier {
       }
       _error = null;
 
-      final newTopTracks = await _buddyService.getTopTracks(timeRange: timeRange);
+      final newTopTracks = await _buddyService.getTopTracks(token, timeRange: timeRange);
       _topTracks = newTopTracks;
-      
+
       if (showLoading) {
         _isLoading = false;
       }
@@ -132,14 +149,22 @@ class SpotifyProvider extends ChangeNotifier {
   }
 
   Future<void> loadTopArtists({String timeRange = 'medium_term', bool showLoading = false}) async {
+    final token = _bearerToken;
+    if (token == null) {
+      _error = 'Not authenticated';
+      notifyListeners();
+      return;
+    }
+
     try {
       if (showLoading) {
         _isLoading = true;
         notifyListeners();
       }
       _error = null;
-      
+
       final newTopArtists = await _buddyService.getTopArtistsWithDetails(
+        token,
         timeRange: timeRange,
         onArtistDetailsUpdate: (updatedArtists) {
           // Update the list dynamically as artist details are loaded
@@ -148,7 +173,7 @@ class SpotifyProvider extends ChangeNotifier {
         },
       );
       _topArtists = newTopArtists;
-      
+
       if (showLoading) {
         _isLoading = false;
       }
@@ -163,6 +188,13 @@ class SpotifyProvider extends ChangeNotifier {
   }
 
   Future<void> loadFriendsActivities({bool showLoading = false, bool showSkeleton = false}) async {
+    final token = _bearerToken;
+    if (token == null) {
+      _error = 'Not authenticated';
+      notifyListeners();
+      return;
+    }
+
     try {
       if (showLoading) {
         _isLoading = true;
@@ -180,6 +212,7 @@ class SpotifyProvider extends ChangeNotifier {
         // Use fast load when showing skeleton to avoid slow API calls
         final useFastLoad = showSkeleton;
         activities = await _buddyService.getFriendActivity(
+          token,
           fastLoad: useFastLoad,
           onActivitiesUpdate: (updatedActivities) {
             // Update activities progressively as track durations are fetched
@@ -189,7 +222,7 @@ class SpotifyProvider extends ChangeNotifier {
         );
       } catch (e) {
         AppLogger.error('Failed to fetch friend activities', e);
-        
+
         // Check if this is an authentication error
         final errorMessage = e.toString();
         if (_isAuthenticationError(errorMessage)) {
@@ -200,21 +233,21 @@ class SpotifyProvider extends ChangeNotifier {
           _error = 'Failed to load friend activities: $errorMessage';
         }
       }
-      
+
       _friendsActivities = activities;
       if (showLoading) {
         _isLoading = false;
       } else if (showSkeleton) {
         _isSkeletonLoading = false;
       }
-      
+
       // Only update lastUpdated when we actually fetch new data
       if (activities.isNotEmpty) {
         _lastUpdated = DateTime.now();
       }
-      
+
       notifyListeners();
-      
+
       // Update widget if we have activities data
       if (activities.isNotEmpty) {
         await _updateWidget();
@@ -253,7 +286,7 @@ class SpotifyProvider extends ChangeNotifier {
 
   Future<void> refreshData({bool showLoading = false}) async {
     List<Future> futures = [];
-    
+
     // Load all features using Bearer token authentication
     futures.addAll([
       loadCurrentlyPlaying(showLoading: showLoading),
@@ -261,14 +294,14 @@ class SpotifyProvider extends ChangeNotifier {
       loadTopArtists(showLoading: showLoading),
       loadFriendsActivities(showLoading: showLoading),
     ]);
-    
+
     if (futures.isNotEmpty) {
       await Future.wait(futures);
     }
-    
+
     _lastUpdated = DateTime.now();
     notifyListeners();
-    
+
     // Update widget after refreshing data
     await _updateWidget();
   }
@@ -277,7 +310,7 @@ class SpotifyProvider extends ChangeNotifier {
   Future<void> silentRefresh() async {
     _isRefreshing = true;
     notifyListeners();
-    
+
     try {
       await refreshData(showLoading: false);
     } finally {
@@ -293,22 +326,22 @@ class SpotifyProvider extends ChangeNotifier {
       if (_friendsActivities.isEmpty) {
         _isSkeletonLoading = true;
         notifyListeners();
-        
+
         // Small delay to show skeleton
         await Future.delayed(const Duration(milliseconds: 100));
       }
-      
+
       // Load basic friends activities data (fast mode)
       await loadFriendsActivities(
         showSkeleton: _friendsActivities.isEmpty
       );
-      
+
       // After fast load, enhance with detailed info in background
       _enhanceActivitiesInBackground();
-      
+
       _lastUpdated = DateTime.now();
       notifyListeners();
-      
+
       // Update widget after initial load
       await _updateWidget();
     } catch (e) {
@@ -323,11 +356,15 @@ class SpotifyProvider extends ChangeNotifier {
   Future<void> _enhanceActivitiesInBackground() async {
     // Wait a bit to let the UI settle
     await Future.delayed(const Duration(milliseconds: 500));
-    
+
+    final token = _bearerToken;
+    if (token == null) return;
+
     try {
       AppLogger.debug('Enhancing activities with detailed info...');
       // Load detailed activities (with duration checks)
       final detailedActivities = await _buddyService.getFriendActivity(
+        token,
         fastLoad: false, // Full load with duration checks
         onActivitiesUpdate: (updatedActivities) {
           // Update activities progressively as track durations are fetched
@@ -339,7 +376,7 @@ class SpotifyProvider extends ChangeNotifier {
           }
         },
       );
-      
+
       if (detailedActivities.isNotEmpty) {
         _friendsActivities = detailedActivities;
         _lastUpdated = DateTime.now();
@@ -348,7 +385,7 @@ class SpotifyProvider extends ChangeNotifier {
       }
     } catch (e) {
       AppLogger.error('Failed to enhance activities', e);
-      
+
       // Check if this is an authentication error
       final errorMessage = e.toString();
       if (_isAuthenticationError(errorMessage)) {
@@ -382,9 +419,9 @@ class SpotifyProvider extends ChangeNotifier {
   Future<void> updateWidget({User? currentUser}) async {
     await _updateWidget(currentUser: currentUser);
   }
-  
+
   /// Debug method for widget testing
   Future<void> debugWidget() async {
     await WidgetService.debugWidgetData();
   }
-} 
+}
