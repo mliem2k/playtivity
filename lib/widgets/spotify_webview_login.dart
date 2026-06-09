@@ -21,6 +21,8 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
   bool _isLoading = true;
   String? _error;
   bool _completed = false;
+  bool _processingAuth = false;
+  String _processingStep = '';
 
   @override
   Widget build(BuildContext context) {
@@ -44,58 +46,64 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
         ],
       ),
       body: SafeArea(
-        child: Column(
+        child: Stack(
           children: [
-            _InfoBanner(
-              primaryColor: Theme.of(context).primaryColor,
-              surfaceColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-            ),
-            if (_error != null)
-              _ErrorBanner(
-                error: _error!,
-                onRetry: () => setState(() => _error = null),
-              ),
-            Expanded(
-              child: InAppWebView(
-                initialSettings: InAppWebViewSettings(
-                  userAgent: SpotifyTokenService.userAgent,
-                  javaScriptEnabled: true,
-                  domStorageEnabled: true,
-                  thirdPartyCookiesEnabled: true,
-                  supportZoom: false,
+            Column(
+              children: [
+                _InfoBanner(
+                  primaryColor: Theme.of(context).primaryColor,
+                  surfaceColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                 ),
-                initialUrlRequest: URLRequest(
-                  url: WebUri(
-                    'https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F',
+                if (_error != null)
+                  _ErrorBanner(
+                    error: _error!,
+                    onRetry: () => setState(() => _error = null),
+                  ),
+                Expanded(
+                  child: InAppWebView(
+                    initialSettings: InAppWebViewSettings(
+                      userAgent: SpotifyTokenService.userAgent,
+                      javaScriptEnabled: true,
+                      domStorageEnabled: true,
+                      thirdPartyCookiesEnabled: true,
+                      supportZoom: false,
+                    ),
+                    initialUrlRequest: URLRequest(
+                      url: WebUri(
+                        'https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F',
+                      ),
+                    ),
+                    onLoadStart: (_, _) => setState(() {
+                      _isLoading = true;
+                      _error = null;
+                    }),
+                    onLoadStop: (controller, url) async {
+                      setState(() => _isLoading = false);
+                      if (_completed || url == null) {
+                        return;
+                      }
+                      final urlStr = url.toString();
+                      if (!urlStr.contains('open.spotify.com')) {
+                        return;
+                      }
+                      if (urlStr.contains('/login') ||
+                          urlStr.contains('/auth') ||
+                          urlStr.contains('/challenge') ||
+                          urlStr.contains('/error')) {
+                        return;
+                      }
+                      await _attemptTokenCapture(url);
+                    },
+                    onReceivedError: (_, _, error) => setState(() {
+                      _error = 'Failed to load page: ${error.description}';
+                      _isLoading = false;
+                    }),
                   ),
                 ),
-                onLoadStart: (_, _) => setState(() {
-                  _isLoading = true;
-                  _error = null;
-                }),
-                onLoadStop: (controller, url) async {
-                  setState(() => _isLoading = false);
-                  if (_completed || url == null) {
-                    return;
-                  }
-                  final urlStr = url.toString();
-                  if (!urlStr.contains('open.spotify.com')) {
-                    return;
-                  }
-                  if (urlStr.contains('/login') ||
-                      urlStr.contains('/auth') ||
-                      urlStr.contains('/challenge') ||
-                      urlStr.contains('/error')) {
-                    return;
-                  }
-                  await _attemptTokenCapture(url);
-                },
-                onReceivedError: (_, _, error) => setState(() {
-                  _error = 'Failed to load page: ${error.description}';
-                  _isLoading = false;
-                }),
-              ),
+              ],
             ),
+            if (_processingAuth)
+              _AuthProcessingOverlay(step: _processingStep),
           ],
         ),
       ),
@@ -103,24 +111,35 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
   }
 
   Future<void> _attemptTokenCapture(WebUri url) async {
+    if (mounted) setState(() { _processingAuth = true; _processingStep = 'Verifying session...'; });
     try {
       final cookies = await CookieManager.instance().getCookies(url: url);
       final spDcCookie = cookies.firstWhere(
         (c) => c.name == 'sp_dc' && c.value.isNotEmpty,
         orElse: () => Cookie(name: '', value: ''),
       );
-      if (spDcCookie.name.isEmpty) return;
+      if (spDcCookie.name.isEmpty) {
+        if (mounted) setState(() => _processingAuth = false);
+        return;
+      }
 
+      if (mounted) setState(() => _processingStep = 'Fetching access token...');
       AppLogger.auth('sp_dc found — fetching Bearer token...');
       final token = await SpotifyTokenService.fetchBearerToken(spDcCookie.value);
       if (token == null || token.isEmpty) {
-        if (mounted) setState(() => _error = 'Failed to get access token. Please try again.');
+        if (mounted) {
+          setState(() {
+            _processingAuth = false;
+            _error = 'Failed to get access token. Please try again.';
+          });
+        }
         return;
       }
 
       _completed = true;
       final headers = SpotifyTokenService.headersFromSpDc(spDcCookie.value);
       if (!mounted) return;
+      if (mounted) setState(() => _processingStep = 'Loading your profile...');
       try {
         await widget.onAuthComplete(token, headers);
         if (mounted && Navigator.canPop(context)) {
@@ -128,11 +147,21 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
         }
       } catch (e) {
         _completed = false;
-        if (mounted) setState(() => _error = 'Authentication failed: $e');
+        if (mounted) {
+          setState(() {
+            _processingAuth = false;
+            _error = 'Authentication failed: $e';
+          });
+        }
       }
     } catch (e) {
       AppLogger.error('Error during token capture', e);
-      if (mounted) setState(() => _error = 'Authentication error: $e');
+      if (mounted) {
+        setState(() {
+          _processingAuth = false;
+          _error = 'Authentication error: $e';
+        });
+      }
     }
   }
 }
@@ -184,6 +213,51 @@ class _ErrorBanner extends StatelessWidget {
           ),
           TextButton(onPressed: onRetry, child: const Text('Retry')),
         ],
+      ),
+    );
+  }
+}
+
+class _AuthProcessingOverlay extends StatelessWidget {
+  final String step;
+  const _AuthProcessingOverlay({required this.step});
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = Theme.of(context).primaryColor;
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black.withValues(alpha: 0.65),
+        child: Center(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 48),
+            padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 24),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(color: primary),
+                const SizedBox(height: 20),
+                Text(
+                  'Signing in to Spotify',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: primary),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  step,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
