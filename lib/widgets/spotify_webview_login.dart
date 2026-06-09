@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -27,6 +28,40 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
   bool _processingAuth = false;
   String _processingStep = '';
   InAppWebViewController? _webViewController;
+  Timer? _cookieRetryTimer;
+  int _cookieRetryCount = 0;
+  static const int _maxCookieRetries = 8;
+  WebUri? _pendingCaptureUrl;
+
+  @override
+  void dispose() {
+    _cookieRetryTimer?.cancel();
+    super.dispose();
+  }
+
+  void _scheduleCookieRetry(WebUri url) {
+    _cookieRetryTimer?.cancel();
+    _pendingCaptureUrl = url;
+    _cookieRetryCount = 0;
+    _cookieRetryTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_completed || !mounted) {
+        _cookieRetryTimer?.cancel();
+        return;
+      }
+      _cookieRetryCount++;
+      AppLogger.auth('sp_dc retry $_cookieRetryCount/$_maxCookieRetries...');
+      _attemptTokenCapture(_pendingCaptureUrl!);
+      if (_cookieRetryCount >= _maxCookieRetries) {
+        _cookieRetryTimer?.cancel();
+        if (mounted && !_completed) {
+          setState(() {
+            _processingAuth = false;
+            _error = 'Login timed out. Please try again.';
+          });
+        }
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -130,9 +165,15 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
         orElse: () => Cookie(name: '', value: ''),
       );
       if (spDcCookie.name.isEmpty) {
+        // sp_dc not yet in cookie store — Spotify SPA may not have committed it yet.
+        // Schedule retries so we don't silently give up after the first onLoadStop.
         if (mounted) setState(() => _processingAuth = false);
+        if (_cookieRetryTimer == null || !_cookieRetryTimer!.isActive) {
+          _scheduleCookieRetry(url);
+        }
         return;
       }
+      _cookieRetryTimer?.cancel();
 
       if (mounted) setState(() => _processingStep = 'Fetching access token...');
       AppLogger.auth('sp_dc found — fetching Bearer token...');
