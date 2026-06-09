@@ -440,63 +440,24 @@ class SpotifyBuddyService {
 
 
   /// Gets current user profile using web access token.
-  /// Tries the spclient unofficial endpoint first (same token type as buddy list),
-  /// then falls back to the official API.
-  /// Throws a detailed exception so callers can surface the exact failure in the debug panel.
+  /// Uses the spclient /me endpoint — same token type and domain as the buddy list.
+  /// The official api.spotify.com/v1/me is rate-limited (429) for web-player tokens.
   Future<User?> getCurrentUserProfileWithToken(String bearerToken) async {
-    final errors = <String>[];
-
-    // Decode user ID from the JWT — no network call needed.
-    final userId = SpotifyTokenService.extractUserIdFromJwt(bearerToken);
-    AppLogger.spotify('🔑 JWT user id: ${userId ?? "not found"}');
-
-    if (userId != null && userId.isNotEmpty) {
-      try {
-        final profile = await _getUserProfileFromSpclient(bearerToken, userId);
-        if (profile != null) {
-          AppLogger.spotify('✅ Spclient profile OK: ${profile.displayName}');
-          return profile;
-        }
-        errors.add('spclient(null)');
-      } catch (e) {
-        final msg = e.toString().replaceAll('Exception: ', '');
-        errors.add('spclient($msg)');
-        AppLogger.spotify('⚠️ Spclient failed: $e');
-      }
-    } else {
-      errors.add('jwt(no userId)');
-    }
-
-    // Fallback: official API.
     try {
-      return await ApiRetryService.retryApiCall(
-        () async {
-          AppLogger.spotify('🔄 Trying official /v1/me...');
-          final response = await HttpInterceptor.get(
-            Uri.parse('https://api.spotify.com/v1/me'),
-            headers: {
-              'Accept': 'application/json',
-              'Authorization': 'Bearer $bearerToken',
-              'Content-Type': 'application/json',
-            },
-          );
-          AppLogger.spotify('📡 /v1/me response: ${response.statusCode}');
-          if (response.statusCode == 200) {
-            return _parseUserFrom2026Api(json.decode(response.body));
-          }
-          throw Exception('/v1/me:${response.statusCode}');
-        },
-        operation: 'Get User Profile (official API)',
-      );
+      final profile = await _getUserProfileFromSpclient(bearerToken, 'me');
+      if (profile != null) {
+        AppLogger.spotify('✅ Spclient /me OK: ${profile.displayName}');
+        return profile;
+      }
+      throw Exception('spclient /me returned null');
     } catch (e) {
-      final msg = e.toString().replaceAll('Exception: ', '');
-      errors.add('official($msg)');
-      throw Exception('Profile failed: ${errors.join(' | ')}');
+      AppLogger.spotify('❌ Spclient /me failed: $e');
+      throw Exception('Profile failed: $e');
     }
   }
 
-  /// Fetches the current user profile from the spclient endpoint using
-  /// the same token and domain already used for the buddy list.
+  /// Fetches user profile from the spclient endpoint.
+  /// Pass userId = "me" to get the authenticated user's own profile.
   Future<User?> _getUserProfileFromSpclient(String bearerToken, String userId) async {
     final url = '$_baseUrl/user-profile-view/v3/profile/$userId';
     final response = await HttpInterceptor.get(
@@ -508,14 +469,19 @@ class SpotifyBuddyService {
         'User-Agent': SpotifyTokenService.userAgent,
       },
     );
-    AppLogger.spotify('📡 Spclient profile response: ${response.statusCode}');
+    AppLogger.spotify('📡 Spclient profile/$userId response: ${response.statusCode}');
     if (response.statusCode != 200) {
-      throw Exception('Spclient profile ${response.statusCode}: ${response.body}');
+      throw Exception('spclient:${response.statusCode}');
     }
     final data = json.decode(response.body) as Map<String, dynamic>;
+    // uri is "spotify:user:me" for the /me path — strip prefix to get the ID token.
+    final rawUri = data['uri'] as String? ?? '';
+    final id = rawUri.startsWith('spotify:user:')
+        ? rawUri.substring('spotify:user:'.length)
+        : (rawUri.isNotEmpty ? rawUri : userId);
     return User(
-      id: userId,
-      displayName: data['name'] as String? ?? userId,
+      id: id,
+      displayName: data['name'] as String? ?? id,
       email: 'user@spotify.com',
       imageUrl: data['image_url'] as String?,
       followers: data['followers_count'] as int? ?? 0,
@@ -523,18 +489,17 @@ class SpotifyBuddyService {
     );
   }
 
-  /// Parses user data from 2026 Spotify API response
-  /// Handles missing fields (country, email, followers were removed in Feb 2026)
+  // ignore: unused_element — kept as fallback reference for the official /v1/me schema
   User _parseUserFrom2026Api(Map<String, dynamic> data) {
     return User(
       id: JsonHelpers.getString(data, 'id'),
       displayName: JsonHelpers.getString(data, 'display_name'),
-      email: data['email'] as String? ?? 'user@spotify.com', // Removed in 2026 API
+      email: data['email'] as String? ?? 'user@spotify.com',
       imageUrl: JsonHelpers.getSpotifyImageUrl(data),
       followers: data['followers'] is Map
           ? JsonHelpers.getNestedInt(data, ['followers', 'total'])
-          : 0, // Removed in 2026 API
-      country: data['country'] as String? ?? 'US', // Removed in 2026 API
+          : 0,
+      country: data['country'] as String? ?? 'US',
     );
   }
 
