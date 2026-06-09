@@ -11,17 +11,14 @@ class LoginScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    
     return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
+      backgroundColor: AppTheme.loginBackground,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
           IconButton(
-            icon: const Icon(Icons.system_update),
+            icon: const Icon(Icons.system_update, color: AppTheme.textSecondary),
             onPressed: () => _checkForUpdates(context),
             tooltip: 'Check for Updates',
           ),
@@ -29,132 +26,74 @@ class LoginScreen extends StatelessWidget {
       ),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(24.0),
+          padding: const EdgeInsets.symmetric(horizontal: 32),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Spacer(),
-              // Playtivity Logo
-              Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: theme.primaryColor.withAlpha(64),
-                      blurRadius: 15,
-                      spreadRadius: 1,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
-                ),
+              const Spacer(flex: 2),
+              // Logo
+              Center(
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(20),
                   child: Image.asset(
                     'assets/images/playtivity_logo.png',
+                    width: 120,
+                    height: 120,
                     fit: BoxFit.contain,
                   ),
                 ),
               ),
-              
               const SizedBox(height: 32),
-              
-              // App Title
-              Text(
+              const Text(
                 'Playtivity',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: theme.colorScheme.onSurface,
-                  fontSize: 48,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: -1,
+                  color: AppTheme.textPrimary,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 32,
+                  letterSpacing: -0.5,
                 ),
               ),
-              
-              const SizedBox(height: 16),
-              
-              // Subtitle
-              Text(
+              const SizedBox(height: 12),
+              const Text(
                 'See what your friends are listening to',
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppTheme.textSecondary,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w300,
+                  fontSize: 16,
                 ),
               ),
-              
-              const SizedBox(height: 80),
-              
-              // Login Button
+              const Spacer(flex: 3),
+              // Login button
               Consumer<AuthProvider>(
-                builder: (context, authProvider, child) {
+                builder: (context, auth, _) {
+                  if (auth.isLoading) {
+                    return const Center(
+                      child: CircularProgressIndicator(color: AppTheme.primary),
+                    );
+                  }
                   return ElevatedButton.icon(
-                    onPressed: authProvider.isLoading ? null : () => _handleLogin(context),
-                    icon: authProvider.isLoading
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: Image.asset(
-                              'assets/images/playtivity_logo.png',
-                              fit: BoxFit.contain,
-                            ),
-                          ),
-                    label: Text(
-                      authProvider.isLoading ? 'Connecting...' : 'Login with Spotify',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
+                    onPressed: () => _handleLogin(context),
+                    icon: Image.asset(
+                      'assets/images/playtivity_logo_button_icon.png',
+                      width: 20,
+                      height: 20,
+                      color: AppTheme.onPrimary,
                     ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: theme.primaryColor,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      elevation: isDark ? 0 : 3,
-                      shadowColor: isDark ? Colors.transparent : theme.primaryColor.withAlpha(77),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(25),
-                      ),
-                    ),
+                    label: const Text('Log in with Spotify'),
                   );
                 },
               ),
-              
-              const SizedBox(height: 16),
-              
-              // Info Text
-              Text(
-                'You\'ll be redirected to Spotify to authorize this app',
+              const SizedBox(height: 24),
+              const Text(
+                'Playtivity uses your Spotify account',
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: AppTheme.textSecondary,
-                  fontSize: 14,
-                ),
-              ),
-              
-              const Spacer(),
-              
-              // Footer
-              Text(
-                'Made with ❤️ for music lovers',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppTheme.textSubdued,
                   fontSize: 12,
                 ),
               ),
+              const Spacer(flex: 1),
             ],
           ),
         ),
@@ -177,73 +116,45 @@ class LoginScreen extends StatelessWidget {
     );
   }
 
-  // Handle the update check process
   Future<void> _checkForUpdates(BuildContext context) async {
-    // Show loading modal
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (BuildContext dialogContext) {
-        return const AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Center(child: CircularProgressIndicator()),
-              SizedBox(height: 16),
-              Center(child: Text('Checking for updates...')),
-            ],
-          ),
-        );
-      },
+      builder: (_) => const AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Center(child: CircularProgressIndicator()),
+            SizedBox(height: 16),
+            Center(child: Text('Checking for updates...')),
+          ],
+        ),
+      ),
     );
-    
     try {
-      // Get current version info
       final currentVersion = await UpdateService.getCurrentAppVersion();
-      
-      // Check for updates
-      final updateResult = await UpdateService.checkForUpdates(forceCheck: true);
-      
-      // Hide loading dialog
-      if (context.mounted) {
-        Navigator.of(context).pop();
-      }
-      
-      if (updateResult.hasUpdate && updateResult.updateInfo != null) {
-        // Show update available dialog
-        if (!context.mounted) return;
+      final result = await UpdateService.checkForUpdates(forceCheck: true);
+      if (!context.mounted) return;
+      Navigator.of(context).pop();
+      if (result.hasUpdate && result.updateInfo != null && context.mounted) {
         final shouldUpdate = await _showUpdateDialog(
           context,
-          updateResult.updateInfo!,
+          result.updateInfo!,
           currentVersion,
         );
-        
-        if (shouldUpdate && context.mounted) {
-          // Start download with progress dialog
-          final downloadedFilePath = await showDownloadDialog(
-            context,
-            updateResult.updateInfo!,
-          );
-
-          if (downloadedFilePath != null && context.mounted) {
-            // Show installation dialog
-            final shouldInstall = await showInstallDialog(
-              context,
-              downloadedFilePath,
-            );
-            
-            if (shouldInstall) {
-              // Installation started, show final message
-              if (!context.mounted) return;
+        if (shouldUpdate == true && context.mounted) {
+          final filePath = await showDownloadDialog(context, result.updateInfo!);
+          if (filePath != null && context.mounted) {
+            final shouldInstall = await showInstallDialog(context, filePath);
+            if (shouldInstall == true && context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text('Installing update... The app will restart.'),
                   backgroundColor: Colors.green,
-                ),  
+                ),
               );
             }
           } else if (context.mounted) {
-            // Download was cancelled or failed
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('Download cancelled or failed.'),
@@ -252,19 +163,15 @@ class LoginScreen extends StatelessWidget {
             );
           }
         }
-      } else {
-        // No update available
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('You\'re running the latest version!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
+      } else if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('You\'re running the latest version!'),
+            backgroundColor: Colors.green,
+          ),
+        );
       }
     } catch (e) {
-      // Hide loading dialog and show error
       if (context.mounted) {
         Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -277,7 +184,6 @@ class LoginScreen extends StatelessWidget {
     }
   }
 
-  // Show update dialog
   Future<bool> _showUpdateDialog(
     BuildContext context,
     UpdateInfo updateInfo,
@@ -302,8 +208,6 @@ class LoginScreen extends StatelessWidget {
                 'A new ${updateInfo.isNightly ? 'nightly' : 'release'} version is available!',
               ),
               const SizedBox(height: 16),
-              
-              // Version comparison
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -330,7 +234,6 @@ class LoginScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              
               if (updateInfo.isNightly) ...[
                 const SizedBox(height: 12),
                 Container(
@@ -372,4 +275,4 @@ class LoginScreen extends StatelessWidget {
       },
     ) ?? false;
   }
-} 
+}
