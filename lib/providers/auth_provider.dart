@@ -190,8 +190,9 @@ class AuthProvider extends ChangeNotifier {
       _headers = headers;
 
       if (userProfileFetchOverride == null) {
-        _addEvent('Waiting 3s before profile fetch...');
-        await Future.delayed(const Duration(seconds: 3));
+        // Brief pause to let the token propagate before the first API call.
+        _addEvent('Waiting 500ms before profile fetch...');
+        await Future.delayed(const Duration(milliseconds: 500));
       }
 
       User? userProfile;

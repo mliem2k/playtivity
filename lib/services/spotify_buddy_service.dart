@@ -12,6 +12,7 @@ import 'app_logger.dart';
 import 'api_retry_service.dart';
 import 'cache_service.dart';
 import 'lru_cache_service.dart';
+import 'spotify_token_service.dart';
 
 class SpotifyBuddyService {
   static const String _baseUrl = 'https://guc-spclient.spotify.com';
@@ -438,40 +439,73 @@ class SpotifyBuddyService {
 
 
 
-  /// Gets current user profile using web access token
-  /// Gets user profile using Bearer token directly
-  /// Note: As of February 2026, some fields are no longer returned by the API:
-  /// - country, email, followers, product were removed
-  /// We provide default values for these fields to maintain backward compatibility
+  /// Gets current user profile using web access token.
+  /// Tries the spclient unofficial endpoint first (same token type as buddy list),
+  /// then falls back to the official API.
   Future<User?> getCurrentUserProfileWithToken(String bearerToken) async {
+    // Decode user ID from the JWT — no network call needed.
+    final userId = SpotifyTokenService.extractUserIdFromJwt(bearerToken);
+    AppLogger.spotify('🔑 JWT user id: ${userId ?? "not found"}');
+
+    if (userId != null && userId.isNotEmpty) {
+      try {
+        final profile = await _getUserProfileFromSpclient(bearerToken, userId);
+        if (profile != null) {
+          AppLogger.spotify('✅ Spclient profile OK: ${profile.displayName}');
+          return profile;
+        }
+      } catch (e) {
+        AppLogger.spotify('⚠️ Spclient profile failed, trying official API: $e');
+      }
+    }
+
+    // Fallback: official API (may require scopes the web-player token lacks).
     return ApiRetryService.retryApiCall(
       () async {
-        AppLogger.spotify('🔄 Getting user profile with Bearer token...');
-
-        final url = 'https://api.spotify.com/v1/me';
-        final headers = {
-          'Accept': 'application/json',
-          'Authorization': 'Bearer $bearerToken',
-          'Content-Type': 'application/json',
-        };
-
+        AppLogger.spotify('🔄 Trying official /v1/me...');
         final response = await HttpInterceptor.get(
-          Uri.parse(url),
-          headers: headers,
+          Uri.parse('https://api.spotify.com/v1/me'),
+          headers: {
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $bearerToken',
+            'Content-Type': 'application/json',
+          },
         );
-
-        AppLogger.spotify('📡 User profile API response: ${response.statusCode}');
-
+        AppLogger.spotify('📡 /v1/me response: ${response.statusCode}');
         if (response.statusCode == 200) {
-          final data = json.decode(response.body);
-          AppLogger.spotify('✅ Successfully fetched user profile: ${data['display_name']}');
-
-          return _parseUserFrom2026Api(data);
-        } else {
-          throw Exception('Failed to fetch user profile: ${response.statusCode} - ${response.body}');
+          return _parseUserFrom2026Api(json.decode(response.body));
         }
+        throw Exception('/v1/me failed: ${response.statusCode} - ${response.body}');
       },
-      operation: 'Get User Profile with Bearer Token',
+      operation: 'Get User Profile (official API)',
+    );
+  }
+
+  /// Fetches the current user profile from the spclient endpoint using
+  /// the same token and domain already used for the buddy list.
+  Future<User?> _getUserProfileFromSpclient(String bearerToken, String userId) async {
+    final url = '$_baseUrl/user-profile-view/v3/profile/$userId';
+    final response = await HttpInterceptor.get(
+      Uri.parse(url),
+      headers: {
+        'Authorization': 'Bearer $bearerToken',
+        'Accept': 'application/json',
+        'App-Platform': 'WebPlayer',
+        'User-Agent': SpotifyTokenService.userAgent,
+      },
+    );
+    AppLogger.spotify('📡 Spclient profile response: ${response.statusCode}');
+    if (response.statusCode != 200) {
+      throw Exception('Spclient profile ${response.statusCode}: ${response.body}');
+    }
+    final data = json.decode(response.body) as Map<String, dynamic>;
+    return User(
+      id: userId,
+      displayName: data['name'] as String? ?? userId,
+      email: 'user@spotify.com',
+      imageUrl: data['image_url'] as String?,
+      followers: data['followers_count'] as int? ?? 0,
+      country: 'US',
     );
   }
 

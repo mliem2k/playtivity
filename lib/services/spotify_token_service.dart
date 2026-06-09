@@ -2,6 +2,7 @@ import 'dart:convert' as convert;
 import 'dart:io' as io;
 import 'spotify_totp_helper.dart';
 import 'app_logger.dart';
+import 'dart:typed_data';
 
 /// Fetches Spotify Bearer tokens from an sp_dc cookie without a WebView.
 /// Used for silent token refresh on subsequent app sessions.
@@ -95,6 +96,34 @@ class SpotifyTokenService {
       client.close();
     }
     return null;
+  }
+
+  /// Decodes the JWT payload and returns the Spotify user ID from the `sub` claim.
+  /// Returns null if the token is malformed or the claim is missing.
+  static String? extractUserIdFromJwt(String token) {
+    try {
+      final parts = token.split('.');
+      if (parts.length != 3) return null;
+      var payload = parts[1];
+      // Base64url → base64: replace URL-safe chars and pad to multiple of 4
+      payload = payload.replaceAll('-', '+').replaceAll('_', '/');
+      while (payload.length % 4 != 0) {
+        payload += '=';
+      }
+      final decoded = convert.utf8.decode(
+        Uint8List.fromList(convert.base64.decode(payload)),
+      );
+      final json = convert.jsonDecode(decoded);
+      final sub = json['sub'] as String?;
+      if (sub == null || sub.isEmpty) return null;
+      // sub is either "spotify:user:<id>" or just the id
+      return sub.startsWith('spotify:user:')
+          ? sub.substring('spotify:user:'.length)
+          : sub;
+    } catch (e) {
+      AppLogger.auth('JWT decode failed: $e');
+      return null;
+    }
   }
 
   /// Extracts the sp_dc value from a Cookie header string.
