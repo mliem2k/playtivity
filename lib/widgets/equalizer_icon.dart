@@ -73,7 +73,7 @@ class _EqualizerIconState extends State<EqualizerIcon>
           3,
           (i) => AnimatedBuilder(
             animation: _animations[i],
-            builder: (_, __) => Container(
+            builder: (_, _) => Container(
               width: (widget.size - 4) / 3,
               height: widget.size * _animations[i].value,
               decoration: BoxDecoration(
