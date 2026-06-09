@@ -192,9 +192,9 @@ void main() {
       expect(activities[0].track!.imageUrl, 'https://example.com/track.jpg');
     });
 
-    test('maps durationMs', () {
+    test('durationMs is always 0 (not in buddylist response)', () {
       final activities = SpotifyBuddyService.parseFriendsJson(trackBody, nowMs: nowMs);
-      expect(activities[0].track!.durationMs, 210000);
+      expect(activities[0].track!.durationMs, 0);
     });
 
     test('maps track uri', () {
@@ -365,7 +365,7 @@ void main() {
       expect(activities[0].track!.durationMs, 0);
     });
 
-    test('isCurrentlyPlaying is false when duration_ms is absent', () {
+    test('isCurrentlyPlaying is true when elapsed < 5 minutes', () {
       const body = '''
 {
   "friends": [
@@ -377,7 +377,28 @@ void main() {
   ]
 }
 ''';
+      // elapsed = 0ms — well within the 5-minute threshold
       final activities = SpotifyBuddyService.parseFriendsJson(body, nowMs: 1780948000000);
+      expect(activities[0].isCurrentlyPlaying, isTrue);
+    });
+
+    test('isCurrentlyPlaying is false when elapsed >= 5 minutes', () {
+      const body = '''
+{
+  "friends": [
+    {
+      "timestamp": 1780948000000,
+      "user": {"uri": "spotify:user:x", "name": "X", "imageUrl": null},
+      "track": {"uri": "spotify:track:t", "name": "T", "album": {"name": "A"}, "artist": {"name": "Ar"}, "imageUrl": null}
+    }
+  ]
+}
+''';
+      // elapsed = 6 minutes — exceeds the 5-minute threshold
+      final activities = SpotifyBuddyService.parseFriendsJson(
+        body,
+        nowMs: 1780948000000 + 6 * 60 * 1000,
+      );
       expect(activities[0].isCurrentlyPlaying, isFalse);
     });
 

@@ -83,51 +83,19 @@ class AuthProvider extends ChangeNotifier {
           _addEvent('Restored saved token + headers');
 
           if (savedUserJson != null) {
+            // Trust the stored profile — it was fetched correctly via WebView JS
+            // injection at login time. Server-side re-fetching is blocked by Spotify's
+            // rate limiter (429); a stale token will surface as 401 on the first API
+            // call and trigger _trySilentRefresh at that point.
             final userMap = json.decode(savedUserJson);
             _currentUser = User.fromJson(userMap);
-            _addEvent('Restored user: ${_currentUser!.displayName}');
-
-            try {
-              _addEvent('Validating token...');
-              final testUser = await _buddyService.getCurrentUserProfileWithToken(_bearerToken!);
-              if (testUser != null && testUser.id == _currentUser!.id) {
-                _addEvent('Token valid');
-              } else {
-                _addEvent('Token invalid — trying silent refresh');
-                final didRefresh = await _trySilentRefresh();
-                if (!didRefresh) {
-                  await _clearStoredData();
-                }
-              }
-            } catch (e) {
-              _addEvent('Validation error — trying silent refresh');
-              _lastAuthError = 'Validation: $e';
-              final didRefresh = await _trySilentRefresh();
-              if (!didRefresh) {
-                await _clearStoredData();
-              }
-            }
+            _addEvent('Restored: ${_currentUser!.displayName}');
           } else {
-            _addEvent('Fetching user profile...');
-            try {
-              _currentUser = await _buddyService.getCurrentUserProfileWithToken(_bearerToken!);
-              if (_currentUser != null) {
-                _addEvent('User profile loaded: ${_currentUser!.displayName}');
-                await _prefs.setString(_userKey, json.encode(_currentUser!.toJson()));
-              } else {
-                _addEvent('Profile fetch returned null — trying silent refresh');
-                final didRefresh = await _trySilentRefresh();
-                if (!didRefresh) {
-                  await _clearStoredData();
-                }
-              }
-            } catch (e) {
-              _addEvent('Profile fetch error — trying silent refresh');
-              _lastAuthError = 'Profile fetch: $e';
-              final didRefresh = await _trySilentRefresh();
-              if (!didRefresh) {
-                await _clearStoredData();
-              }
+            // Token present but no user — try silent refresh to obtain profile.
+            _addEvent('Token without user — trying silent refresh...');
+            final didRefresh = await _trySilentRefresh();
+            if (!didRefresh) {
+              await _clearStoredData();
             }
           }
         } catch (e) {
@@ -339,20 +307,25 @@ class AuthProvider extends ChangeNotifier {
     _bearerToken = newToken;
     _headers = SpotifyTokenService.headersFromSpDc(spDc);
 
-    try {
-      final profileFetcher = userProfileFetchOverride ??
-          _buddyService.getCurrentUserProfileWithToken;
-      _currentUser = await profileFetcher(newToken);
-    } catch (e) {
-      _addEvent('Silent refresh: profile fetch failed: $e');
-      _lastAuthError = 'Silent refresh profile: $e';
-    }
-
+    // Only fetch profile when we don't already have one. Existing profile was
+    // obtained via WebView JS injection and is correct; server-side /v1/me is
+    // rate-limited (429) and spclient/profile/me returns a different account.
     if (_currentUser == null) {
-      _addEvent('Silent refresh: profile null — aborting');
-      _bearerToken = null;
-      _headers = null;
-      return false;
+      try {
+        final profileFetcher = userProfileFetchOverride ??
+            _buddyService.getCurrentUserProfileWithToken;
+        _currentUser = await profileFetcher(newToken);
+      } catch (e) {
+        _addEvent('Silent refresh: profile fetch failed: $e');
+        _lastAuthError = 'Silent refresh profile: $e';
+      }
+
+      if (_currentUser == null) {
+        _addEvent('Silent refresh: no profile — aborting');
+        _bearerToken = null;
+        _headers = null;
+        return false;
+      }
     }
 
     await _saveStoredData();

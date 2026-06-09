@@ -302,9 +302,11 @@ void main() {
       expect(savedUser['id'], 'user_123');
     });
 
-    test('sp_dc is NOT removed from SharedPreferences when token validation fails',
+    test('sp_dc is NOT removed from SharedPreferences when stored credentials are restored',
         () async {
-      // sp_dc should survive token expiry so next refreshIfNeeded can use it
+      // Token validity is checked lazily (on first API call), so stored credentials
+      // make the provider appear authenticated at startup. sp_dc must survive so
+      // refreshIfNeeded can get a new token when the first 401 hits.
       final savedUser = json.encode(TestFixtures.userJson());
       SharedPreferences.setMockInitialValues({
         'spotify_bearer_token': 'expiredToken',
@@ -314,15 +316,13 @@ void main() {
       });
       final prefs = await SharedPreferences.getInstance();
       final provider = AuthProvider(prefs);
-      // Token validation fails, silent refresh also fails
-      provider.tokenFetchOverride = (_) async => null;
-      provider.userProfileFetchOverride = (_) async => null;
 
       await _waitForInit(provider);
 
       // sp_dc must still be in prefs so a future refreshIfNeeded can try again
       expect(prefs.getString('spotify_sp_dc'), 'myDc');
-      expect(provider.isAuthenticated, isFalse);
+      // Stored credentials → considered authenticated (token expiry is lazy-checked)
+      expect(provider.isAuthenticated, isTrue);
     });
   });
 }
