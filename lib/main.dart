@@ -131,51 +131,38 @@ class _AppWrapperState extends State<AppWrapper> {
     
     return Consumer<AuthProvider>(
       builder: (context, authProvider, child) {
+        // Sync bearer token into SpotifyProvider whenever auth state changes
+        final spotifyProvider = context.read<SpotifyProvider>();
+        if (authProvider.authState == AuthState.authenticated &&
+            authProvider.bearerToken != null) {
+          spotifyProvider.setBearer(authProvider.bearerToken!);
+        } else if (authProvider.authState == AuthState.unauthenticated) {
+          spotifyProvider.clearBearer();
+        }
+
         // Debug logging for troubleshooting
         AppLogger.debug('🔍 AppWrapper rebuild - AuthProvider state:');
-        AppLogger.debug('   - isInitialized: ${authProvider.isInitialized}');
-        AppLogger.debug('   - isLoading: ${authProvider.isLoading}');
+        AppLogger.debug('   - authState: ${authProvider.authState}');
         AppLogger.debug('   - isAuthenticated: ${authProvider.isAuthenticated}');
         AppLogger.debug('   - currentUser: ${authProvider.currentUser?.displayName ?? 'null'}');
         AppLogger.debug('   - bearerToken exists: ${authProvider.bearerToken != null}');
-        
-        // Only verify authentication state on app resume, not immediately after login
-        // This prevents the user from being kicked out right after successful login
-        // The verification will happen when the app is resumed from background
-        
-        // Show loading screen while authentication is being initialized or in progress
-        if (!authProvider.isInitialized || authProvider.isLoading) {
-          AppLogger.info('📱 Showing loading screen...');
-          return const Scaffold(
-            body: SafeArea(
-              child: Center(
+
+        return switch (authProvider.authState) {
+          AuthState.uninitialized || AuthState.loading => const Scaffold(
+              body: Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     CircularProgressIndicator(),
                     SizedBox(height: 16),
-                    Text(
-                      'Loading...',
-                      style: TextStyle(fontSize: 16),
-                    ),
+                    Text('Loading...', style: TextStyle(fontSize: 16)),
                   ],
                 ),
               ),
             ),
-          );
-        }
-        
-        // Add explicit check with fallback
-        final isAuth = authProvider.isAuthenticated;
-        AppLogger.debug('📊 Final authentication decision: $isAuth');
-        
-        if (isAuth) {
-          AppLogger.info('📱 Showing MainNavigationScreen...');
-          return const MainNavigationScreen();
-        } else {
-          AppLogger.info('📱 Showing LoginScreen...');
-          return const LoginScreen();
-        }
+          AuthState.authenticated => const MainNavigationScreen(),
+          AuthState.unauthenticated => const LoginScreen(),
+        };
       },
     );
   }
@@ -221,33 +208,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Widget
     super.didChangeAppLifecycleState(state);
     
     if (state == AppLifecycleState.resumed) {
-      AppLogger.info('📱 App resumed, verifying authentication...');
-      // Verify authentication when app resumes, but only if we're not in an active login flow
+      AppLogger.info('📱 App resumed, refreshing if needed...');
       WidgetsBinding.instance.addPostFrameCallback((_) async {
-        if (mounted) {
-          final authProvider = Provider.of<AuthProvider>(context, listen: false);
-          
-          // Skip verification if user is actively logging in or if auth provider is not initialized
-          if (authProvider.isLoading || !authProvider.isInitialized) {
-            AppLogger.info('⚠️ Skipping auth verification - login in progress or not initialized');
-            return;
-          }
-          
-          // Only verify if we think we should be authenticated
-          if (authProvider.isAuthenticated) {
-            AppLogger.info('🔄 Verifying existing authentication...');
-            final isValid = await authProvider.verifyAndRefreshAuth();
-            if (!isValid) {
-              AppLogger.info('⚠️ Authentication invalid after app resume - clearing state');
-              // Clear the authentication state but don't force logout
-              // This allows the user to login again if needed
-              await authProvider.resetAuthenticationState();
-            } else {
-              AppLogger.info('✅ Authentication verified successfully after app resume');
-            }
-          } else {
-            AppLogger.info('ℹ️ No authentication to verify - user not logged in');
-          }
+        if (!mounted) return;
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        if (authProvider.authState == AuthState.authenticated) {
+          await authProvider.refreshIfNeeded();
         }
       });
     }

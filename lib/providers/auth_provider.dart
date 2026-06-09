@@ -1,29 +1,27 @@
 import 'dart:convert';
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:provider/provider.dart';
 import '../services/spotify_buddy_service.dart';
 import '../models/user.dart';
-import '../services/spotify_service.dart';
 import '../services/spotify_token_service.dart';
 import '../services/app_logger.dart';
-import 'spotify_provider.dart';
+
+enum AuthState { uninitialized, loading, authenticated, unauthenticated }
 
 class AuthProvider extends ChangeNotifier {
   static const String _bearerTokenKey = 'spotify_bearer_token';
   static const String _headersKey = 'spotify_headers';
   static const String _userKey = 'spotify_user';
   static const String _spDcKey = 'spotify_sp_dc';
-  
+
   final SharedPreferences _prefs;
   final SpotifyBuddyService _buddyService = SpotifyBuddyService();
-  
+
   String? _bearerToken;
   Map<String, String>? _headers;
   User? _currentUser;
   String? _spDc;
-  bool _isLoading = false;
-  bool _isInitialized = false;
+  AuthState _authState = AuthState.uninitialized;
 
   /// Injectable token fetcher — override in tests to avoid real network calls.
   @visibleForTesting
@@ -39,40 +37,27 @@ class AuthProvider extends ChangeNotifier {
     Future.microtask(_initializeAuth);
   }
 
-  bool get isAuthenticated {
-    if (!_isInitialized) {
-      AppLogger.auth('isAuthenticated: false (not initialized)');
-      return false;
-    }
-    
-    // Check for Bearer token authentication
-    final hasToken = _bearerToken != null && _bearerToken!.isNotEmpty;
-    final hasUser = _currentUser != null;
-    
-    // Also verify the buddy service has the token
-    final buddyServiceToken = _buddyService.getBearerToken();
-    final buddyServiceHasToken = buddyServiceToken != null && buddyServiceToken.isNotEmpty;
-    
-    final tokenAuth = hasToken && hasUser && buddyServiceHasToken;
-    
-    return tokenAuth;
-  }
-  bool get isLoading => _isLoading;
-  bool get isInitialized => _isInitialized;
+  AuthState get authState => _authState;
+  bool get isAuthenticated => _authState == AuthState.authenticated;
+  bool get isLoading => _authState == AuthState.loading;
+  bool get isInitialized => _authState != AuthState.uninitialized;
   User? get currentUser => _currentUser;
   String? get bearerToken => _bearerToken;
   Map<String, String>? get headers => _headers;
 
   Future<void> _initializeAuth() async {
+    _authState = AuthState.loading;
+    notifyListeners();
+
     try {
       AppLogger.auth('Starting authentication initialization...');
       _loadStoredData();
-      
+
       // Load saved Bearer token and headers if available
       final savedBearerToken = _prefs.getString(_bearerTokenKey);
       final savedHeadersJson = _prefs.getString(_headersKey);
       final savedUserJson = _prefs.getString(_userKey);
-      
+
       // Restore sp_dc regardless of whether a token is present
       _spDc = _prefs.getString(_spDcKey);
 
@@ -80,7 +65,6 @@ class AuthProvider extends ChangeNotifier {
         try {
           _bearerToken = savedBearerToken;
           _headers = Map<String, String>.from(json.decode(savedHeadersJson));
-          _buddyService.setBearerToken(savedBearerToken, _headers!);
           AppLogger.auth('Restored saved Bearer token and headers');
 
           // Try to load saved user profile
@@ -144,25 +128,20 @@ class AuthProvider extends ChangeNotifier {
         AppLogger.auth('No stored token found, attempting silent refresh with sp_dc...');
         await _trySilentRefresh();
       }
-      
+
       AppLogger.auth('Initialization complete. Final state:');
       AppLogger.auth('   - Has Bearer token: ${_bearerToken != null}');
       AppLogger.auth('   - Has user: ${_currentUser != null}');
       AppLogger.auth('   - User name: ${_currentUser?.displayName ?? 'none'}');
-      
+
     } catch (e) {
       AppLogger.error('Error during auth initialization', e);
     } finally {
-      _isInitialized = true;
+      _authState = _bearerToken != null && _currentUser != null
+          ? AuthState.authenticated
+          : AuthState.unauthenticated;
       AppLogger.auth('AuthProvider initialization completed');
       notifyListeners();
-      
-      // Additional notification after a short delay to ensure UI updates
-      Future.delayed(const Duration(milliseconds: 50), () {
-        if (!_isLoading) { // Only notify if not in an active auth flow
-          notifyListeners();
-        }
-      });
     }
   }
 
@@ -173,23 +152,16 @@ class AuthProvider extends ChangeNotifier {
     _prefs.remove('spotify_access_token');
     _prefs.remove('spotify_refresh_token');
     _prefs.remove('spotify_token_expiry');
-    
+
     AppLogger.auth('Old authentication data cleaned up');
   }
 
-  void startLogin() {
-    _isLoading = true;
+  Future<void> loginComplete(String bearerToken, Map<String, String> headers) async {
+    _authState = AuthState.loading;
     notifyListeners();
-  }
 
-  void cancelLogin() {
-    _isLoading = false;
-    notifyListeners();
-  }
-
-  Future<void> handleAuthComplete(String bearerToken, Map<String, String> headers) async {
     try {
-      AppLogger.auth('handleAuthComplete called with:');
+      AppLogger.auth('loginComplete called with:');
       AppLogger.auth('   - bearerToken: "${bearerToken.length > 20 ? bearerToken.substring(0, 20) : bearerToken}..." (length: ${bearerToken.length})');
       AppLogger.auth('   - headers: ${headers.keys.join(', ')}');
       AppLogger.auth('   - headers Cookie exists: ${headers.containsKey('Cookie')}');
@@ -198,12 +170,12 @@ class AuthProvider extends ChangeNotifier {
       AppLogger.auth('   - headers Cookie length: ${headers['Cookie']?.length ?? 0}');
 
       AppLogger.auth('Processing Bearer token authentication...');
-      
+
       // Validate the bearer token
       if (bearerToken.isEmpty || bearerToken.length < 50) {
         throw Exception('Invalid bearer token provided');
       }
-      
+
       // Extract and persist sp_dc for future silent refreshes
       final cookieHeader = headers['Cookie'] ?? '';
       final extractedSpDc = SpotifyTokenService.extractSpDc(cookieHeader);
@@ -216,18 +188,6 @@ class AuthProvider extends ChangeNotifier {
       _bearerToken = bearerToken;
       _headers = headers;
 
-      // Set the Bearer token directly in buddy service
-      _buddyService.setBearerToken(bearerToken, headers);
-      
-      // Verify the buddy service has the token properly set
-      AppLogger.auth('Verifying buddy service token after setting...');
-      final buddyServiceToken = _buddyService.getBearerToken();
-      if (buddyServiceToken == null || buddyServiceToken.isEmpty) {
-        throw Exception('Failed to set Bearer token in buddy service');
-      } else {
-        AppLogger.auth('Buddy service token verified: ${buddyServiceToken.length > 20 ? buddyServiceToken.substring(0, 20) : buddyServiceToken}...');
-      }
-      
       // Fetch user profile using Bearer token with retry logic
       AppLogger.auth('Fetching user profile with Bearer token...');
 
@@ -273,74 +233,42 @@ class AuthProvider extends ChangeNotifier {
           }
         }
       }
-      
+
       if (userProfile == null) {
         throw Exception('Failed to load user profile after multiple attempts');
       }
-      
+
       _currentUser = userProfile;
-      
+
       // Save the data to persistent storage
       await _saveStoredData();
-      
+
       AppLogger.auth('Bearer token authentication complete - token and user profile stored');
-      
-      // Ensure initialization is complete and clear loading state
-      _isInitialized = true;
-      _isLoading = false;
-      
-      AppLogger.auth('AuthProvider state after completion:');
-      AppLogger.auth('   - isAuthenticated: $isAuthenticated');
-      AppLogger.auth('   - isInitialized: $_isInitialized');
-      AppLogger.auth('   - isLoading: $_isLoading');
-      AppLogger.auth('   - currentUser: ${_currentUser?.displayName ?? 'null'}');
-      
-      // Notify listeners once with the final state
-      notifyListeners();
-      
-      // Simplified verification - just check that we have the basic requirements
-      // Removed complex retry logic that was causing race conditions
-      await Future.delayed(const Duration(milliseconds: 100));
-      
-      // Final verification with more robust error handling for long idle scenarios
-      final hasToken = _bearerToken != null && _bearerToken!.isNotEmpty;
-      final hasUser = _currentUser != null;
-      final isInitComplete = _isInitialized;
-      final finalBuddyServiceToken = _buddyService.getBearerToken();
-      final buddyServiceHasToken = finalBuddyServiceToken != null && finalBuddyServiceToken.isNotEmpty;
-      
-      AppLogger.auth('Final verification check:');
-      AppLogger.auth('   - hasToken: $hasToken');
-      AppLogger.auth('   - hasUser: $hasUser');
-      AppLogger.auth('   - isInitialized: $isInitComplete');
-      AppLogger.auth('   - buddyServiceHasToken: $buddyServiceHasToken');
-      
-      if (!hasToken || !hasUser || !isInitComplete || !buddyServiceHasToken) {
-        throw Exception('Authentication verification failed after completion - Token: $hasToken, User: $hasUser, Init: $isInitComplete, BuddyService: $buddyServiceHasToken');
-      }
-      
+
+      _authState = AuthState.authenticated;
       AppLogger.auth('Authentication flow completed successfully');
-      
+
     } catch (e) {
-      AppLogger.error('Error in handleAuthComplete', e);
-      
+      AppLogger.error('Error in loginComplete', e);
+
       // Clean up on error
       _bearerToken = null;
       _headers = null;
       _currentUser = null;
-      _isLoading = false;
-      
+
       // Ensure we clear any potentially corrupted stored data
       await _clearStoredData();
-      
-      notifyListeners();
+
+      _authState = AuthState.unauthenticated;
       rethrow;
+    } finally {
+      notifyListeners();
     }
   }
 
   Future<void> _saveStoredData() async {
     AppLogger.auth('Saving auth data to storage...');
-    
+
     if (_bearerToken != null) {
       await _prefs.setString(_bearerTokenKey, _bearerToken!);
       AppLogger.auth('Bearer token saved successfully');
@@ -366,7 +294,7 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> _clearStoredData() async {
     AppLogger.auth('Clearing stored auth data...');
-    
+
     await _prefs.remove(_bearerTokenKey);
     await _prefs.remove(_headersKey);
     await _prefs.remove(_userKey);
@@ -382,97 +310,24 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> logout() async {
     AppLogger.auth('Logging out and clearing all auth data...');
-    
-    // Set loading state to prevent race conditions
-    _isLoading = true;
-    notifyListeners();
-    
     await _clearStoredData();
     await _prefs.remove(_spDcKey);
     _spDc = null;
-
-    // Clean up buddy service (this now clears all cached data)
-    _buddyService.clearBearerToken();
-    
-    // Ensure all state is properly reset
-    _isLoading = false;
-    
-    AppLogger.auth('All auth data cleared successfully');
-    AppLogger.auth('Post-logout state:');
-    AppLogger.auth('   - isAuthenticated: $isAuthenticated');
-    AppLogger.auth('   - isInitialized: $_isInitialized');
-    AppLogger.auth('   - isLoading: $_isLoading');
-    AppLogger.auth('   - currentUser: ${_currentUser?.displayName ?? 'null'}');
-    
-    // Force multiple notifications to ensure UI updates
-    notifyListeners();
-    
-    // Additional notification after a short delay to handle race conditions
-    await Future.delayed(const Duration(milliseconds: 50));
-    notifyListeners();
-    
-    // Final notification to ensure all consumers are updated
-    await Future.delayed(const Duration(milliseconds: 100));
+    _buddyService.clearActivityCache();
+    _authState = AuthState.unauthenticated;
     notifyListeners();
   }
 
-  /// Re-authenticate when token expires or is invalid.
-  /// Tries silent refresh first; returns false only if WebView login is required.
-  Future<bool> reAuthenticate() async {
-    AppLogger.auth('Re-authentication requested...');
-
-    try {
-      _bearerToken = null;
-      _headers = null;
-      _currentUser = null;
-      _buddyService.clearBearerToken();
-
-      _isLoading = true;
-      notifyListeners();
-
-      final didRefresh = await _trySilentRefresh();
-      if (didRefresh) {
-        AppLogger.auth('Silent re-authentication succeeded');
-        return true;
-      }
-
-      AppLogger.warning('Silent refresh failed — WebView login required');
-      return false;
-    } catch (e) {
-      AppLogger.error('Error during re-authentication', e);
-      return false;
-    } finally {
-      _isLoading = false;
+  /// Refresh the token if currently authenticated. Returns false if not
+  /// authenticated or if the silent refresh fails.
+  Future<bool> refreshIfNeeded() async {
+    if (_authState != AuthState.authenticated) return false;
+    final ok = await _trySilentRefresh();
+    if (!ok) {
+      _authState = AuthState.unauthenticated;
       notifyListeners();
     }
-  }
-
-  /// Check if token needs refresh and handle it
-  Future<bool> ensureValidAuthentication() async {
-    if (!isAuthenticated) {
-      AppLogger.warning('No valid authentication, re-authentication needed');
-      return false;
-    }
-    
-    // Test if current token is still valid by making a simple API call
-    try {
-      await _buddyService.getCurrentUserProfileWithToken(_bearerToken!);
-      AppLogger.auth('Current authentication is valid');
-      return true;
-    } catch (e) {
-      try {
-        // Fallback to SpotifyService
-        final spotifyService = SpotifyService();
-        await spotifyService.getCurrentUser(_bearerToken!);
-        AppLogger.auth('Current authentication is valid (via fallback)');
-        return true;
-      } catch (fallbackError) {
-        AppLogger.warning('Current authentication invalid: $e');
-        AppLogger.warning('Fallback also failed: $fallbackError');
-        AppLogger.auth('Attempting re-authentication...');
-        return await reAuthenticate();
-      }
-    }
+    return ok;
   }
 
   /// Attempts to silently obtain a fresh Bearer token using the stored sp_dc.
@@ -495,7 +350,6 @@ class AuthProvider extends ChangeNotifier {
     _spDc = spDc;
     _bearerToken = newToken;
     _headers = SpotifyTokenService.headersFromSpDc(spDc);
-    _buddyService.setBearerToken(newToken, _headers!);
 
     try {
       final profileFetcher = userProfileFetchOverride ??
@@ -509,7 +363,6 @@ class AuthProvider extends ChangeNotifier {
       AppLogger.warning('Silent refresh produced token but could not fetch user profile');
       _bearerToken = null;
       _headers = null;
-      _buddyService.clearBearerToken();
       return false;
     }
 
@@ -517,161 +370,5 @@ class AuthProvider extends ChangeNotifier {
     AppLogger.auth('Silent refresh complete: ${_currentUser!.displayName}');
     notifyListeners();
     return true;
-  }
-
-  /// Debug method to print current authentication state
-  void debugAuthState() {
-    AppLogger.auth('=== AuthProvider Debug State ===');
-    AppLogger.auth('   - isInitialized: $_isInitialized');
-    AppLogger.auth('   - isLoading: $_isLoading');
-    AppLogger.auth('   - isAuthenticated: $isAuthenticated');
-    AppLogger.auth('   - hasBearerToken: ${_bearerToken != null}');
-    AppLogger.auth('   - bearerToken: ${_bearerToken == null ? 'null' : (_bearerToken!.length > 20 ? _bearerToken!.substring(0, 20) : _bearerToken!)}...');
-    AppLogger.auth('   - currentUser: ${_currentUser?.displayName ?? 'null'}');
-    AppLogger.auth('   - currentUserId: ${_currentUser?.id ?? 'null'}');
-    AppLogger.auth('   - userEmail: ${_currentUser?.email ?? 'null'}');
-    AppLogger.auth('=================================');
-  }
-
-  /// Global method to reset authentication state after 401 errors
-  /// This can be called from anywhere in the app to recover from auth failures
-  Future<void> resetAuthenticationState() async {
-    AppLogger.auth('Resetting authentication state after error...');
-    
-    try {
-      // Clear all stored authentication data
-      await _clearStoredData();
-      
-      // Clear buddy service state and caches
-      _buddyService.clearBearerToken();
-      
-      // Reset internal state variables
-      _bearerToken = null;
-      _headers = null;
-      _currentUser = null;
-      _isLoading = false;
-      // Keep _isInitialized = true so the app doesn't show loading screen
-      
-      AppLogger.auth('Authentication state reset completed');
-      AppLogger.auth('Post-reset state:');
-      AppLogger.auth('   - isAuthenticated: $isAuthenticated');
-      AppLogger.auth('   - isInitialized: $_isInitialized');
-      AppLogger.auth('   - bearerToken: ${_bearerToken ?? 'null'}');
-      AppLogger.auth('   - currentUser: ${_currentUser?.displayName ?? 'null'}');
-      
-      // Notify all listeners that auth state has changed
-      notifyListeners();
-      
-      // Additional notification to ensure all UI components update
-      await Future.delayed(const Duration(milliseconds: 50));
-      notifyListeners();
-      
-    } catch (e) {
-      AppLogger.error('Error during authentication state reset', e);
-      // Even if there's an error, ensure we're in a clean state
-      _bearerToken = null;
-      _headers = null;
-      _currentUser = null;
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
-  /// Force logout with complete state reset and navigation
-  Future<void> forceLogoutAndNavigate(BuildContext context) async {
-    if (!context.mounted) return;
-    
-    AppLogger.auth('Force logout initiated...');
-    
-    // Set loading state
-    _isLoading = true;
-    notifyListeners();
-    
-    // Clear SpotifyProvider state first
-    try {
-      final spotifyProvider = Provider.of<SpotifyProvider>(context, listen: false);
-      spotifyProvider.clearError();
-      spotifyProvider.clearAuthError();
-      AppLogger.auth('Cleared SpotifyProvider cached state');
-    } catch (e) {
-      AppLogger.warning('Could not clear SpotifyProvider state: $e');
-    }
-    
-    // Clear all stored data
-    await _clearStoredData();
-    
-    // Reset all state variables
-    _bearerToken = null;
-    _headers = null;
-    _currentUser = null;
-    
-    AppLogger.auth('All auth data cleared, forcing navigation...');
-    
-    // Force multiple notifications
-    notifyListeners();
-    
-    // Only navigate if the context is still valid
-    if (context.mounted) {
-      // Navigate to login screen and clear all routes
-      Navigator.of(context).pushNamedAndRemoveUntil(
-        '/login',
-        (route) => false,
-      );
-      AppLogger.auth('Navigation completed to login screen');
-    }
-    
-    // Clear loading state
-    _isLoading = false;
-    notifyListeners();
-  }
-
-  /// Verify authentication state and refresh if needed
-  /// This can be called when app resumes or when we need to verify auth status
-  Future<bool> verifyAndRefreshAuth() async {
-    AppLogger.auth('Verifying and refreshing authentication state...');
-    
-    if (!_isInitialized) {
-      AppLogger.warning('Auth not initialized yet, skipping verification');
-      return false;
-    }
-    
-    // If we don't have basic auth data, we're not authenticated
-    if (_bearerToken == null || _currentUser == null) {
-      AppLogger.warning('Missing basic auth data (token or user)');
-      return false;
-    }
-    
-    try {
-      // Test the current token by making an API call
-      AppLogger.auth('Testing current authentication with API call...');
-      final testUser = await _buddyService.getCurrentUserProfileWithToken(_bearerToken!);
-      
-      if (testUser != null && testUser.id == _currentUser!.id) {
-        AppLogger.auth('Authentication verified successfully');
-
-        _currentUser = testUser;
-        await _prefs.setString(_userKey, json.encode(_currentUser!.toJson()));
-        notifyListeners();
-
-        return true;
-      } else {
-        AppLogger.warning('Authentication test failed - attempting silent refresh');
-        final didRefresh = await _trySilentRefresh();
-        if (!didRefresh) {
-          await _clearStoredData();
-          notifyListeners();
-        }
-        return didRefresh;
-      }
-    } catch (e) {
-      AppLogger.error('Authentication verification failed - attempting silent refresh', e);
-
-      final didRefresh = await _trySilentRefresh();
-      if (!didRefresh) {
-        await _clearStoredData();
-        notifyListeners();
-      }
-      return didRefresh;
-    }
   }
 }

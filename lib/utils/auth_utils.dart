@@ -36,10 +36,10 @@ class AuthUtils {
     final authProvider = context.read<AuthProvider>();
       try {
       AppLogger.auth('Starting re-authentication flow...');
-      
+
       // Clear old authentication data
       await authProvider.logout();
-      
+
       // Show WebView login
       if (!context.mounted) return false;
       final result = await Navigator.of(context).push<bool>(
@@ -48,9 +48,9 @@ class AuthUtils {
             onAuthComplete: (bearerToken, headers) async {
               AppLogger.auth('Re-authentication completed, processing...');
               try {
-                await authProvider.handleAuthComplete(bearerToken, headers);
+                await authProvider.loginComplete(bearerToken, headers);
                 AppLogger.auth('Re-authentication successful');
-                
+
                 // Pop the WebView
                 if (context.mounted && Navigator.canPop(context)) {
                   Navigator.of(context).pop(true);
@@ -72,7 +72,7 @@ class AuthUtils {
             },
           ),
         ),
-      );      
+      );
       return result == true;
     } catch (e) {
       AppLogger.error('Error during re-authentication flow', e);
@@ -93,35 +93,24 @@ class AuthUtils {
     final authProvider = context.read<AuthProvider>();
       if (!authProvider.isAuthenticated) {
       AppLogger.auth('Authentication required');
-      
+
       final shouldReAuth = await showReAuthDialog(context);
       if (shouldReAuth && context.mounted) {
         return await handleReAuthentication(context);
       }
       return false;
     }
-    
+
     return true;
   }
 
-  /// Handles 401/403 errors by immediately navigating to login screen
-  /// This should be called when authentication errors are detected
+  /// Handles 401/403 errors by logging out and navigating to login screen.
   static Future<void> handleAuthenticationError(BuildContext context, {String? errorMessage}) async {
     AppLogger.auth('Authentication error detected: ${errorMessage ?? "401/403 error"}');
-    
+
     try {
       final authProvider = context.read<AuthProvider>();
-      
-      // First, try to reset authentication state without navigation
-      // This clears all cached data and tokens but keeps the user in the app
-      await authProvider.resetAuthenticationState();
-      
-      // If we're in a context where we can navigate, force logout and navigate
-      if (context.mounted) {
-        await authProvider.forceLogoutAndNavigate(context);
-      }
-      
-      // Show a brief message about the authentication error
+      await authProvider.logout();
       if (context.mounted && errorMessage != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -133,14 +122,9 @@ class AuthUtils {
       }
     } catch (e) {
       AppLogger.error('Error handling authentication error', e);
-      
-      // Fallback: try to navigate directly
       if (context.mounted) {
-        Navigator.of(context).pushNamedAndRemoveUntil(
-          '/login',
-          (route) => false,
-        );
+        Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
       }
     }
   }
-} 
+}
