@@ -4,16 +4,10 @@ import '../providers/auth_provider.dart';
 import '../utils/theme.dart';
 import '../widgets/spotify_webview_login.dart';
 import '../services/update_service.dart';
+import '../services/app_logger.dart';
 
-class LoginScreen extends StatefulWidget {
+class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
-
-  @override
-  State<LoginScreen> createState() => _LoginScreenState();
-}
-
-class _LoginScreenState extends State<LoginScreen> {
-  bool _isNavigating = false;
 
   @override
   Widget build(BuildContext context) {
@@ -97,10 +91,9 @@ class _LoginScreenState extends State<LoginScreen> {
               // Login Button
               Consumer<AuthProvider>(
                 builder: (context, authProvider, child) {
-                  final busy = authProvider.isLoading || _isNavigating;
                   return ElevatedButton.icon(
-                    onPressed: busy ? null : () => _handleLogin(context),
-                    icon: busy
+                    onPressed: authProvider.isLoading ? null : () => _handleLogin(context),
+                    icon: authProvider.isLoading
                         ? const SizedBox(
                             width: 20,
                             height: 20,
@@ -118,7 +111,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                     label: Text(
-                      busy ? 'Connecting...' : 'Login with Spotify',
+                      authProvider.isLoading ? 'Connecting...' : 'Login with Spotify',
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -171,22 +164,17 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _handleLogin(BuildContext context) async {
     if (!context.mounted) return;
-    setState(() => _isNavigating = true);
-    try {
-      await Navigator.of(context).push<bool>(
-        MaterialPageRoute(
-          builder: (context) => SpotifyWebViewLogin(
-            onAuthComplete: (bearerToken, headers) async {
-              final authProvider = context.read<AuthProvider>();
-              await authProvider.loginComplete(bearerToken, headers);
-            },
-            onCancel: () => Navigator.of(context).pop(false),
-          ),
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (context) => SpotifyWebViewLogin(
+          onAuthComplete: (bearerToken, headers) async {
+            final authProvider = context.read<AuthProvider>();
+            await authProvider.loginComplete(bearerToken, headers);
+          },
+          onCancel: () => Navigator.of(context).pop(false),
         ),
-      );
-    } finally {
-      if (mounted) setState(() => _isNavigating = false);
-    }
+      ),
+    );
   }
 
   // Handle the update check process

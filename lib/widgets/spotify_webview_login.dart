@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:provider/provider.dart';
@@ -25,6 +26,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
   bool _completed = false;
   bool _processingAuth = false;
   String _processingStep = '';
+  InAppWebViewController? _webViewController;
 
   @override
   Widget build(BuildContext context) {
@@ -75,6 +77,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                         'https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F',
                       ),
                     ),
+                    onWebViewCreated: (c) => _webViewController = c,
                     onLoadStart: (_, _) => setState(() {
                       _isLoading = true;
                       _error = null;
@@ -146,6 +149,40 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
 
       _completed = true;
       final headers = SpotifyTokenService.headersFromSpDc(spDcCookie.value);
+
+      // Try to fetch user profile from within the browser context — avoids the
+      // server-side rate limit that blocks api.spotify.com/v1/me from Dart code.
+      if (_webViewController != null) {
+        try {
+          AppLogger.auth('Injecting JS to fetch /v1/me...');
+          final result = await _webViewController!.callAsyncJavaScript(
+            functionBody: '''
+              try {
+                const resp = await fetch('https://api.spotify.com/v1/me', {
+                  headers: { 'Authorization': 'Bearer $token', 'Accept': 'application/json' }
+                });
+                if (!resp.ok) return null;
+                const d = await resp.json();
+                return {
+                  id: d.id,
+                  displayName: d.display_name,
+                  imageUrl: (d.images && d.images.length > 0) ? d.images[0].url : null,
+                  country: d.country || null,
+                  followers: d.followers ? d.followers.total : 0
+                };
+              } catch(e) { return null; }
+            ''',
+          );
+          final userMap = result?.value;
+          if (userMap is Map && (userMap['id'] as String?)?.isNotEmpty == true) {
+            headers['x-prefetched-user'] = jsonEncode(Map<String, dynamic>.from(userMap));
+            AppLogger.auth('JS /v1/me OK: ${userMap["displayName"]}');
+          }
+        } catch (e) {
+          AppLogger.auth('JS /v1/me failed: $e');
+        }
+      }
+
       if (!mounted) return;
       if (mounted) setState(() => _processingStep = 'Loading your profile...');
       try {

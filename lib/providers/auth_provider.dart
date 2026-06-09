@@ -190,17 +190,42 @@ class AuthProvider extends ChangeNotifier {
       _bearerToken = bearerToken;
       _headers = headers;
 
-      if (userProfileFetchOverride == null) {
-        // Brief pause to let the token propagate before the first API call.
-        _addEvent('Waiting 500ms before profile fetch...');
-        await Future.delayed(const Duration(milliseconds: 500));
+      User? userProfile;
+
+      // WebView pre-fetched profile via JS injection (avoids server-side rate limit).
+      final prefetchedJson = headers['x-prefetched-user'];
+      if (prefetchedJson != null) {
+        try {
+          final m = json.decode(prefetchedJson) as Map<String, dynamic>;
+          final id = m['id'] as String? ?? '';
+          if (id.isNotEmpty) {
+            userProfile = User(
+              id: id,
+              displayName: m['displayName'] as String? ?? id,
+              email: 'user@spotify.com',
+              imageUrl: m['imageUrl'] as String?,
+              followers: m['followers'] as int? ?? 0,
+              country: m['country'] as String? ?? 'US',
+            );
+            _addEvent('Profile from WebView JS: ${userProfile.displayName}');
+          }
+        } catch (e) {
+          _addEvent('Failed to parse prefetched user: $e');
+        }
       }
 
-      User? userProfile;
+      if (userProfile == null) {
+        if (userProfileFetchOverride == null) {
+          // Brief pause to let the token propagate before the first API call.
+          _addEvent('Waiting 500ms before profile fetch...');
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
+      }
+
       final profileFetcher = userProfileFetchOverride ??
           _buddyService.getCurrentUserProfileWithToken;
 
-      for (int attempt = 1; attempt <= 5; attempt++) {
+      for (int attempt = 1; attempt <= 5 && userProfile == null; attempt++) {
         try {
           _addEvent('Profile fetch attempt $attempt/5...');
           userProfile = await profileFetcher(_bearerToken!);
