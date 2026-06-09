@@ -158,10 +158,19 @@ class HomeScreenDataSelector extends StatelessWidget {
         error: spotifyProvider.error,
       ),
       shouldRebuild: (previous, next) {
-        return previous.isAuthenticated != next.isAuthenticated ||
-               previous.isLoading != next.isLoading ||
-               previous.activities.length != next.activities.length ||
-               previous.error != next.error;
+        if (previous.isAuthenticated != next.isAuthenticated ||
+            previous.isLoading != next.isLoading ||
+            previous.error != next.error) return true;
+        if (previous.activities.length != next.activities.length) return true;
+        for (int i = 0; i < previous.activities.length; i++) {
+          if (previous.activities[i].isCurrentlyPlaying !=
+                  next.activities[i].isCurrentlyPlaying ||
+              previous.activities[i].timestamp != next.activities[i].timestamp ||
+              previous.activities[i].contentUri != next.activities[i].contentUri) {
+            return true;
+          }
+        }
+        return false;
       },
       builder: (context, data, child) => builder(
         context,
