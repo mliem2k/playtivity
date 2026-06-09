@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../providers/auth_provider.dart';
-import '../providers/theme_provider.dart';
 import '../providers/spotify_provider.dart';
 import '../services/update_service.dart';
 import '../widgets/update/update_dialogs.dart';
@@ -44,48 +43,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
       body: SafeArea(
-        child: Consumer2<ThemeProvider, AuthProvider>(
-          builder: (context, themeProvider, authProvider, child) {
+        child: Consumer<AuthProvider>(
+          builder: (context, authProvider, child) {
             return ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                // Appearance Section
-                Card(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Text(
-                          'Appearance',
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      ListTile(
-                        leading: Icon(
-                          themeProvider.isDarkMode 
-                              ? Icons.dark_mode 
-                              : Icons.light_mode,
-                        ),
-                        title: const Text('Dark Mode'),
-                        subtitle: Text(
-                          themeProvider.isDarkMode ? 'Enabled' : 'Disabled',
-                        ),
-                        trailing: Switch(
-                          value: themeProvider.isDarkMode,
-                          onChanged: (value) {
-                            themeProvider.toggleTheme();
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                
-                const SizedBox(height: 16),
-                
                 // Account Section
                 Card(
                   child: Column(
