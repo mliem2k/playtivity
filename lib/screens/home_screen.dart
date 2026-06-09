@@ -131,14 +131,7 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
     );
   }
 
-  Widget _buildSkeletonSliver() {
-    return SliverList(
-      delegate: SliverChildBuilderDelegate(
-        (_, _) => const ActivitySkeleton(),
-        childCount: 6,
-      ),
-    );
-  }
+  Widget _buildSkeletonSliver() => const _SkeletonList();
 
   Widget _buildActivityList(List<Activity> activities) {
     return SliverList(
@@ -216,6 +209,47 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
               child: const Text('Try again',
                   style: TextStyle(color: AppTheme.primary)),
             ),
+    );
+  }
+}
+
+class _SkeletonList extends StatefulWidget {
+  const _SkeletonList();
+
+  @override
+  State<_SkeletonList> createState() => _SkeletonListState();
+}
+
+class _SkeletonListState extends State<_SkeletonList>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat(reverse: true);
+    _animation = Tween<double>(begin: 0.4, end: 0.8).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (_, _) => ActivitySkeleton(animation: _animation),
+        childCount: 6,
+      ),
     );
   }
 }
