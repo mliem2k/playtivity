@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../utils/update_launcher.dart';
+import '../../utils/update_launcher.dart';
 
 class UpdateDialogHandler extends StatefulWidget {
   final Widget child;

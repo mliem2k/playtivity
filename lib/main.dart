@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:ui';
 import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/spotify_provider.dart';
@@ -11,60 +10,47 @@ import 'screens/profile_screen.dart';
 import 'screens/settings_screen.dart';
 import 'services/widget_service.dart';
 import 'services/background_service.dart';
-import 'services/http_interceptor.dart';
 import 'services/update_service.dart';
 import 'utils/theme.dart';
-import 'utils/auth_utils.dart';
+import 'utils/navigator_key.dart';
 import 'dart:async';
 import 'services/app_logger.dart';
 import 'services/spotify_secrets_service.dart';
+import 'widgets/app_wrapper.dart';
+import 'widgets/update/update_checker_wrapper.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
 
-  // Initialize widget service
   await WidgetService.initialize();
-
-  // Initialize background service
   await BackgroundService.initialize();
-
-  // Fetch and apply Spotify TOTP secrets before starting the app
   await SpotifySecretsService.loadAndApply();
 
-  // Check for updates on startup if needed
   _checkForUpdatesOnStartup();
 
   runApp(MyApp(prefs: prefs));
 }
 
-// Check for updates on app startup if enough time has passed
 Future<void> _checkForUpdatesOnStartup() async {
   try {
-    // First, auto-enable nightly builds if applicable
     await UpdateService.autoEnableNightlyIfApplicable();
-    
-    // Check if we should check for updates 
     if (await UpdateService.shouldCheckForUpdates()) {
-      // Check for updates in the background
       final updateResult = await UpdateService.checkForUpdates();
-      
-      // Store the result for later use
       if (updateResult.hasUpdate) {
-        // We'll handle the update notification in the app UI later
         AppLogger.info('Update available: ${updateResult.updateInfo?.version}');
       }
     }
   } catch (e) {
-    // Ignore errors during startup, we don't want to block app launch
     AppLogger.error('Error checking for updates on startup', e);
   }
 }
 
 class MyApp extends StatelessWidget {
   final SharedPreferences prefs;
-  
+
   const MyApp({super.key, required this.prefs});
+
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
@@ -80,8 +66,8 @@ class MyApp extends StatelessWidget {
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,
             themeMode: themeProvider.themeMode,
-            // Add the update checker wrapper
-            builder: (context, child) => _UpdateCheckerWrapper(child: child!),
+            navigatorKey: navigatorKey,
+            builder: (context, child) => UpdateCheckerWrapper(child: child!),
             home: const AppWrapper(),
             routes: {
               '/login': (context) {
@@ -103,432 +89,6 @@ class MyApp extends StatelessWidget {
             },
           );
         },
-      ),
-    );
-  }
-}
-
-class AppWrapper extends StatefulWidget {
-  const AppWrapper({super.key});
-
-  @override
-  State<AppWrapper> createState() => _AppWrapperState();
-}
-
-class _AppWrapperState extends State<AppWrapper> {
-
-  @override
-  void dispose() {
-    // Clear the context when the widget is disposed
-    HttpInterceptor.clearContext();
-    super.dispose();
-  }
-  
-  @override
-  Widget build(BuildContext context) {
-    // Set the context for HttpInterceptor to handle 401 errors globally
-    HttpInterceptor.setContext(context);
-    
-    return Consumer<AuthProvider>(
-      builder: (context, authProvider, child) {
-        // Sync bearer token into SpotifyProvider whenever auth state changes
-        final spotifyProvider = context.read<SpotifyProvider>();
-        if (authProvider.authState == AuthState.authenticated &&
-            authProvider.bearerToken != null) {
-          spotifyProvider.setBearer(authProvider.bearerToken!);
-        } else if (authProvider.authState == AuthState.unauthenticated) {
-          spotifyProvider.clearBearer();
-        }
-
-        // Debug logging for troubleshooting
-        AppLogger.debug('🔍 AppWrapper rebuild - AuthProvider state:');
-        AppLogger.debug('   - authState: ${authProvider.authState}');
-        AppLogger.debug('   - isAuthenticated: ${authProvider.isAuthenticated}');
-        AppLogger.debug('   - currentUser: ${authProvider.currentUser?.displayName ?? 'null'}');
-        AppLogger.debug('   - bearerToken exists: ${authProvider.bearerToken != null}');
-
-        return switch (authProvider.authState) {
-          AuthState.uninitialized || AuthState.loading => _AuthLoadingScreen(authProvider: authProvider),
-          AuthState.authenticated => const MainNavigationScreen(),
-          AuthState.unauthenticated => const LoginScreen(),
-        };
-      },
-    );
-  }
-}
-
-class MainNavigationScreen extends StatefulWidget {
-  const MainNavigationScreen({super.key});
-
-  @override
-  State<MainNavigationScreen> createState() => _MainNavigationScreenState();
-}
-
-class _MainNavigationScreenState extends State<MainNavigationScreen> with WidgetsBindingObserver {
-  int _currentIndex = 0;
-  
-  final List<Widget> _screens = [
-    const HomeScreen(),
-    const ProfileScreen(),
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    AppLogger.info('🏠 MainNavigationScreen initialized');
-    
-    // Add lifecycle observer
-    WidgetsBinding.instance.addObserver(this);
-    
-    // Register background widget updates when user is authenticated
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _registerBackgroundUpdates();
-    });
-  }
-  
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-  
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    super.didChangeAppLifecycleState(state);
-    
-    if (state == AppLifecycleState.resumed) {
-      AppLogger.info('📱 App resumed, refreshing if needed...');
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        if (!mounted) return;
-        final authProvider = Provider.of<AuthProvider>(context, listen: false);
-        if (authProvider.authState == AuthState.authenticated) {
-          await authProvider.refreshIfNeeded();
-        }
-      });
-    }
-  }
-  
-  Future<void> _registerBackgroundUpdates() async {
-    try {
-      await BackgroundService.registerWidgetUpdateTask();
-      AppLogger.info('✅ Background widget updates registered');
-    } catch (e) {
-      AppLogger.error('❌ Failed to register background updates', e);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    AppLogger.debug('🏠 MainNavigationScreen building with tab index: $_currentIndex');
-    
-    return Consumer<SpotifyProvider>(
-      builder: (context, spotifyProvider, child) {
-        // Check for authentication errors and handle them
-        if (spotifyProvider.hasAuthError) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            spotifyProvider.clearAuthError();
-            AuthUtils.handleAuthenticationError(
-              context, 
-              errorMessage: spotifyProvider.authErrorMessage,
-            );
-          });
-        }
-        
-        return _buildMainScaffold();
-      },
-    );
-  }
-
-  Widget _buildMainScaffold() {
-    return Scaffold(
-      extendBody: true, // Extend body behind bottom nav bar
-      body: _screens[_currentIndex],
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
-              blurRadius: 10,
-              offset: const Offset(0, -2),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: BottomNavigationBar(
-              currentIndex: _currentIndex,
-              onTap: (index) {
-                setState(() {
-                  _currentIndex = index;
-                });
-              },
-              items: const [
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.home),
-                  label: 'Activities',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.person),
-                  label: 'Profile',
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// Widget wrapper to check for updates and show notifications
-class _UpdateCheckerWrapper extends StatefulWidget {
-  final Widget child;
-  
-  const _UpdateCheckerWrapper({
-    required this.child,
-  });
-
-  @override
-  State<_UpdateCheckerWrapper> createState() => _UpdateCheckerWrapperState();
-}
-
-class _UpdateCheckerWrapperState extends State<_UpdateCheckerWrapper> {
-  UpdateInfo? _updateInfo;
-  bool _hasCheckedForUpdates = false;
-  
-  @override
-  void initState() {
-    super.initState();
-    // Delay the update check to avoid affecting app startup performance
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkForUpdates();
-    });
-  }
-  
-  Future<void> _checkForUpdates() async {
-    try {
-      // Only check once per app session
-      if (_hasCheckedForUpdates) return;
-      _hasCheckedForUpdates = true;
-      
-      // Check if auto-download is enabled
-      final autoDownload = await UpdateService.getAutoDownloadPreference();
-      
-      // Check for updates
-      final updateResult = await UpdateService.checkForUpdates();
-      
-      // If update available, show banner
-      if (updateResult.hasUpdate && updateResult.updateInfo != null) {
-        AppLogger.info('Update available: ${updateResult.updateInfo?.version}');
-        setState(() {
-          _updateInfo = updateResult.updateInfo;
-        });
-        
-        // If auto-download is enabled, download immediately
-        if (autoDownload && mounted) {
-          AppLogger.info('Auto-download enabled, starting download...');
-          _handleUpdateDownload();
-        }
-      }
-    } catch (e) {
-      AppLogger.error('Error checking for updates', e);
-    }
-  }
-  
-  // Handle downloading an update
-  Future<void> _handleUpdateDownload() async {
-    if (_updateInfo == null || !mounted) return;
-    
-    // Show download dialog and get the downloaded file path
-    final filePath = await UpdateService.showDownloadDialog(
-      context,
-      _updateInfo!,
-    );
-    
-    if (filePath != null && mounted) {
-      // Show installation dialog
-      await UpdateService.showInstallDialog(context, filePath);
-      
-      // Clear update info if user cancels installation
-      setState(() {
-        _updateInfo = null;
-      });
-    }
-  }
-  
-  @override
-  Widget build(BuildContext context) {
-    // If no update available, just return the child
-    if (_updateInfo == null) {
-      return widget.child;
-    }
-    
-    // If update is available, show a notification banner
-    return Material(
-      child: Column(
-        children: [
-          // Update notification banner at the top
-          Container(
-            color: _updateInfo!.isNightly ? Colors.orange.shade700 : Theme.of(context).primaryColor,
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-            child: SafeArea(
-              bottom: false,
-              child: Row(
-                children: [
-                  Icon(
-                    _updateInfo!.isNightly ? Icons.science : Icons.system_update,
-                    color: Colors.white,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _updateInfo!.isNightly
-                          ? 'New nightly build available: ${_updateInfo!.version}'
-                          : 'Update available: ${_updateInfo!.version}',
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: _handleUpdateDownload,
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      backgroundColor: Colors.white.withValues(alpha: 0.2),
-                    ),
-                    child: const Text('Update'),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white),
-                    onPressed: () {
-                      setState(() {
-                        _updateInfo = null;
-                      });
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-          
-          // Main app content
-          Expanded(
-            child: widget.child,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AuthLoadingScreen extends StatelessWidget {
-  final AuthProvider authProvider;
-  const _AuthLoadingScreen({required this.authProvider});
-
-  @override
-  Widget build(BuildContext context) {
-    final events = authProvider.authEvents;
-    final lastError = authProvider.lastAuthError;
-
-    return Scaffold(
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              const Spacer(),
-              const CircularProgressIndicator(),
-              const SizedBox(height: 16),
-              const Text('Loading...', style: TextStyle(fontSize: 16)),
-              const Spacer(),
-              _AuthDebugPanel(events: events, lastError: lastError),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AuthDebugPanel extends StatefulWidget {
-  final List<String> events;
-  final String? lastError;
-  const _AuthDebugPanel({required this.events, required this.lastError});
-
-  @override
-  State<_AuthDebugPanel> createState() => _AuthDebugPanelState();
-}
-
-class _AuthDebugPanelState extends State<_AuthDebugPanel> {
-  bool _expanded = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final dimColor = theme.colorScheme.onSurface.withValues(alpha: 0.45);
-    final errorColor = Colors.red.shade400;
-    const mono = TextStyle(fontFamily: 'monospace', fontSize: 10);
-
-    return GestureDetector(
-      onTap: () => setState(() => _expanded = !_expanded),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: widget.lastError != null
-                ? errorColor.withValues(alpha: 0.5)
-                : dimColor.withValues(alpha: 0.3),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.bug_report, size: 12, color: dimColor),
-                const SizedBox(width: 4),
-                Text(
-                  'Auth Debug  ${_expanded ? "▲" : "▼"}',
-                  style: mono.copyWith(color: dimColor, fontWeight: FontWeight.bold),
-                ),
-                if (widget.lastError != null) ...[
-                  const SizedBox(width: 8),
-                  Icon(Icons.error_outline, size: 12, color: errorColor),
-                  const SizedBox(width: 2),
-                  Text('error', style: mono.copyWith(color: errorColor)),
-                ],
-              ],
-            ),
-            if (widget.lastError != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                widget.lastError!,
-                style: mono.copyWith(color: errorColor),
-                maxLines: _expanded ? null : 2,
-                overflow: _expanded ? null : TextOverflow.ellipsis,
-              ),
-            ],
-            if (_expanded && widget.events.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              const Divider(height: 1, thickness: 0.5),
-              const SizedBox(height: 4),
-              ...widget.events.reversed.take(15).map(
-                (e) => Text(e, style: mono.copyWith(color: dimColor), maxLines: 1, overflow: TextOverflow.ellipsis),
-              ),
-            ],
-            if (!_expanded && widget.events.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(
-                widget.events.last,
-                style: mono.copyWith(color: dimColor),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ],
-        ),
       ),
     );
   }
