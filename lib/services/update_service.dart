@@ -152,13 +152,16 @@ class UpdateService {
       AppLogger.info('Is nightly version: ${isCurrentVersionNightly(currentVersion.version)}');
       AppLogger.info('Nightly builds enabled: $useNightly');
       
+      // Fetch GitHub releases once and share with both checkers to avoid double API call
+      final releasesJson = await _fetchGithubReleases();
+
       // Always check for regular release updates first
-      final releaseCheck = await _checkReleaseUpdates(currentVersion);
-      
+      final releaseCheck = _checkReleaseUpdatesFromJson(releasesJson, currentVersion);
+
       // Check for nightly updates if user has opted in
       UpdateCheckResult? nightlyCheck;
       if (useNightly) {
-        nightlyCheck = await _checkNightlyUpdates(currentVersion);
+        nightlyCheck = _checkNightlyUpdatesFromJson(releasesJson, currentVersion);
       }
       
       // Mark that we've checked
@@ -216,34 +219,30 @@ class UpdateService {
     }
   }
   
-  // Check for release updates
-  static Future<UpdateCheckResult> _checkReleaseUpdates(AppVersionInfo currentVersion) async {
-    try {
-      // Fetch the release information from GitHub API
-      final response = await http.get(Uri.parse(_githubReleasesApi));
-      
-      if (response.statusCode != 200) {
-        return UpdateCheckResult(
-          hasUpdate: false,
-          isNightly: false,
-          updateInfo: null,
-          error: 'Failed to fetch release info: HTTP ${response.statusCode}',
-        );
-      }
+  // Fetch the releases list from GitHub (single HTTP call shared by both checkers)
+  static Future<List<dynamic>> _fetchGithubReleases() async {
+    final response = await http.get(Uri.parse(_githubReleasesApi));
+    if (response.statusCode != 200) {
+      throw Exception('Failed to fetch releases: HTTP ${response.statusCode}');
+    }
+    return json.decode(response.body) as List<dynamic>;
+  }
 
-      final List<dynamic> releasesJson = json.decode(response.body);
-      
-      // Find the latest stable release (exclude nightly releases)
+  // Check for stable release updates from a pre-fetched releases list
+  static UpdateCheckResult _checkReleaseUpdatesFromJson(
+    List<dynamic> releasesJson,
+    AppVersionInfo currentVersion,
+  ) {
+    try {
       Map<String, dynamic>? latestReleaseJson;
       for (final releaseJson in releasesJson) {
         final tagName = releaseJson['tag_name'] as String? ?? '';
-        // Skip nightly releases - we only want stable releases here
         if (!tagName.startsWith('nightly-')) {
           latestReleaseJson = releaseJson as Map<String, dynamic>;
-          break; // First non-nightly release is the latest stable
+          break;
         }
       }
-      
+
       if (latestReleaseJson == null) {
         return UpdateCheckResult(
           hasUpdate: false,
@@ -252,18 +251,17 @@ class UpdateService {
           error: 'No stable releases found',
         );
       }
-      
+
       final releaseInfo = UpdateInfo.fromGithubJson(latestReleaseJson, isNightly: false);
       _latestReleaseInfo = releaseInfo;
-      
-      // Compare versions
+
       final hasUpdate = VersionUtils.isNewerVersion(
-        currentVersion: currentVersion.version, 
+        currentVersion: currentVersion.version,
         newVersion: releaseInfo.version,
       );
-      
+
       AppLogger.info('Release check: Current=${currentVersion.version}, Latest=${releaseInfo.version}, hasUpdate=$hasUpdate');
-      
+
       return UpdateCheckResult(
         hasUpdate: hasUpdate,
         isNightly: false,
@@ -279,23 +277,13 @@ class UpdateService {
       );
     }
   }
-    // Check for nightly updates
-  static Future<UpdateCheckResult> _checkNightlyUpdates(AppVersionInfo currentVersion) async {
-    try {
-      // Fetch nightly releases from GitHub API
-      final response = await http.get(Uri.parse(_githubReleasesApi));
-      
-      if (response.statusCode != 200) {
-        return UpdateCheckResult(
-          hasUpdate: false,
-          isNightly: true,
-          updateInfo: null,
-          error: 'Failed to fetch nightly releases: HTTP ${response.statusCode}',
-        );
-      }
 
-      final List<dynamic> releasesJson = json.decode(response.body);
-      
+  // Check for nightly updates from a pre-fetched releases list
+  static UpdateCheckResult _checkNightlyUpdatesFromJson(
+    List<dynamic> releasesJson,
+    AppVersionInfo currentVersion,
+  ) {
+    try {
       // Find the latest nightly release (tagged with 'nightly-' prefix)
       Map<String, dynamic>? latestNightlyJson;
       for (final releaseJson in releasesJson) {
@@ -390,21 +378,28 @@ class UpdateService {
     AppLogger.info('Checking if should update to nightly:');
     AppLogger.info('  Current version: $currentVersion');
     AppLogger.info('  New nightly version: ${nightlyInfo.version}');
-    AppLogger.info('  New nightly build date: ${nightlyInfo.buildDate}');
-    
-    // If current version is not a nightly, always offer nightly update
+
     if (!currentVersion.contains('nightly')) {
-      AppLogger.info('Current version is not nightly, offering nightly update');
-      return true;
+      // Stable user: only offer nightly if its base version is >= the current stable version.
+      // Without this check a stable `0.0.2` user would be prompted to "update" to a nightly
+      // built against `0.0.1`, which would be a downgrade.
+      final currentBase = VersionUtils.extractBaseVersion(currentVersion);
+      final nightlyBase = VersionUtils.extractBaseVersion(nightlyInfo.version);
+      final nightlyIsAtLeastSameBase = VersionUtils.isNewerVersion(
+            currentVersion: currentBase,
+            newVersion: nightlyBase,
+          ) ||
+          currentBase == nightlyBase;
+      AppLogger.info('Stable→nightly: currentBase=$currentBase nightlyBase=$nightlyBase offer=$nightlyIsAtLeastSameBase');
+      return nightlyIsAtLeastSameBase;
     }
-    
-    // If both are nightly, compare build dates
+
+    // Both nightly: compare build timestamps
     final shouldUpdate = VersionUtils.isNewerNightly(
       currentVersion: currentVersion,
       newVersion: nightlyInfo.version,
-      newBuildTime: nightlyInfo.buildDate,
     );
-    
+
     AppLogger.info('Should update to nightly: $shouldUpdate');
     return shouldUpdate;
   }
@@ -887,43 +882,7 @@ class UpdateInfo {
     required this.fileSizeBytes,
   });
 
-  factory UpdateInfo.fromJson(Map<String, dynamic> json, {required bool isNightly}) {
-    // Different JSON structure for release vs nightly
-    if (isNightly) {
-      final version = json['version'] as Map<String, dynamic>;
-      final apk = json['apk'] as Map<String, dynamic>;
-      final git = json['git'] as Map<String, dynamic>;
-      
-      return UpdateInfo(
-        version: version['versionName'] as String,
-        buildNumber: version['buildNumber'].toString(),
-        buildDate: DateTime.parse(json['buildDate'] as String),
-        apkUrl: 'https://github.com/mliem/playtivity/raw/main/nightly/${apk['fileName']}',
-        apkFileName: apk['fileName'] as String,
-        changelog: git['commitMessage'] as String?,
-        isNightly: true,
-        fileSizeBytes: apk['sizeBytes'] as int,
-      );
-    } else {
-      final version = json['version'] as Map<String, dynamic>;
-      final apkFile = (json['files'] as List).firstWhere(
-        (f) => f['type'] == 'APK',
-        orElse: () => throw Exception('No APK file found in release info'),
-      ) as Map<String, dynamic>;
-      
-      return UpdateInfo(
-        version: version['versionName'] as String,
-        buildNumber: version['buildNumber'].toString(),
-        buildDate: DateTime.parse(json['timestamp'] as String),
-        apkUrl: 'https://github.com/mliem/playtivity/raw/main/releases/${apkFile['name']}',
-        apkFileName: apkFile['name'] as String,
-        changelog: json['changelog'] as String?,
-        isNightly: false,
-        fileSizeBytes: apkFile['sizeBytes'] as int,
-      );
-    }
-  }
-    factory UpdateInfo.fromGithubJson(Map<String, dynamic> json, {required bool isNightly}) {
+  factory UpdateInfo.fromGithubJson(Map<String, dynamic> json, {required bool isNightly}) {
     // JSON structure for GitHub releases API
     final tagName = json['tag_name'] as String;
     final releaseName = json['name'] as String? ?? tagName;

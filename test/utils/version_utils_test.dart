@@ -101,12 +101,10 @@ void main() {
     test('returns true when new nightly build is more than 5 minutes newer', () {
       const current = '0.0.2-nightly-20250901-100000';
       const newer = '0.0.2-nightly-20250901-120000'; // 2 hours later
-      final newBuildTime = DateTime(2025, 9, 1, 12, 0, 0);
       expect(
         VersionUtils.isNewerNightly(
           currentVersion: current,
           newVersion: newer,
-          newBuildTime: newBuildTime,
         ),
         isTrue,
       );
@@ -115,12 +113,10 @@ void main() {
     test('returns false when build times are within 5-minute threshold', () {
       const current = '0.0.2-nightly-20250901-100000';
       const sameish = '0.0.2-nightly-20250901-100300'; // 3 minutes later
-      final newBuildTime = DateTime(2025, 9, 1, 10, 3, 0);
       expect(
         VersionUtils.isNewerNightly(
           currentVersion: current,
           newVersion: sameish,
-          newBuildTime: newBuildTime,
         ),
         isFalse,
       );

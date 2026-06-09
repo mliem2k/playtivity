@@ -107,14 +107,12 @@ class VersionUtils {
   /// 
   /// Nightly versions are expected to be in format "x.y.z-nightly-YYYYMMDD-HHMMSS"
   static bool isNewerNightly({
-    required String currentVersion, 
+    required String currentVersion,
     required String newVersion,
-    required DateTime newBuildTime,
   }) {
     debugPrint('Comparing nightly versions:');
     debugPrint('  Current: $currentVersion');
     debugPrint('  New: $newVersion');
-    debugPrint('  New build time: $newBuildTime');
     
     // Extract the build timestamp from both versions
     DateTime? currentBuildTime;
