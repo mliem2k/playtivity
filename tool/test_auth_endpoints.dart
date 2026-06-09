@@ -202,36 +202,36 @@ void _section(String title) {
 }
 
 Future<void> _testWithBearerToken(String token) async {
-  _section('1. JWT decode');
-  final userId = _extractUserIdFromJwt(token);
-  print('User ID: ${userId ?? "FAILED — token may not be a valid JWT"}');
+  _section('1. Token info');
+  print('Length: ${token.length}');
+  print('Is JWT: ${token.contains(".")}');
+  print('Prefix: ${token.substring(0, token.length.clamp(0, 10))}...');
 
-  if (userId != null) {
-    _section('2. Spclient profile (guc-spclient.spotify.com)');
-    final url = 'https://guc-spclient.spotify.com/user-profile-view/v3/profile/$userId';
-    print('URL: $url');
-    try {
-      final r = await _get(url, {
+  _section('2. Spclient /me (guc-spclient.spotify.com)');
+  try {
+    final r = await _get(
+      'https://guc-spclient.spotify.com/user-profile-view/v3/profile/me',
+      {
         'Authorization': 'Bearer $token',
         'Accept': 'application/json',
         'App-Platform': 'WebPlayer',
         'User-Agent': _ua,
-      });
-      print('Status: ${r.status}');
-      if (r.status == 200) {
-        final data = jsonDecode(r.body) as Map<String, dynamic>;
-        print('Name: ${data['name']}');
-        print('Image: ${data['image_url']}');
-        print('Followers: ${data['followers_count']}');
-        print('RESULT: ✅ SUCCESS');
-      } else {
-        print('Body: ${r.body.substring(0, r.body.length.clamp(0, 300))}');
-        print('RESULT: ❌ FAILED');
-      }
-    } catch (e) {
-      print('Error: $e');
+      },
+    );
+    print('Status: ${r.status}');
+    if (r.status == 200) {
+      final data = jsonDecode(r.body) as Map<String, dynamic>;
+      print('Name:      ${data['name']}');
+      print('URI:       ${data['uri']}');
+      print('Followers: ${data['followers_count']}');
+      print('RESULT: ✅ SUCCESS');
+    } else {
+      print('Body: ${r.body.substring(0, r.body.length.clamp(0, 300))}');
       print('RESULT: ❌ FAILED');
     }
+  } catch (e) {
+    print('Error: $e');
+    print('RESULT: ❌ FAILED');
   }
 
   _section('3. Official API (/v1/me)');
