@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
   static const Color background = Color(0xFF121212);
@@ -17,7 +16,7 @@ class AppTheme {
   static const Color dividerColor = Color(0xFF282828);
 
   static ThemeData get darkTheme {
-    final base = GoogleFonts.montserratTextTheme(ThemeData.dark().textTheme);
+    final base = ThemeData.dark().textTheme.apply(fontFamily: 'Montserrat');
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
@@ -70,18 +69,20 @@ class AppTheme {
         systemOverlayStyle: SystemUiOverlayStyle.light,
         surfaceTintColor: Colors.transparent,
       ),
-      bottomNavigationBarTheme: BottomNavigationBarThemeData(
+      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
         backgroundColor: loginBackground,
         selectedItemColor: textPrimary,
         unselectedItemColor: textSecondary,
         type: BottomNavigationBarType.fixed,
         elevation: 0,
-        selectedLabelStyle: GoogleFonts.montserrat(
+        selectedLabelStyle: TextStyle(
+          fontFamily: 'Montserrat',
           fontWeight: FontWeight.w500,
           fontSize: 11,
           letterSpacing: 1.0,
         ),
-        unselectedLabelStyle: GoogleFonts.montserrat(
+        unselectedLabelStyle: TextStyle(
+          fontFamily: 'Montserrat',
           fontWeight: FontWeight.w500,
           fontSize: 11,
           letterSpacing: 1.0,
@@ -94,24 +95,27 @@ class AppTheme {
           shape: const StadiumBorder(),
           minimumSize: const Size(double.infinity, 56),
           elevation: 0,
-          textStyle: GoogleFonts.montserrat(
+          textStyle: const TextStyle(
+            fontFamily: 'Montserrat',
             fontWeight: FontWeight.w700,
             fontSize: 16,
           ),
         ),
       ),
-      tabBarTheme: TabBarThemeData(
+      tabBarTheme: const TabBarThemeData(
         labelColor: textPrimary,
         unselectedLabelColor: textSecondary,
-        labelStyle: GoogleFonts.montserrat(
+        labelStyle: TextStyle(
+          fontFamily: 'Montserrat',
           fontWeight: FontWeight.w600,
           fontSize: 13,
         ),
-        unselectedLabelStyle: GoogleFonts.montserrat(
+        unselectedLabelStyle: TextStyle(
+          fontFamily: 'Montserrat',
           fontWeight: FontWeight.w400,
           fontSize: 13,
         ),
-        indicator: const UnderlineTabIndicator(
+        indicator: UnderlineTabIndicator(
           borderSide: BorderSide(color: primary, width: 2),
           insets: EdgeInsets.symmetric(horizontal: 24),
         ),
