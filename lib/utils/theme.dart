@@ -1,136 +1,137 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
-  // Spotify brand colors
-  static const Color spotifyGreen = Color(0xFF1DB954);
-  static const Color spotifyBlack = Color(0xFF191414);
-  static const Color spotifyDarkGray = Color(0xFF282828);
-  static const Color spotifyLightGray = Color(0xFFB3B3B3);
-  static const Color spotifyWhite = Color(0xFFFFFFFF);
-  
-  // Additional theme-aware colors
-  static const Color lightTextSecondary = Color(0xFF666666);
-  static const Color lightTextTertiary = Color(0xFF999999);
-  static const Color lightCardBackground = Color(0xFFFAFAFA);
-  static const Color lightBorder = Color(0xFFE0E0E0);
-  static ThemeData get lightTheme {
-    return ThemeData(
-      useMaterial3: true,
-      brightness: Brightness.light,
-      primarySwatch: Colors.green,
-      primaryColor: spotifyGreen,
-      scaffoldBackgroundColor: spotifyWhite,
-      appBarTheme: AppBarTheme(
-        backgroundColor: spotifyWhite.withValues(alpha: 0.85), // Transparent effect
-        foregroundColor: spotifyBlack,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        systemOverlayStyle: SystemUiOverlayStyle.dark,
-        surfaceTintColor: Colors.transparent,
-      ),
-      bottomNavigationBarTheme: BottomNavigationBarThemeData(
-        backgroundColor: spotifyWhite.withValues(alpha: 0.85), // Transparent effect
-        selectedItemColor: spotifyGreen,
-        unselectedItemColor: lightTextSecondary,
-        type: BottomNavigationBarType.fixed,
-        elevation: 0,
-      ),
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: spotifyGreen,
-          foregroundColor: spotifyWhite,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(25),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-          elevation: 2,
-          shadowColor: spotifyGreen.withValues(alpha: 0.3),
-        ),
-      ),
-      cardTheme: CardThemeData(
-        color: lightCardBackground,
-        elevation: 2,
-        shadowColor: Colors.black.withValues(alpha: 0.1),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-      ),
-      colorScheme: const ColorScheme.light(
-        primary: spotifyGreen,
-        secondary: spotifyGreen,
-        surface: lightCardBackground,
-        onPrimary: spotifyWhite,
-        onSecondary: spotifyWhite,
-        onSurface: spotifyBlack,
-        outline: lightBorder,
-      ),
-    );
-  }
+  static const Color background = Color(0xFF121212);
+  static const Color surfaceRaised = Color(0xFF181818);
+  static const Color surfaceElevated = Color(0xFF282828);
+  static const Color primary = Color(0xFF1DB954);
+  static const Color primaryActive = Color(0xFF1ED760);
+  static const Color textPrimary = Color(0xFFFFFFFF);
+  static const Color textSecondary = Color(0xFFA7A7A7);
+  static const Color textSubdued = Color(0xFF535353);
+  static const Color onPrimary = Color(0xFF000000);
+  static const Color errorRed = Color(0xFFE91429);
+  static const Color loginBackground = Color(0xFF000000);
+  static const Color dividerColor = Color(0xFF282828);
 
   static ThemeData get darkTheme {
+    final base = GoogleFonts.montserratTextTheme(ThemeData.dark().textTheme);
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
-      primarySwatch: Colors.green,
-      primaryColor: spotifyGreen,
-      scaffoldBackgroundColor: spotifyBlack,
-      appBarTheme: AppBarTheme(
-        backgroundColor: spotifyBlack.withValues(alpha: 0.9), // Increased opacity for better visibility in dark mode
-        foregroundColor: spotifyWhite,
+      primaryColor: primary,
+      scaffoldBackgroundColor: background,
+      textTheme: base.copyWith(
+        displayLarge: base.displayLarge?.copyWith(
+          fontWeight: FontWeight.w800,
+          fontSize: 32,
+          letterSpacing: -0.5,
+          color: textPrimary,
+        ),
+        titleLarge: base.titleLarge?.copyWith(
+          fontWeight: FontWeight.w700,
+          fontSize: 22,
+          color: textPrimary,
+        ),
+        titleMedium: base.titleMedium?.copyWith(
+          fontWeight: FontWeight.w700,
+          fontSize: 18,
+          color: textPrimary,
+        ),
+        titleSmall: base.titleSmall?.copyWith(
+          fontWeight: FontWeight.w600,
+          fontSize: 16,
+          color: textPrimary,
+        ),
+        bodyLarge: base.bodyLarge?.copyWith(
+          fontWeight: FontWeight.w500,
+          fontSize: 14,
+          color: textPrimary,
+        ),
+        bodyMedium: base.bodyMedium?.copyWith(
+          fontWeight: FontWeight.w400,
+          fontSize: 13,
+          color: textSecondary,
+        ),
+        labelSmall: base.labelSmall?.copyWith(
+          fontWeight: FontWeight.w500,
+          fontSize: 11,
+          letterSpacing: 1.0,
+          color: textSecondary,
+        ),
+      ),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Colors.transparent,
+        foregroundColor: textPrimary,
         elevation: 0,
         scrolledUnderElevation: 0,
         systemOverlayStyle: SystemUiOverlayStyle.light,
         surfaceTintColor: Colors.transparent,
       ),
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
-        backgroundColor: spotifyBlack.withValues(alpha: 0.85), // Transparent effect
-        selectedItemColor: spotifyGreen,
-        unselectedItemColor: spotifyLightGray,
+        backgroundColor: loginBackground,
+        selectedItemColor: textPrimary,
+        unselectedItemColor: textSecondary,
         type: BottomNavigationBarType.fixed,
         elevation: 0,
+        selectedLabelStyle: GoogleFonts.montserrat(
+          fontWeight: FontWeight.w500,
+          fontSize: 11,
+          letterSpacing: 1.0,
+        ),
+        unselectedLabelStyle: GoogleFonts.montserrat(
+          fontWeight: FontWeight.w500,
+          fontSize: 11,
+          letterSpacing: 1.0,
+        ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: spotifyGreen,
-          foregroundColor: spotifyWhite,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(25),
+          backgroundColor: primary,
+          foregroundColor: onPrimary,
+          shape: const StadiumBorder(),
+          minimumSize: const Size(double.infinity, 56),
+          elevation: 0,
+          textStyle: GoogleFonts.montserrat(
+            fontWeight: FontWeight.w700,
+            fontSize: 16,
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
         ),
       ),
-      cardTheme: CardThemeData(
-        color: spotifyDarkGray,
-        elevation: 2,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+      tabBarTheme: TabBarThemeData(
+        labelColor: textPrimary,
+        unselectedLabelColor: textSecondary,
+        labelStyle: GoogleFonts.montserrat(
+          fontWeight: FontWeight.w600,
+          fontSize: 13,
         ),
+        unselectedLabelStyle: GoogleFonts.montserrat(
+          fontWeight: FontWeight.w400,
+          fontSize: 13,
+        ),
+        indicator: const UnderlineTabIndicator(
+          borderSide: BorderSide(color: primary, width: 2),
+          insets: EdgeInsets.symmetric(horizontal: 24),
+        ),
+        indicatorSize: TabBarIndicatorSize.tab,
+        dividerColor: Colors.transparent,
+      ),
+      dividerTheme: const DividerThemeData(
+        color: dividerColor,
+        thickness: 1,
+        space: 0,
       ),
       colorScheme: const ColorScheme.dark(
-        primary: spotifyGreen,
-        secondary: spotifyGreen,
-        surface: spotifyDarkGray,
-        onPrimary: spotifyWhite,
-        onSecondary: spotifyWhite,
-        onSurface: spotifyWhite,
+        primary: primary,
+        secondary: primary,
+        surface: surfaceRaised,
+        onPrimary: onPrimary,
+        onSecondary: onPrimary,
+        onSurface: textPrimary,
+        error: errorRed,
       ),
     );
-  }
-
-  // Helper methods for theme-aware colors
-  static Color getSecondaryTextColor(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return isDark ? spotifyLightGray : lightTextSecondary;
-  }
-  
-  static Color getTertiaryTextColor(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return isDark ? spotifyLightGray : lightTextTertiary;
-  }
-  
-  static Color getCardBackgroundColor(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return isDark ? spotifyDarkGray : lightCardBackground;
   }
 }
