@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../utils/auth_utils.dart';
@@ -8,6 +9,12 @@ import 'app_logger.dart';
 /// HTTP interceptor that automatically handles 401/403 errors by redirecting to login
 class HttpInterceptor {
   static BuildContext? _currentContext;
+
+  /// Override the HTTP client used for all requests — set in tests only.
+  @visibleForTesting
+  static http.Client? testClient;
+
+  static http.Client get _client => testClient ?? http.Client();
   
   /// Set the current context for navigation purposes
   static void setContext(BuildContext context) {
@@ -32,14 +39,14 @@ class HttpInterceptor {
     Map<String, String>? headers,
   }) async {
     try {
-      final response = await http.get(url, headers: headers);
+      final response = await _client.get(url, headers: headers);
       await _handleResponse(response, url);
       return response;
     } catch (e) {
       rethrow;
     }
   }
-  
+
   /// Intercepted POST request that handles 401/403 errors
   static Future<http.Response> post(
     Uri url, {
@@ -48,10 +55,10 @@ class HttpInterceptor {
     Encoding? encoding,
   }) async {
     try {
-      final response = await http.post(
-        url, 
-        headers: headers, 
-        body: body, 
+      final response = await _client.post(
+        url,
+        headers: headers,
+        body: body,
         encoding: encoding,
       );
       await _handleResponse(response, url);

@@ -302,22 +302,10 @@ class SpotifyBuddyService {
             'accept-language': 'en',
             'app-platform': 'WebPlayer',
             'authorization': 'Bearer $bearerToken',
-            'cache-control': 'no-cache',
-            'client-token': _generateClientToken(),
             'content-type': 'application/json;charset=UTF-8',
-            'dnt': '1',
             'origin': 'https://open.spotify.com',
-            'pragma': 'no-cache',
-            'priority': 'u=1, i',
             'referer': 'https://open.spotify.com/',
-            'sec-ch-ua': '"Google Chrome";v="137", "Chromium";v="137", "Not/A)Brand";v="24"',
-            'sec-ch-ua-mobile': '?0',
-            'sec-ch-ua-platform': '"Windows"',
-            'sec-fetch-dest': 'empty',
-            'sec-fetch-mode': 'cors',
-            'sec-fetch-site': 'same-site',
-            'spotify-app-version': '1.2.67.546.ga043c80d',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
+            'user-agent': SpotifyTokenService.userAgent,
           };
 
           final requestBody = {
@@ -707,15 +695,6 @@ class SpotifyBuddyService {
     } catch (e) {
       AppLogger.spotify('⚠️ Failed to save artist details cache: $e');
     }
-  }
-
-  /// Generates a client token for the GraphQL API
-  /// This is a fallback in case we don't have an intercepted token
-  String _generateClientToken() {
-    AppLogger.spotify('⚠️ Using fallback client token - this should be replaced with an intercepted token');
-    // This is a placeholder - the actual client token generation is complex
-    // For now, we'll use a static token from the example
-    return 'AAAyrFCYuQiGGFsq0OYbkiotiZ9YtDPzdjemsDOtMJ6msHslHFxskOjd1h1q28igZTPhiB+n++o4n7/QkdHbIuzznY/QOKMesZKLlV83stuo8yn7hiiDN1R7b0HyInceiDZUgEPotzcBSM7v9ff76LEOJ53Hxl4W8qp+bwi+WAMlKSG6LSKb4905Tyqj0p2nsnWblSZVUw+Lj7huYgvu2y4istr4/zCyTIed9nI6ys3M2C8yhYfF1+5PC58l5gwGasCb7J7EikdPOfjBXZlMfMfh3gnOP4mK1ITzqmfaevpbrZDkJpspdzZFtYJT2eax';
   }
 
 }
