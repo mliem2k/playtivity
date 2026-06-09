@@ -45,11 +45,9 @@ class _ProfileScreenState extends State<ProfileScreen>
       AppLogger.warning('Authentication not yet initialized, skipping data load');
       return;
     }
-    if (authProvider.isAuthenticated) {
-      final showLoading = spotifyProvider.topTracks.isEmpty &&
-          spotifyProvider.topArtists.isEmpty;
-      await spotifyProvider.refreshData(showLoading: showLoading);
-    }
+    if (!authProvider.isAuthenticated) return;
+    if (spotifyProvider.topTracks.isNotEmpty || spotifyProvider.topArtists.isNotEmpty) return;
+    await spotifyProvider.refreshData(showLoading: true);
   }
 
   @override
