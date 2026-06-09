@@ -7,6 +7,7 @@ import '../services/update_service.dart';
 import '../widgets/update/update_dialogs.dart';
 import '../utils/version_utils.dart';
 import '../services/app_logger.dart';
+import '../utils/theme.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -36,126 +37,88 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppTheme.background,
       appBar: AppBar(
         title: const Text(
           'Settings',
-          style: TextStyle(fontWeight: FontWeight.bold),
+          style: TextStyle(
+            color: AppTheme.textPrimary,
+            fontWeight: FontWeight.w700,
+            fontSize: 22,
+          ),
         ),
+        backgroundColor: AppTheme.background,
+        elevation: 0,
       ),
       body: SafeArea(
         child: Consumer<AuthProvider>(
           builder: (context, authProvider, child) {
             return ListView(
-              padding: const EdgeInsets.all(16),
               children: [
                 // Account Section
-                Card(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Text(
-                          'Account',
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      if (authProvider.currentUser != null) ...[
-                        ListTile(
-                          leading: const Icon(Icons.person),
-                          title: const Text('Display Name'),
-                          subtitle: Text(authProvider.currentUser!.displayName),
-                        ),
-                        ListTile(
-                          leading: const Icon(Icons.email),
-                          title: const Text('Email'),
-                          subtitle: Text(authProvider.currentUser!.email),
-                        ),
-                        ListTile(
-                          leading: const Icon(Icons.public),
-                          title: const Text('Country'),
-                          subtitle: Text(authProvider.currentUser!.country),
-                        ),
-                      ],
-                      ListTile(
-                        leading: const Icon(
-                          Icons.logout,
-                          color: Colors.red,
-                        ),
-                        title: const Text(
-                          'Logout',
-                          style: TextStyle(color: Colors.red),
-                        ),
-                        subtitle: const Text('Sign out from your Spotify account'),
-                        onTap: () => _showLogoutDialog(context),
-                      ),
-                    ],
+                _sectionHeader('ACCOUNT'),
+                if (authProvider.currentUser != null) ...[
+                  _tile(
+                    icon: Icons.person,
+                    title: 'Display Name',
+                    subtitle: authProvider.currentUser!.displayName,
                   ),
-                ),
-                
-                const SizedBox(height: 16),
-                // Updates Section
-                Card(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Text(
-                          'Updates',
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      _buildUpdatePreferencesTile(context),
-                      _buildCheckForUpdatesTile(context),
-                    ],
+                  _divider(),
+                  _tile(
+                    icon: Icons.email,
+                    title: 'Email',
+                    subtitle: authProvider.currentUser!.email,
                   ),
+                  _divider(),
+                  _tile(
+                    icon: Icons.public,
+                    title: 'Country',
+                    subtitle: authProvider.currentUser!.country,
+                  ),
+                  _divider(),
+                ],
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  title: const Text(
+                    'Log Out',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: AppTheme.errorRed,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                  ),
+                  onTap: () => _showLogoutDialog(context),
                 ),
+                const SizedBox(height: 8),
 
-                const SizedBox(height: 16),
-                
+                // Updates Section
+                _sectionHeader('UPDATES'),
+                _buildUpdatePreferencesTile(context),
+                _divider(),
+                _buildCheckForUpdatesTile(context),
+                const SizedBox(height: 8),
+
                 // About Section
-                Card(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Text(
-                          'About',
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      FutureBuilder<PackageInfo>(
-                        future: PackageInfo.fromPlatform(),
-                        builder: (context, snapshot) {
-                          final version = snapshot.hasData
-                              ? VersionUtils.formatVersion(snapshot.data!.version)
-                              : 'Loading...';
-                          return ListTile(
-                            leading: Image.asset(
-                              'assets/images/playtivity_logo_small_icon.png',
-                              width: 24,
-                              height: 24,
-                            ),
-                            title: const Text('Playtivity'),
-                            subtitle: Text('Version $version'),
-                          );
-                        },
-                      ),
-                      const ListTile(
-                        leading: Icon(Icons.info_outline),
-                        title: Text('About'),
-                        subtitle: Text('See what your friends are listening to on Spotify'),
-                      ),
-                    ],
-                  ),
+                _sectionHeader('ABOUT'),
+                FutureBuilder<PackageInfo>(
+                  future: PackageInfo.fromPlatform(),
+                  builder: (context, snapshot) {
+                    final version = snapshot.hasData
+                        ? VersionUtils.formatVersion(snapshot.data!.version)
+                        : 'Loading...';
+                    return _tile(
+                      icon: Icons.info_outline,
+                      title: 'Playtivity',
+                      subtitle: 'Version $version',
+                    );
+                  },
+                ),
+                _divider(),
+                _tile(
+                  icon: Icons.music_note,
+                  title: 'About',
+                  subtitle: 'See what your friends are listening to on Spotify',
                 ),
               ],
             );
@@ -164,6 +127,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
   }
+
+  Widget _sectionHeader(String label) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 16, top: 20, bottom: 8),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: AppTheme.textSecondary,
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+          letterSpacing: 1.5,
+        ),
+      ),
+    );
+  }
+
+  Widget _tile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    VoidCallback? onTap,
+  }) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: Icon(icon, color: AppTheme.textSecondary, size: 22),
+      title: Text(
+        title,
+        style: const TextStyle(
+          color: AppTheme.textPrimary,
+          fontWeight: FontWeight.w500,
+          fontSize: 14,
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+      ),
+      onTap: onTap,
+    );
+  }
+
+  Widget _divider() =>
+      const Divider(height: 1, color: AppTheme.dividerColor, indent: 16);
 
   // Build widget for update preferences
   Widget _buildUpdatePreferencesTile(BuildContext context) {
