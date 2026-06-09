@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:playtivity/models/activity.dart';
 import 'package:playtivity/models/user.dart';
@@ -56,6 +57,12 @@ class SpotifyBuddyService {
 
   void clearActivityCache() {
     clearBuddyListCache();
+  }
+
+  @visibleForTesting
+  void clearArtistDetailsCache() {
+    _artistDetailsCache.clear();
+    _artistCacheModified = false;
   }
 
   /// Gets information about the current buddy list cache status
@@ -500,17 +507,13 @@ class SpotifyBuddyService {
 
           final artistId = artistData['uri']?.split(':').last ?? '';
 
-          // Check cache first for artist details
-          int followers = -1; // Use -1 to indicate not loaded yet
-          List<String> genres = [];
-          int popularity = 0;
+          int followers = -1;
+          int monthlyListeners = -1;
 
           if (_artistDetailsCache.containsKey(artistId)) {
             final cachedDetails = _artistDetailsCache.get(artistId)!;
-            followers = cachedDetails['followers'] ?? -1;
-            genres = (cachedDetails['genres'] as List?)?.map((g) => g.toString()).toList() ?? [];
-            popularity = cachedDetails['popularity'] ?? 0;
-
+            followers = cachedDetails['followers'] as int? ?? -1;
+            monthlyListeners = cachedDetails['monthly_listeners'] as int? ?? -1;
           }
 
           artists.add(Artist(
@@ -518,8 +521,7 @@ class SpotifyBuddyService {
             name: artistData['profile']?['name'] ?? 'Unknown Artist',
             imageUrl: imageUrl,
             followers: followers,
-            genres: genres,
-            popularity: popularity,
+            monthlyListeners: monthlyListeners,
             uri: artistData['uri'] ?? '',
           ));
         }
@@ -559,7 +561,7 @@ class SpotifyBuddyService {
     final missingIds = <String>[];
 
     for (final artist in artists) {
-      if (artist.followers == -1) { // Not loaded yet
+      if (artist.monthlyListeners == -1) {
         missingIds.add(artist.id);
       }
     }
@@ -572,45 +574,37 @@ class SpotifyBuddyService {
 
     for (final artistId in missingIds) {
       try {
-        final artistDetails = await _getArtistDetails(bearerToken, artistId);
-        if (artistDetails != null) {
+        final details = await _getArtistDetails(bearerToken, artistId);
+        if (details != null) {
+          final followers = details['followers'] as int? ?? 0;
+          final monthlyListeners = details['monthly_listeners'] as int? ?? 0;
+
           _artistDetailsCache.put(artistId, {
-            'followers': artistDetails['followers']?['total'] ?? 0,
-            'genres': artistDetails['genres'] ?? [],
-            'popularity': artistDetails['popularity'] ?? 0,
+            'followers': followers,
+            'monthly_listeners': monthlyListeners,
             'cached_at': DateTime.now().millisecondsSinceEpoch,
           });
           _artistCacheModified = true;
 
-          // Update the artist in the list
-          final artistIndex = updatedArtists.indexWhere((a) => a.id == artistId);
-          if (artistIndex != -1) {
-            final oldArtist = updatedArtists[artistIndex];
-            updatedArtists[artistIndex] = Artist(
-              id: oldArtist.id,
-              name: oldArtist.name,
-              imageUrl: oldArtist.imageUrl,
-              followers: artistDetails['followers']?['total'] ?? 0,
-              genres: (artistDetails['genres'] as List?)?.map((g) => g.toString()).toList() ?? [],
-              popularity: artistDetails['popularity'] ?? 0,
-              uri: oldArtist.uri,
+          final idx = updatedArtists.indexWhere((a) => a.id == artistId);
+          if (idx != -1) {
+            final old = updatedArtists[idx];
+            updatedArtists[idx] = Artist(
+              id: old.id,
+              name: old.name,
+              imageUrl: old.imageUrl,
+              followers: followers,
+              monthlyListeners: monthlyListeners,
+              uri: old.uri,
             );
-
-
-
-            // Notify callback with updated list
-            if (onUpdate != null) {
-              onUpdate(List<Artist>.from(updatedArtists));
-            }
+            if (onUpdate != null) onUpdate(List<Artist>.from(updatedArtists));
           }
         }
       } catch (e) {
         AppLogger.spotify('⚠️ Failed to fetch details for artist $artistId: $e');
-        // Cache a placeholder to avoid repeated failures
         _artistDetailsCache.put(artistId, {
           'followers': 0,
-          'genres': [],
-          'popularity': 0,
+          'monthly_listeners': 0,
           'cached_at': DateTime.now().millisecondsSinceEpoch,
           'failed': true,
         });
@@ -627,26 +621,47 @@ class SpotifyBuddyService {
     return updatedArtists;
   }
 
-  /// Fetches detailed artist information from Spotify Web API
+  /// Fetches artist stats via api-partner pathfinder (not rate-limited for web-player tokens).
+  /// Returns a map with keys: followers (int), monthly_listeners (int).
   Future<Map<String, dynamic>?> _getArtistDetails(String bearerToken, String artistId) async {
     return ApiRetryService.retryApiCall(
       () async {
-        final url = 'https://api.spotify.com/v1/artists/$artistId';
-        final headers = {
-          'Authorization': 'Bearer $bearerToken',
-        };
+        final variables = json.encode({
+          'uri': 'spotify:artist:$artistId',
+          'locale': '',
+          'includePrerelease': true,
+        });
+        final extensions = json.encode({
+          'persistedQuery': {
+            'version': 1,
+            'sha256Hash': 'd66221ea13998b2f81883c5187d174c8646e4041d67f5b1e103bc262d447e3a0',
+          }
+        });
+        final uri = Uri.parse('https://api-partner.spotify.com/pathfinder/v1/query')
+            .replace(queryParameters: {
+          'operationName': 'queryArtistOverview',
+          'variables': variables,
+          'extensions': extensions,
+        });
 
-        final response = await HttpInterceptor.get(
-          Uri.parse(url),
-          headers: headers,
-        );
+        final response = await HttpInterceptor.get(uri, headers: {
+          'accept': 'application/json',
+          'app-platform': 'WebPlayer',
+          'authorization': 'Bearer $bearerToken',
+          'origin': 'https://open.spotify.com',
+          'referer': 'https://open.spotify.com/',
+          'user-agent': SpotifyTokenService.userAgent,
+        });
 
         if (response.statusCode == 200) {
-          final data = json.decode(response.body);
-          return data;
-        } else {
-          throw Exception('Failed to fetch artist details: ${response.statusCode} - ${response.body}');
+          final data = json.decode(response.body) as Map<String, dynamic>;
+          final stats = data['data']?['artist']?['stats'] as Map<String, dynamic>?;
+          return {
+            'followers': stats?['followers'] as int? ?? 0,
+            'monthly_listeners': stats?['monthlyListeners'] as int? ?? 0,
+          };
         }
+        throw Exception('queryArtistOverview ${response.statusCode}');
       },
       operation: 'Get Artist Details',
     );

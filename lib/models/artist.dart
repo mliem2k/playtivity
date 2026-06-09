@@ -2,18 +2,16 @@ class Artist {
   final String id;
   final String name;
   final String? imageUrl;
-  final List<String> genres;
-  final int popularity;
   final int followers;
+  final int monthlyListeners;
   final String uri;
 
   Artist({
     required this.id,
     required this.name,
     this.imageUrl,
-    required this.genres,
-    required this.popularity,
     required this.followers,
+    required this.monthlyListeners,
     required this.uri,
   });
 
@@ -21,12 +19,9 @@ class Artist {
     return Artist(
       id: json['id'] ?? '',
       name: json['name'] ?? '',
-      imageUrl: json['images'] != null && json['images'].isNotEmpty
-          ? json['images'][0]['url']
-          : null,
-      genres: (json['genres'] as List?)?.map((genre) => genre as String).toList() ?? [],
-      popularity: json['popularity'] ?? 0,
-      followers: json['followers']?['total'] ?? 0,
+      imageUrl: json['image_url'] as String?,
+      followers: json['followers'] as int? ?? -1,
+      monthlyListeners: json['monthly_listeners'] as int? ?? -1,
       uri: json['uri'] ?? '',
     );
   }
@@ -36,9 +31,8 @@ class Artist {
       'id': id,
       'name': name,
       'image_url': imageUrl,
-      'genres': genres,
-      'popularity': popularity,
       'followers': followers,
+      'monthly_listeners': monthlyListeners,
       'uri': uri,
     };
   }
