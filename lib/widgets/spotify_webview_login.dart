@@ -150,43 +150,43 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
       _completed = true;
       final headers = SpotifyTokenService.headersFromSpDc(spDcCookie.value);
 
-      // Extract user identity via WebView JS — avoids the server-side rate
-      // limit on api.spotify.com/v1/me.
-      //
-      // Primary path: poll the Spotify SPA's DOM for a /user/{id} link that
-      // appears in the navigation header once React renders (~0.5–2s). Use that
-      // real user ID to call spclient/profile/{id}, which is not rate-limited.
-      // Fallback: /v1/me from the browser context (may work from device IP).
+      // Extract user identity via WebView JS — avoids the server-side rate limit
+      // on api.spotify.com/v1/me. Primary: read localStorage key prefix to get
+      // the Spotify user ID instantly, then call spclient/profile/{id}.
+      // Fallback: /v1/me from browser context.
       if (_webViewController != null) {
         try {
           AppLogger.auth('Injecting JS to get user identity...');
           final result = await _webViewController!.callAsyncJavaScript(
             functionBody: r'''
               async function getUser(token) {
-                // Poll DOM for /user/{id} link — Spotify SPA renders it within ~2s
-                for (let i = 0; i < 10; i++) {
-                  for (const el of document.querySelectorAll('a[href]')) {
-                    const href = el.href || el.getAttribute('href') || '';
-                    const m = href.match(/\/user\/([^\/\?#]{2,})/);
-                    if (m) {
-                      const userId = m[1];
-                      try {
-                        const r = await fetch(
-                          'https://guc-spclient.spotify.com/user-profile-view/v3/profile/' + userId,
-                          { headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json', 'App-Platform': 'WebPlayer' } }
-                        );
-                        if (r.ok) {
-                          const p = await r.json();
-                          return { id: userId, displayName: p.name || userId, imageUrl: p.image_url || null, country: 'US', followers: p.followers_count || 0 };
-                        }
-                      } catch (_) {}
-                      // spclient failed but we have the ID — return minimal
-                      return { id: userId, displayName: userId, imageUrl: null, country: 'US', followers: 0 };
-                    }
-                  }
-                  await new Promise(res => setTimeout(res, 300));
+                // Spotify namespaces all per-user localStorage keys as "{userId}:settingName".
+                // Reading the first non-"anonymous" prefix gives us the real Spotify ID
+                // instantly — no API call, no rate limits, no DOM polling needed.
+                let userId = null;
+                for (let i = 0; i < localStorage.length; i++) {
+                  const key = localStorage.key(i) || '';
+                  const m = key.match(/^([a-z0-9]{20,}):/);
+                  if (m && m[1] !== 'anonymous') { userId = m[1]; break; }
                 }
-                // Fallback: /v1/me from browser context (may work when device not rate-limited)
+
+                if (userId) {
+                  // Fetch full profile from spclient with the real user ID (not rate-limited)
+                  try {
+                    const r = await fetch(
+                      'https://guc-spclient.spotify.com/user-profile-view/v3/profile/' + userId,
+                      { headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json', 'App-Platform': 'WebPlayer' } }
+                    );
+                    if (r.ok) {
+                      const p = await r.json();
+                      return { id: userId, displayName: p.name || userId, imageUrl: p.image_url || null, country: 'US', followers: p.followers_count || 0 };
+                    }
+                  } catch (_) {}
+                  // spclient failed but we have the ID — return minimal
+                  return { id: userId, displayName: userId, imageUrl: null, country: 'US', followers: 0 };
+                }
+
+                // Fallback: /v1/me from browser context (works when device IP not rate-limited)
                 try {
                   const r = await fetch('https://api.spotify.com/v1/me', {
                     headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' }
