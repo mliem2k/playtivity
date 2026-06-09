@@ -275,12 +275,12 @@ class SpotifyBuddyService {
     return User(
       id: JsonHelpers.getString(data, 'id'),
       displayName: JsonHelpers.getString(data, 'display_name'),
-      email: data['email'] as String? ?? 'user@spotify.com',
+      email: data['email'] as String? ?? '',
       imageUrl: JsonHelpers.getSpotifyImageUrl(data),
       followers: data['followers'] is Map
           ? JsonHelpers.getNestedInt(data, ['followers', 'total'])
           : 0,
-      country: data['country'] as String? ?? 'US',
+      country: data['country'] as String? ?? '',
     );
   }
 
