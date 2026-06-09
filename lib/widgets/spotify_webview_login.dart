@@ -150,36 +150,66 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
       _completed = true;
       final headers = SpotifyTokenService.headersFromSpDc(spDcCookie.value);
 
-      // Try to fetch user profile from within the browser context — avoids the
-      // server-side rate limit that blocks api.spotify.com/v1/me from Dart code.
+      // Extract user identity via WebView JS — avoids the server-side rate
+      // limit on api.spotify.com/v1/me.
+      //
+      // Primary path: poll the Spotify SPA's DOM for a /user/{id} link that
+      // appears in the navigation header once React renders (~0.5–2s). Use that
+      // real user ID to call spclient/profile/{id}, which is not rate-limited.
+      // Fallback: /v1/me from the browser context (may work from device IP).
       if (_webViewController != null) {
         try {
-          AppLogger.auth('Injecting JS to fetch /v1/me...');
+          AppLogger.auth('Injecting JS to get user identity...');
           final result = await _webViewController!.callAsyncJavaScript(
-            functionBody: '''
-              try {
-                const resp = await fetch('https://api.spotify.com/v1/me', {
-                  headers: { 'Authorization': 'Bearer $token', 'Accept': 'application/json' }
-                });
-                if (!resp.ok) return null;
-                const d = await resp.json();
-                return {
-                  id: d.id,
-                  displayName: d.display_name,
-                  imageUrl: (d.images && d.images.length > 0) ? d.images[0].url : null,
-                  country: d.country || null,
-                  followers: d.followers ? d.followers.total : 0
-                };
-              } catch(e) { return null; }
-            ''',
+            functionBody: r'''
+              async function getUser(token) {
+                // Poll DOM for /user/{id} link — Spotify SPA renders it within ~2s
+                for (let i = 0; i < 10; i++) {
+                  for (const el of document.querySelectorAll('a[href]')) {
+                    const href = el.href || el.getAttribute('href') || '';
+                    const m = href.match(/\/user\/([^\/\?#]{2,})/);
+                    if (m) {
+                      const userId = m[1];
+                      try {
+                        const r = await fetch(
+                          'https://guc-spclient.spotify.com/user-profile-view/v3/profile/' + userId,
+                          { headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json', 'App-Platform': 'WebPlayer' } }
+                        );
+                        if (r.ok) {
+                          const p = await r.json();
+                          return { id: userId, displayName: p.name || userId, imageUrl: p.image_url || null, country: 'US', followers: p.followers_count || 0 };
+                        }
+                      } catch (_) {}
+                      // spclient failed but we have the ID — return minimal
+                      return { id: userId, displayName: userId, imageUrl: null, country: 'US', followers: 0 };
+                    }
+                  }
+                  await new Promise(res => setTimeout(res, 300));
+                }
+                // Fallback: /v1/me from browser context (may work when device not rate-limited)
+                try {
+                  const r = await fetch('https://api.spotify.com/v1/me', {
+                    headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' }
+                  });
+                  if (r.ok) {
+                    const d = await r.json();
+                    return { id: d.id, displayName: d.display_name, imageUrl: (d.images && d.images.length) ? d.images[0].url : null, country: d.country || null, followers: d.followers ? d.followers.total : 0 };
+                  }
+                } catch (_) {}
+                return null;
+              }
+              return getUser('SPOTIFY_TOKEN');
+            '''.replaceAll('SPOTIFY_TOKEN', token),
           );
           final userMap = result?.value;
           if (userMap is Map && (userMap['id'] as String?)?.isNotEmpty == true) {
             headers['x-prefetched-user'] = jsonEncode(Map<String, dynamic>.from(userMap));
-            AppLogger.auth('JS /v1/me OK: ${userMap["displayName"]}');
+            AppLogger.auth('JS identity OK: ${userMap["displayName"]} (${userMap["id"]})');
+          } else {
+            AppLogger.auth('JS identity returned null — will fall through to server-side fetch');
           }
         } catch (e) {
-          AppLogger.auth('JS /v1/me failed: $e');
+          AppLogger.auth('JS identity injection failed: $e');
         }
       }
 

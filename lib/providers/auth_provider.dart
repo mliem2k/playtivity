@@ -182,43 +182,27 @@ class AuthProvider extends ChangeNotifier {
         }
       }
 
+      // Server-side fallback — only used when WebView JS injection failed.
+      // api.spotify.com/v1/me is rate-limited (429) for web-player tokens from
+      // server-side Dart, so we only try once to fail fast rather than spinning
+      // for 75+ seconds across 5 retries.
       if (userProfile == null) {
-        if (userProfileFetchOverride == null) {
-          // Brief pause to let the token propagate before the first API call.
-          _addEvent('Waiting 500ms before profile fetch...');
-          await Future.delayed(const Duration(milliseconds: 500));
-        }
-      }
-
-      final profileFetcher = userProfileFetchOverride ??
-          _buddyService.getCurrentUserProfileWithToken;
-
-      for (int attempt = 1; attempt <= 5 && userProfile == null; attempt++) {
+        final profileFetcher = userProfileFetchOverride ??
+            _buddyService.getCurrentUserProfileWithToken;
         try {
-          _addEvent('Profile fetch attempt $attempt/5...');
+          _addEvent('Profile fetch (server-side fallback)...');
           userProfile = await profileFetcher(_bearerToken!);
           if (userProfile != null) {
-            _addEvent('Profile loaded: ${userProfile.displayName} (attempt $attempt)');
-            break;
+            _addEvent('Profile loaded: ${userProfile.displayName}');
           }
-          _addEvent('Attempt $attempt returned null');
         } catch (e) {
-          _lastAuthError = 'Attempt $attempt: $e';
-          _addEvent('Attempt $attempt failed: $e');
-          if (attempt < 5) {
-            final errorStr = e.toString().toLowerCase();
-            final isRateLimit = errorStr.contains('429') || errorStr.contains('rate limit');
-            final delayMs = isRateLimit
-                ? 5000 * (1 << (attempt - 1))
-                : (attempt <= 2 ? 1000 : 2000);
-            _addEvent('Retry in ${delayMs}ms${isRateLimit ? " (rate limit)" : ""}');
-            await Future.delayed(Duration(milliseconds: delayMs));
-          }
+          _lastAuthError = '$e';
+          _addEvent('Server-side profile fetch failed: $e');
         }
       }
 
       if (userProfile == null) {
-        throw Exception('Profile fetch failed after 5 attempts');
+        throw Exception('Could not load profile. Please try logging in again.');
       }
 
       _currentUser = userProfile;
