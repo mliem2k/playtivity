@@ -6,7 +6,7 @@ import 'app_logger.dart';
 /// Fetches Spotify Bearer tokens from an sp_dc cookie without a WebView.
 /// Used for silent token refresh on subsequent app sessions.
 class SpotifyTokenService {
-  static const _ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+  static const String userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
       'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36';
 
   /// Fetches Spotify's server time via the HTTP Date header for TOTP sync.
@@ -71,7 +71,7 @@ class SpotifyTokenService {
 
       final request = await client.getUrl(tokenUrl);
       request.headers.set('Cookie', 'sp_dc=$spDc');
-      request.headers.set('User-Agent', _ua);
+      request.headers.set('User-Agent', userAgent);
       request.headers.set('Accept', 'application/json');
       request.headers.set('App-Platform', 'WebPlayer');
       request.headers.set('Content-Type', 'application/json');
@@ -111,7 +111,7 @@ class SpotifyTokenService {
   /// Builds a minimal headers map from an sp_dc value for API calls.
   static Map<String, String> headersFromSpDc(String spDc) => {
     'Cookie': 'sp_dc=$spDc',
-    'User-Agent': _ua,
+    'User-Agent': userAgent,
     'Accept': 'application/json',
     'App-Platform': 'WebPlayer',
     'Referer': 'https://open.spotify.com/',
