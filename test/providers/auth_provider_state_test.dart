@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:playtivity/providers/auth_provider.dart';
@@ -190,6 +191,113 @@ void main() {
       await provider.logout();
 
       expect(provider.authState, AuthState.unauthenticated);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 3b. loginComplete — x-prefetched-user header (WebView JS injection path)
+  // ---------------------------------------------------------------------------
+  group('AuthProvider.loginComplete — x-prefetched-user header', () {
+    const _validToken =
+        'Bearer.token.abc1234567890123456789012345678901234567890';
+
+    Map<String, String> _headersWithUser(Map<String, dynamic> user) => {
+          'Cookie': 'sp_dc=validSpDc',
+          'x-prefetched-user': jsonEncode(user),
+        };
+
+    test('uses prefetched user directly without calling profileFetcher', () async {
+      var profileFetcherCalled = false;
+      final provider = await _makeProvider(
+        profileFetcher: (_) async {
+          profileFetcherCalled = true;
+          return _fakeUser();
+        },
+      );
+      await _waitForInit(provider);
+
+      await provider.loginComplete(
+        _validToken,
+        _headersWithUser({
+          'id': 'mliem2k',
+          'displayName': 'Michael Liem',
+          'imageUrl': null,
+          'country': 'AU',
+          'followers': 12,
+        }),
+      );
+
+      expect(provider.authState, AuthState.authenticated);
+      expect(provider.currentUser?.id, 'mliem2k');
+      expect(provider.currentUser?.displayName, 'Michael Liem');
+      expect(profileFetcherCalled, isFalse,
+          reason: 'profileFetcher must be skipped when prefetched user is valid');
+    });
+
+    test('prefetched user fields are stored correctly on the User model', () async {
+      final provider = await _makeProvider();
+      await _waitForInit(provider);
+
+      await provider.loginComplete(
+        _validToken,
+        _headersWithUser({
+          'id': 'mliem2k',
+          'displayName': 'Michael Liem',
+          'imageUrl': 'https://i.scdn.co/image/abc123',
+          'country': 'AU',
+          'followers': 42,
+        }),
+      );
+
+      final user = provider.currentUser!;
+      expect(user.id, 'mliem2k');
+      expect(user.displayName, 'Michael Liem');
+      expect(user.imageUrl, 'https://i.scdn.co/image/abc123');
+      expect(user.country, 'AU');
+      expect(user.followers, 42);
+    });
+
+    test('falls through to profileFetcher when x-prefetched-user id is empty', () async {
+      var profileFetcherCalled = false;
+      final provider = await _makeProvider(
+        profileFetcher: (_) async {
+          profileFetcherCalled = true;
+          return _fakeUser();
+        },
+      );
+      await _waitForInit(provider);
+
+      await provider.loginComplete(
+        _validToken,
+        _headersWithUser({'id': '', 'displayName': 'Should be ignored'}),
+      );
+
+      expect(profileFetcherCalled, isTrue,
+          reason: 'empty id must fall through to profileFetcher');
+      expect(provider.authState, AuthState.authenticated);
+    });
+
+    test('falls through to profileFetcher when x-prefetched-user is malformed JSON', () async {
+      var profileFetcherCalled = false;
+      final provider = await _makeProvider(
+        profileFetcher: (_) async {
+          profileFetcherCalled = true;
+          return _fakeUser();
+        },
+      );
+      await _waitForInit(provider);
+
+      await provider.loginComplete(
+        _validToken,
+        {
+          'Cookie': 'sp_dc=validSpDc',
+          'x-prefetched-user': 'not-valid-json',
+        },
+      );
+
+      expect(profileFetcherCalled, isTrue,
+          reason: 'malformed JSON must fall through to profileFetcher');
+      expect(provider.authState, AuthState.authenticated);
     });
   });
 
