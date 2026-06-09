@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 import '../models/activity.dart';
+import '../utils/theme.dart';
 import '../utils/spotify_launcher.dart';
-import 'activity_card_components.dart';
+import '../utils/friend_profile_launcher.dart';
+import 'avatar_widget.dart';
+import 'cached_image_widget.dart';
+import 'equalizer_icon.dart';
+import 'package:timeago/timeago.dart' as timeago;
 
 class ActivityCard extends StatelessWidget {
   final Activity activity;
@@ -10,75 +15,159 @@ class ActivityCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      child: Stack(
-        children: [
-          // Main card content
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // User Info Section
-                UserInfoSection(
-                  user: activity.user,
-                  isCurrentlyPlaying: activity.isCurrentlyPlaying,
-                  timestamp: activity.timestamp,
-                  contentUri: activity.contentUri,
-                ),
-                
-                const SizedBox(height: 16),
-                
-                // Track Info Section
-                if (activity.track != null)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 48), // Space for play button
-                    child: TrackInfoSection(track: activity.track!),
-                  ),
-              ],
-            ),
-          ),
-          
-          // Play button - positioned absolutely
-          Positioned(
-            right: 16,
-            top: 88, // Align with track info
-            child: _PlayButton(contentUri: activity.contentUri),
-          ),
-        ],
+    return InkWell(
+      onTap: () async =>
+          SpotifyLauncher.launchSpotifyUriAndPlay(activity.contentUri),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            _Avatar(activity: activity),
+            const SizedBox(width: 16),
+            Expanded(child: _InfoColumn(activity: activity)),
+            const SizedBox(width: 12),
+            _AlbumArt(activity: activity),
+          ],
+        ),
       ),
     );
   }
 }
 
-class _PlayButton extends StatelessWidget {
-  final String contentUri;
-
-  const _PlayButton({required this.contentUri});
+class _Avatar extends StatelessWidget {
+  final Activity activity;
+  const _Avatar({required this.activity});
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () async {
-          await SpotifyLauncher.launchSpotifyUriAndPlay(contentUri);
-        },
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Theme.of(context).primaryColor.withAlpha(26), // 0.1 * 255 ≈ 26
+    return GestureDetector(
+      onTap: () async => FriendProfileLauncher.openFriendProfile(
+        activity.user.id,
+        friendName: activity.user.displayName,
+      ),
+      child: AvatarWidget(
+        imageUrl: activity.user.imageUrl,
+        displayName: activity.user.displayName,
+        radius: 22,
+      ),
+    );
+  }
+}
+
+class _InfoColumn extends StatelessWidget {
+  final Activity activity;
+  const _InfoColumn({required this.activity});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          activity.user.displayName,
+          style: const TextStyle(
+            color: AppTheme.textPrimary,
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
           ),
-          child: Icon(
-            Icons.play_arrow,
-            color: Theme.of(context).primaryColor,
-            size: 24,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 2),
+        _StatusLine(
+          isCurrentlyPlaying: activity.isCurrentlyPlaying,
+          timestamp: activity.timestamp,
+        ),
+        if (activity.track != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            activity.track!.name,
+            style: const TextStyle(
+              color: AppTheme.textPrimary,
+              fontWeight: FontWeight.w500,
+              fontSize: 14,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '${activity.track!.artistsString} · ${activity.track!.album}',
+            style: const TextStyle(
+              color: AppTheme.textSecondary,
+              fontSize: 13,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _StatusLine extends StatelessWidget {
+  final bool isCurrentlyPlaying;
+  final DateTime timestamp;
+  const _StatusLine({required this.isCurrentlyPlaying, required this.timestamp});
+
+  @override
+  Widget build(BuildContext context) {
+    if (isCurrentlyPlaying) {
+      return const Row(
+        children: [
+          EqualizerIcon(size: 12),
+          SizedBox(width: 4),
+          Text(
+            'Listening now',
+            style: TextStyle(
+              color: AppTheme.primaryActive,
+              fontWeight: FontWeight.w500,
+              fontSize: 11,
+            ),
+          ),
+        ],
+      );
+    }
+    return Row(
+      children: [
+        const Icon(Icons.history, size: 12, color: AppTheme.textSecondary),
+        const SizedBox(width: 4),
+        Text(
+          timeago.format(timestamp),
+          style: const TextStyle(
+            color: AppTheme.textSecondary,
+            fontSize: 11,
           ),
         ),
+      ],
+    );
+  }
+}
+
+class _AlbumArt extends StatelessWidget {
+  final Activity activity;
+  const _AlbumArt({required this.activity});
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = activity.track?.imageUrl;
+    if (imageUrl != null && imageUrl.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: CachedImageWidget(imageUrl: imageUrl, width: 48, height: 48),
+      );
+    }
+    return Container(
+      width: 48,
+      height: 48,
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceElevated,
+        borderRadius: BorderRadius.circular(4),
       ),
+      child: const Icon(Icons.music_note, color: AppTheme.textSubdued, size: 20),
     );
   }
 }
