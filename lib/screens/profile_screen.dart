@@ -1,16 +1,15 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/auth_provider.dart';
 import '../providers/spotify_provider.dart';
+import '../utils/theme.dart';
+import '../utils/spotify_launcher.dart';
 import '../widgets/track_tile.dart';
 import '../widgets/artist_tile.dart';
 import '../widgets/currently_playing_card.dart';
-import '../widgets/refresh_indicator_bar.dart';
-import '../utils/spotify_launcher.dart';
-import 'settings_screen.dart';
 import '../services/app_logger.dart';
+import 'settings_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -19,17 +18,15 @@ class ProfileScreen extends StatefulWidget {
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMixin {
+class _ProfileScreenState extends State<ProfileScreen>
+    with TickerProviderStateMixin {
   late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    // Delay initial data load to ensure providers are fully initialized
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadData();
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadData());
   }
 
   @override
@@ -41,230 +38,218 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
   Future<void> _loadData() async {
     final authProvider = context.read<AuthProvider>();
     final spotifyProvider = context.read<SpotifyProvider>();
-    
-    // Ensure authentication is initialized before loading data
     if (!authProvider.isInitialized) {
       AppLogger.warning('Authentication not yet initialized, skipping data load');
       return;
     }
-    
     if (authProvider.isAuthenticated) {
-      // Show loading only if we have no cached data
-      final showLoading = spotifyProvider.topTracks.isEmpty && spotifyProvider.topArtists.isEmpty;
+      final showLoading = spotifyProvider.topTracks.isEmpty &&
+          spotifyProvider.topArtists.isEmpty;
       await spotifyProvider.refreshData(showLoading: showLoading);
-    } else {
-      AppLogger.warning('No authentication available - cannot load profile data');
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    
-    return Scaffold(
-      extendBodyBehindAppBar: true, // Extend body behind app bar
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(kToolbarHeight),
-        child: ClipRRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: isDark ? 20 : 10, sigmaY: isDark ? 20 : 10),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Theme.of(context).appBarTheme.backgroundColor ?? theme.scaffoldBackgroundColor.withValues(alpha: 230),
-                boxShadow: [], // Empty box shadow
-              ),
-              child: AppBar(
-                backgroundColor: Colors.transparent,
-                elevation: 0,
-                title: const Text(
-                  'Profile',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+    return Consumer2<AuthProvider, SpotifyProvider>(
+      builder: (context, authProvider, spotifyProvider, _) {
+        final user = authProvider.currentUser;
+        return Scaffold(
+          extendBodyBehindAppBar: true,
+          body: NestedScrollView(
+            headerSliverBuilder: (context, innerBoxIsScrolled) => [
+              SliverToBoxAdapter(child: _buildHeader(context, user, spotifyProvider)),
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: _TabBarDelegate(
+                  TabBar(controller: _tabController, tabs: const [
+                    Tab(text: 'Top Songs'),
+                    Tab(text: 'Top Artists'),
+                  ]),
                 ),
-                actions: [
-                  IconButton(
-                    icon: const Icon(Icons.settings),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const SettingsScreen()),
-                      );
-                    },
-                  ),
-                ],
               ),
+            ],
+            body: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildTopSongs(spotifyProvider),
+                _buildTopArtists(spotifyProvider),
+              ],
             ),
           ),
+        );
+      },
+    );
+  }
+
+  Widget _buildHeader(BuildContext context, dynamic user, SpotifyProvider sp) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [AppTheme.primary, AppTheme.background],
+          stops: [0.0, 0.7],
         ),
-      ),      body: SafeArea(
-        child: Consumer2<AuthProvider, SpotifyProvider>(
-          builder: (context, authProvider, spotifyProvider, child) {
-            final user = authProvider.currentUser;
-            
-            return Column(
-              children: [
-                // Refresh indicator bar
-                RefreshIndicatorBar(
-                  isRefreshing: spotifyProvider.isRefreshing,
-                  message: 'Updating profile data...',
-                ),
-                // User Profile Header
-                Container(
-                  padding: const EdgeInsets.only(
-                    left: 24,
-                    right: 24,
-                    top: 24,
-                    bottom: 24,
-                  ),
-                child: Column(
-                  children: [
-                    // Profile Picture
-                    GestureDetector(
-                      onTap: () async {
-                        if (user != null) {
-                          final spotifyUri = 'spotify:user:${user.id}';
-                          await SpotifyLauncher.launchSpotifyUri(spotifyUri);
-                        }
-                      },
-                      child: CircleAvatar(
-                        radius: 50,
-                        backgroundColor: Theme.of(context).primaryColor,
-                        backgroundImage: user?.imageUrl != null
-                            ? CachedNetworkImageProvider(user!.imageUrl!)
-                            : null,
-                        child: user?.imageUrl == null
-                            ? Text(
-                                user?.displayName.isNotEmpty == true
-                                    ? user!.displayName[0].toUpperCase()
-                                    : '?',
-                                style: const TextStyle(
-                                  fontSize: 32,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : null,
-                      ),
-                    ),
-                    
-                    const SizedBox(height: 16),
-                    
-                    // User Name
-                    Text(
-                      user?.displayName ?? 'Unknown User',
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    
-                    const SizedBox(height: 4),
-                    
-                    // Followers
-                    Text(
-                      '${user?.followers ?? 0} followers',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Colors.grey,
-                      ),
-                    ),
-                  ],
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            // Settings button row
+            Align(
+              alignment: Alignment.centerRight,
+              child: IconButton(
+                icon: const Icon(Icons.settings, color: AppTheme.textPrimary),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
                 ),
               ),
-              
-              // Currently Playing
-              if (spotifyProvider.currentlyPlaying != null)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: CurrentlyPlayingCard(
-                    track: spotifyProvider.currentlyPlaying!,
+            ),
+            // Avatar
+            GestureDetector(
+              onTap: () async {
+                if (user != null) {
+                  await SpotifyLauncher.launchSpotifyUri(
+                      'spotify:user:${user.id}');
+                }
+              },
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: AppTheme.textPrimary.withOpacity(0.2),
+                    width: 2,
                   ),
                 ),
-              
-              const SizedBox(height: 16),
-              
-              // Tabs
-              TabBar(
-                controller: _tabController,
-                tabs: const [
-                  Tab(text: 'Top Songs'),
-                  Tab(text: 'Top Artists'),
-                ],
-              ),
-              
-              // Tab Content
-              Expanded(
-                child: TabBarView(
-                  controller: _tabController,
-                  children: [
-                    // Top Songs Tab
-                    _buildTopSongsTab(spotifyProvider),
-                    
-                    // Top Artists Tab
-                    _buildTopArtistsTab(spotifyProvider),
-                  ],
+                child: CircleAvatar(
+                  radius: 44,
+                  backgroundColor: AppTheme.surfaceElevated,
+                  backgroundImage: user?.imageUrl != null
+                      ? CachedNetworkImageProvider(user!.imageUrl!)
+                      : null,
+                  child: user?.imageUrl == null
+                      ? Text(
+                          user?.displayName.isNotEmpty == true
+                              ? user!.displayName[0].toUpperCase()
+                              : '?',
+                          style: const TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w800,
+                            color: AppTheme.textPrimary,
+                          ),
+                        )
+                      : null,
                 ),
-              ),            ],
-          );
-        },
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              user?.displayName ?? 'Unknown User',
+              style: const TextStyle(
+                color: AppTheme.textPrimary,
+                fontWeight: FontWeight.w800,
+                fontSize: 24,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${user?.followers ?? 0} followers',
+              style: const TextStyle(
+                color: AppTheme.textSecondary,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (sp.currentlyPlaying != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: CurrentlyPlayingCard(track: sp.currentlyPlaying!),
+              ),
+            const SizedBox(height: 8),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildTopSongsTab(SpotifyProvider spotifyProvider) {
-    if (spotifyProvider.isLoading) {
-      return const Center(child: CircularProgressIndicator());
+  Widget _buildTopSongs(SpotifyProvider sp) {
+    if (sp.isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(color: AppTheme.primary),
+      );
     }
-
-    if (spotifyProvider.topTracks.isEmpty) {
+    if (sp.topTracks.isEmpty) {
       return const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.music_note_outlined, size: 64, color: Colors.grey),
+            Icon(Icons.music_note_outlined, size: 48, color: AppTheme.textSubdued),
             SizedBox(height: 16),
-            Text('No top tracks found'),
+            Text('No top tracks found',
+                style: TextStyle(color: AppTheme.textSecondary)),
           ],
         ),
       );
-    }    return ListView.builder(
-      padding: const EdgeInsets.only(top: 16, left: 16, right: 16, bottom: 16),
-      itemCount: spotifyProvider.topTracks.length,
-      itemBuilder: (context, index) {
-        final track = spotifyProvider.topTracks[index];
-        return TrackTile(
-          track: track,
-          rank: index + 1,
-        );
-      },
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.only(top: 8, bottom: 100),
+      itemCount: sp.topTracks.length,
+      separatorBuilder: (_, __) =>
+          const Divider(height: 1, color: AppTheme.dividerColor),
+      itemBuilder: (_, i) => TrackTile(track: sp.topTracks[i], rank: i + 1),
     );
   }
 
-  Widget _buildTopArtistsTab(SpotifyProvider spotifyProvider) {
-    if (spotifyProvider.isLoading) {
-      return const Center(child: CircularProgressIndicator());
+  Widget _buildTopArtists(SpotifyProvider sp) {
+    if (sp.isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(color: AppTheme.primary),
+      );
     }
-
-    if (spotifyProvider.topArtists.isEmpty) {
+    if (sp.topArtists.isEmpty) {
       return const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.person_outline, size: 64, color: Colors.grey),
+            Icon(Icons.person_outline, size: 48, color: AppTheme.textSubdued),
             SizedBox(height: 16),
-            Text('No top artists found'),
+            Text('No top artists found',
+                style: TextStyle(color: AppTheme.textSecondary)),
           ],
         ),
       );
-    }    return ListView.builder(
-      padding: const EdgeInsets.only(top: 16, left: 16, right: 16, bottom: 16),
-      itemCount: spotifyProvider.topArtists.length,
-      itemBuilder: (context, index) {
-        final artist = spotifyProvider.topArtists[index];
-        return ArtistTile(
-          artist: artist,
-          rank: index + 1,
-        );
-      },
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.only(top: 8, bottom: 100),
+      itemCount: sp.topArtists.length,
+      separatorBuilder: (_, __) =>
+          const Divider(height: 1, color: AppTheme.dividerColor),
+      itemBuilder: (_, i) =>
+          ArtistTile(artist: sp.topArtists[i], rank: i + 1),
     );
   }
-} 
+}
+
+class _TabBarDelegate extends SliverPersistentHeaderDelegate {
+  final TabBar tabBar;
+  const _TabBarDelegate(this.tabBar);
+
+  @override
+  double get minExtent => tabBar.preferredSize.height;
+  @override
+  double get maxExtent => tabBar.preferredSize.height;
+
+  @override
+  Widget build(
+      BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return Container(
+      color: AppTheme.background,
+      child: tabBar,
+    );
+  }
+
+  @override
+  bool shouldRebuild(_TabBarDelegate oldDelegate) => false;
+}
