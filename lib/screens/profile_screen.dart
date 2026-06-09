@@ -3,6 +3,9 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/auth_provider.dart';
 import '../providers/spotify_provider.dart';
+import '../models/track.dart';
+import '../models/artist.dart';
+import '../models/user.dart';
 import '../utils/theme.dart';
 import '../utils/spotify_launcher.dart';
 import '../widgets/track_tile.dart';
@@ -51,38 +54,51 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Consumer2<AuthProvider, SpotifyProvider>(
-      builder: (context, authProvider, spotifyProvider, _) {
-        final user = authProvider.currentUser;
-        return Scaffold(
-          extendBodyBehindAppBar: true,
-          body: NestedScrollView(
-            headerSliverBuilder: (context, innerBoxIsScrolled) => [
-              SliverToBoxAdapter(child: _buildHeader(context, user, spotifyProvider)),
-              SliverPersistentHeader(
-                pinned: true,
-                delegate: _TabBarDelegate(
-                  TabBar(controller: _tabController, tabs: const [
-                    Tab(text: 'Top Songs'),
-                    Tab(text: 'Top Artists'),
-                  ]),
-                ),
+    return Scaffold(
+      extendBodyBehindAppBar: true,
+      body: NestedScrollView(
+        headerSliverBuilder: (context, innerBoxIsScrolled) => [
+          SliverToBoxAdapter(
+            child: Selector2<AuthProvider, SpotifyProvider,
+                ({User? user, Track? currentlyPlaying})>(
+              selector: (_, auth, sp) => (
+                user: auth.currentUser,
+                currentlyPlaying: sp.currentlyPlaying,
               ),
-            ],
-            body: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildTopSongs(spotifyProvider),
-                _buildTopArtists(spotifyProvider),
-              ],
+              builder: (ctx, data, _) =>
+                  _buildHeader(context, data.user, data.currentlyPlaying),
             ),
           ),
-        );
-      },
+          SliverPersistentHeader(
+            pinned: true,
+            delegate: _TabBarDelegate(
+              TabBar(controller: _tabController, tabs: const [
+                Tab(text: 'Top Songs'),
+                Tab(text: 'Top Artists'),
+              ]),
+            ),
+          ),
+        ],
+        body: Selector<SpotifyProvider,
+            ({List<Track> topTracks, List<Artist> topArtists, bool isLoading})>(
+          selector: (_, sp) => (
+            topTracks: sp.topTracks,
+            topArtists: sp.topArtists,
+            isLoading: sp.isLoading,
+          ),
+          builder: (ctx, data, _) => TabBarView(
+            controller: _tabController,
+            children: [
+              _buildTopSongs(data.topTracks, data.isLoading),
+              _buildTopArtists(data.topArtists, data.isLoading),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
-  Widget _buildHeader(BuildContext context, dynamic user, SpotifyProvider sp) {
+  Widget _buildHeader(BuildContext context, User? user, Track? currentlyPlaying) {
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -96,7 +112,6 @@ class _ProfileScreenState extends State<ProfileScreen>
         bottom: false,
         child: Column(
           children: [
-            // Settings button row
             Align(
               alignment: Alignment.centerRight,
               child: IconButton(
@@ -107,12 +122,10 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
               ),
             ),
-            // Avatar
             GestureDetector(
               onTap: () async {
                 if (user != null) {
-                  await SpotifyLauncher.launchSpotifyUri(
-                      'spotify:user:${user.id}');
+                  await SpotifyLauncher.launchSpotifyUri('spotify:user:${user.id}');
                 }
               },
               child: Container(
@@ -162,10 +175,10 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
             ),
             const SizedBox(height: 16),
-            if (sp.currentlyPlaying != null)
+            if (currentlyPlaying != null)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: CurrentlyPlayingCard(track: sp.currentlyPlaying!),
+                child: CurrentlyPlayingCard(track: currentlyPlaying),
               ),
             const SizedBox(height: 8),
           ],
@@ -174,13 +187,13 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  Widget _buildTopSongs(SpotifyProvider sp) {
-    if (sp.isLoading) {
+  Widget _buildTopSongs(List<Track> topTracks, bool isLoading) {
+    if (isLoading) {
       return const Center(
         child: CircularProgressIndicator(color: AppTheme.primary),
       );
     }
-    if (sp.topTracks.isEmpty) {
+    if (topTracks.isEmpty) {
       return const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -195,20 +208,20 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
     return ListView.separated(
       padding: const EdgeInsets.only(top: 8, bottom: 100),
-      itemCount: sp.topTracks.length,
+      itemCount: topTracks.length,
       separatorBuilder: (_, _) =>
           const Divider(height: 1, color: AppTheme.dividerColor),
-      itemBuilder: (_, i) => TrackTile(track: sp.topTracks[i], rank: i + 1),
+      itemBuilder: (_, i) => TrackTile(track: topTracks[i], rank: i + 1),
     );
   }
 
-  Widget _buildTopArtists(SpotifyProvider sp) {
-    if (sp.isLoading) {
+  Widget _buildTopArtists(List<Artist> topArtists, bool isLoading) {
+    if (isLoading) {
       return const Center(
         child: CircularProgressIndicator(color: AppTheme.primary),
       );
     }
-    if (sp.topArtists.isEmpty) {
+    if (topArtists.isEmpty) {
       return const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -223,11 +236,11 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
     return ListView.separated(
       padding: const EdgeInsets.only(top: 8, bottom: 100),
-      itemCount: sp.topArtists.length,
+      itemCount: topArtists.length,
       separatorBuilder: (_, _) =>
           const Divider(height: 1, color: AppTheme.dividerColor),
       itemBuilder: (_, i) =>
-          ArtistTile(artist: sp.topArtists[i], rank: i + 1),
+          ArtistTile(artist: topArtists[i], rank: i + 1),
     );
   }
 }
