@@ -59,6 +59,7 @@ class MyApp extends StatelessWidget {
       ],
       child: MaterialApp(
         title: 'Playtivity',
+        debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,
         navigatorKey: navigatorKey,
         builder: (context, child) => UpdateCheckerWrapper(child: child!),
