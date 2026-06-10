@@ -24,6 +24,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
   String? _error;
   bool _completed = false;
   bool _processingAuth = false;
+  bool _capturing = false;
   String _processingStep = '';
   InAppWebViewController? _webViewController;
   Timer? _cookieRetryTimer;
@@ -147,7 +148,19 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
               ],
             ),
             if (_processingAuth)
-              _AuthProcessingOverlay(step: _processingStep),
+              _AuthProcessingOverlay(
+                step: _processingStep,
+                onCancel: () {
+                  _cookieRetryTimer?.cancel();
+                  _capturing = false;
+                  if (mounted) setState(() { _processingAuth = false; _completed = false; });
+                  if (widget.onCancel != null) {
+                    widget.onCancel!();
+                  } else {
+                    Navigator.of(context).pop();
+                  }
+                },
+              ),
           ],
         ),
       ),
@@ -155,6 +168,8 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
   }
 
   Future<void> _attemptTokenCapture(WebUri url) async {
+    if (_capturing) return;
+    _capturing = true;
     if (mounted) setState(() { _processingAuth = true; _processingStep = 'Verifying session...'; });
     try {
       final cookies = await CookieManager.instance().getCookies(url: url);
@@ -165,6 +180,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
       if (spDcCookie.name.isEmpty) {
         // sp_dc not yet in cookie store — Spotify SPA may not have committed it yet.
         // Schedule retries so we don't silently give up after the first onLoadStop.
+        _capturing = false;
         if (mounted) setState(() => _processingAuth = false);
         if (_cookieRetryTimer == null || !_cookieRetryTimer!.isActive) {
           _scheduleCookieRetry(url);
@@ -198,6 +214,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
           AppLogger.auth('Injecting JS to get user identity...');
           final result = await _webViewController!.callAsyncJavaScript(
             functionBody: r'''
+
               async function getUser(token) {
                 // Spotify namespaces all per-user localStorage keys as "{userId}:settingName".
                 // Reading the first non-"anonymous" prefix gives us the real Spotify ID
@@ -259,7 +276,7 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
               }
               return getUser('SPOTIFY_TOKEN');
             '''.replaceAll('SPOTIFY_TOKEN', token),
-          );
+          ).timeout(const Duration(seconds: 15), onTimeout: () => null);
           final userMap = result?.value;
           if (userMap is Map && (userMap['id'] as String?)?.isNotEmpty == true) {
             headers['x-prefetched-user'] = jsonEncode(Map<String, dynamic>.from(userMap));
@@ -296,6 +313,8 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
           _error = 'Authentication error: $e';
         });
       }
+    } finally {
+      _capturing = false;
     }
   }
 }
@@ -352,15 +371,11 @@ class _ErrorBanner extends StatelessWidget {
   }
 }
 
-class _AuthProcessingOverlay extends StatefulWidget {
+class _AuthProcessingOverlay extends StatelessWidget {
   final String step;
-  const _AuthProcessingOverlay({required this.step});
+  final VoidCallback? onCancel;
+  const _AuthProcessingOverlay({required this.step, this.onCancel});
 
-  @override
-  State<_AuthProcessingOverlay> createState() => _AuthProcessingOverlayState();
-}
-
-class _AuthProcessingOverlayState extends State<_AuthProcessingOverlay> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -389,9 +404,14 @@ class _AuthProcessingOverlayState extends State<_AuthProcessingOverlay> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  widget.step,
+                  step,
                   style: TextStyle(fontSize: 13, color: dimColor),
                   textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                TextButton(
+                  onPressed: onCancel,
+                  child: Text('Cancel', style: TextStyle(color: dimColor)),
                 ),
               ],
             ),
