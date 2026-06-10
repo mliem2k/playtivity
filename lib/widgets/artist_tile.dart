@@ -24,11 +24,7 @@ class ArtistTile extends StatelessWidget {
                 width: 24,
                 child: Text(
                   '$rank',
-                  style: const TextStyle(
-                    color: AppTheme.textSubdued,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: AppTheme.textSubdued),
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -56,11 +52,7 @@ class ArtistTile extends StatelessWidget {
                 children: [
                   Text(
                     artist.name,
-                    style: const TextStyle(
-                      color: AppTheme.textPrimary,
-                      fontWeight: FontWeight.w500,
-                      fontSize: 14,
-                    ),
+                    style: Theme.of(context).textTheme.bodyLarge,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -68,10 +60,7 @@ class ArtistTile extends StatelessWidget {
                     const SizedBox(height: 3),
                     Text(
                       '${_formatCount(artist.monthlyListeners)} monthly listeners',
-                      style: const TextStyle(
-                        color: AppTheme.textSecondary,
-                        fontSize: 12,
-                      ),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12),
                     ),
                   ],
                 ],
