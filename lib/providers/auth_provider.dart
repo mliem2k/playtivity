@@ -321,37 +321,7 @@ class AuthProvider extends ChangeNotifier {
         return true;
       }
 
-      // Step 2: WebView persistent cookie store
-      try {
-        final cookies = await CookieManager.instance().getCookies(
-          url: WebUri('https://open.spotify.com'),
-        );
-        final spDcCookie = cookies.firstWhere(
-          (c) => c.name == 'sp_dc' && (c.value as String).isNotEmpty,
-          orElse: () => Cookie(name: '', value: ''),
-        );
-        final webViewSpDc = spDcCookie.name.isNotEmpty ? spDcCookie.value as String : null;
-        if (webViewSpDc != null && webViewSpDc != _spDc) {
-          _addEvent('Found fresher sp_dc in WebView cookie store — retrying');
-          _spDc = webViewSpDc;
-          await _prefs.setString(_spDcKey, webViewSpDc);
-          final ok2 = await _trySilentRefresh();
-          if (ok2) {
-            _authState = AuthState.authenticated;
-            _addEvent('Token recovery: OK via WebView cookie store');
-            notifyListeners();
-            return true;
-          }
-        } else if (webViewSpDc != null) {
-          _addEvent('WebView sp_dc matches stored — no improvement possible');
-        } else {
-          _addEvent('No sp_dc found in WebView cookie store');
-        }
-      } catch (e) {
-        _addEvent('WebView cookie read error: $e');
-      }
-
-      // Step 3: headless WebView — the Spotify OAuth session in the browser
+      // Step 2: headless WebView — the Spotify OAuth session in the browser
       // cookie store survives much longer than sp_dc. Loading open.spotify.com
       // invisibly lets Spotify issue a fresh sp_dc without user interaction.
       final ok3 = await _tryHeadlessWebViewReAuth();
