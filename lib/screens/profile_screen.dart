@@ -93,6 +93,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               prev.isLoading != next.isLoading,
           builder: (ctx, data, _) => TabBarView(
             controller: _tabController,
+            physics: const BouncingScrollPhysics(),
             children: [
               _buildTopSongs(ctx, data.topTracks, data.isLoading),
               _buildTopArtists(ctx, data.topArtists, data.isLoading),

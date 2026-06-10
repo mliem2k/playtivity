@@ -183,12 +183,16 @@ class _RunningTextState extends State<_RunningText>
       }
       return ClipRect(
         child: AnimatedBuilder(
-          animation: _anim,
+          animation: _ctrl,
           builder: (_, child) => Transform.translate(
             offset: Offset(-_anim.value, 0),
             child: child,
           ),
-          child: Text(widget.text, style: widget.style, maxLines: 1, softWrap: false),
+          child: OverflowBox(
+            alignment: Alignment.centerLeft,
+            maxWidth: double.infinity,
+            child: Text(widget.text, style: widget.style, maxLines: 1, softWrap: false),
+          ),
         ),
       );
     });
