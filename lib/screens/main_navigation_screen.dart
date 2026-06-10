@@ -19,6 +19,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     with WidgetsBindingObserver {
   int _currentIndex = 0;
   late final PageController _pageController;
+  bool _handlingOverscroll = false;
 
   final List<Widget> _screens = [
     const _KeepAlive(child: HomeScreen()),
@@ -92,10 +93,26 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   Widget _buildScaffold() {
     return Scaffold(
       extendBody: true,
-      body: PageView(
-        controller: _pageController,
-        onPageChanged: (index) => setState(() => _currentIndex = index),
-        children: _screens,
+      body: NotificationListener<OverscrollNotification>(
+        onNotification: (notification) {
+          if (_currentIndex == 1 &&
+              notification.overscroll < 0 &&
+              !_handlingOverscroll) {
+            _handlingOverscroll = true;
+            setState(() => _currentIndex = 0);
+            _pageController
+                .animateToPage(0,
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut)
+                .then((_) => _handlingOverscroll = false);
+          }
+          return false;
+        },
+        child: PageView(
+          controller: _pageController,
+          onPageChanged: (index) => setState(() => _currentIndex = index),
+          children: _screens,
+        ),
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
