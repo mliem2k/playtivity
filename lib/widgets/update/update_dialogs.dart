@@ -217,7 +217,7 @@ class _DownloadProgressDialogState extends State<_DownloadProgressDialog> {
                 ],
               );
             }
-            return TextButton(onPressed: null, child: const Text('Cancel'));
+            return const TextButton(onPressed: null, child: Text('Cancel'));
           },
         ),
       ],

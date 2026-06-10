@@ -104,7 +104,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildHeader(User? user, Track? currentlyPlaying) {
-    return Container(
+    return DecoratedBox(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
@@ -133,7 +133,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   await SpotifyLauncher.launchSpotifyUri('spotify:user:${user.id}');
                 }
               },
-              child: Container(
+              child: DecoratedBox(
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(

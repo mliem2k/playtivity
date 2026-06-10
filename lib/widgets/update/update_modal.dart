@@ -162,7 +162,7 @@ class UpdateModal {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('An error occurred while checking for updates:'),
+              const Text('An error occurred while checking for updates:'),
               const SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.all(8),
