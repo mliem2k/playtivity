@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/spotify_buddy_service.dart';
@@ -349,10 +351,113 @@ class AuthProvider extends ChangeNotifier {
         _addEvent('WebView cookie read error: $e');
       }
 
+      // Step 3: headless WebView — the Spotify OAuth session in the browser
+      // cookie store survives much longer than sp_dc. Loading open.spotify.com
+      // invisibly lets Spotify issue a fresh sp_dc without user interaction.
+      final ok3 = await _tryHeadlessWebViewReAuth();
+      if (ok3) {
+        _authState = AuthState.authenticated;
+        _addEvent('Token recovery: OK via headless WebView re-auth');
+        notifyListeners();
+        return true;
+      }
+
       _addEvent('Token recovery: all silent paths failed');
       return false;
     } finally {
       _isRecovering = false;
+    }
+  }
+
+  /// Loads open.spotify.com in an invisible WebView so Spotify can issue a
+  /// fresh sp_dc using the long-lived OAuth session stored in the browser.
+  /// Returns true when a new (different) sp_dc is obtained and the silent
+  /// token refresh succeeds.
+  Future<bool> _tryHeadlessWebViewReAuth() async {
+    _addEvent('Headless WebView re-auth: starting...');
+    final completer = Completer<String?>();
+    HeadlessInAppWebView? headless;
+    Timer? timeout;
+
+    Future<void> checkForSpDc(InAppWebViewController controller) async {
+      if (completer.isCompleted) return;
+      try {
+        final cookies = await CookieManager.instance()
+            .getCookies(url: WebUri('https://open.spotify.com'));
+        final spDcCookie = cookies.firstWhere(
+          (c) => c.name == 'sp_dc' && (c.value as String).isNotEmpty,
+          orElse: () => Cookie(name: '', value: ''),
+        );
+        if (spDcCookie.name.isNotEmpty && !completer.isCompleted) {
+          completer.complete(spDcCookie.value as String);
+        }
+      } catch (e) {
+        if (!completer.isCompleted) completer.complete(null);
+      }
+    }
+
+    try {
+      headless = HeadlessInAppWebView(
+        initialSize: const Size(1, 1),
+        initialUrlRequest: URLRequest(
+          url: WebUri('https://open.spotify.com/'),
+        ),
+        initialSettings: InAppWebViewSettings(
+          userAgent: SpotifyTokenService.userAgent,
+          javaScriptEnabled: true,
+          domStorageEnabled: true,
+          thirdPartyCookiesEnabled: true,
+        ),
+        onLoadStop: (controller, url) async {
+          if (completer.isCompleted || url == null) return;
+          final urlStr = url.toString();
+          // If Spotify redirected to login the OAuth session is gone — give up.
+          if (urlStr.contains('accounts.spotify.com') ||
+              urlStr.contains('/login') ||
+              urlStr.contains('/auth/')) {
+            _addEvent('Headless WebView: redirected to login — OAuth session gone');
+            if (!completer.isCompleted) completer.complete(null);
+            return;
+          }
+          if (!urlStr.contains('open.spotify.com')) return;
+          await checkForSpDc(controller);
+          if (!completer.isCompleted) {
+            // SPA may not have written the cookie on first onLoadStop; retry once.
+            await Future.delayed(const Duration(seconds: 2));
+            await checkForSpDc(controller);
+            if (!completer.isCompleted) completer.complete(null);
+          }
+        },
+        onReceivedError: (_, _a, _b) {
+          if (!completer.isCompleted) completer.complete(null);
+        },
+      );
+
+      await headless.run();
+      timeout = Timer(const Duration(seconds: 20), () {
+        if (!completer.isCompleted) completer.complete(null);
+      });
+
+      final newSpDc = await completer.future;
+      if (newSpDc == null || newSpDc.isEmpty) {
+        _addEvent('Headless WebView re-auth: no sp_dc obtained');
+        return false;
+      }
+      if (newSpDc == _spDc) {
+        _addEvent('Headless WebView re-auth: sp_dc unchanged — already tried this value');
+        return false;
+      }
+
+      _addEvent('Headless WebView re-auth: fresh sp_dc obtained');
+      _spDc = newSpDc;
+      await _prefs.setString(_spDcKey, newSpDc);
+      return await _trySilentRefresh();
+    } catch (e) {
+      _addEvent('Headless WebView re-auth error: $e');
+      return false;
+    } finally {
+      timeout?.cancel();
+      try { await headless?.dispose(); } catch (_) {}
     }
   }
 
