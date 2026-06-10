@@ -32,5 +32,33 @@ void main() {
       final widget = tester.widget<EqualizerIcon>(find.byType(EqualizerIcon));
       expect(widget.color, Colors.red);
     });
+
+    testWidgets('updates bar color when widget color changes', (tester) async {
+      Color barColor = Colors.red;
+      await tester.pumpWidget(
+        StatefulBuilder(
+          builder: (context, setState) => MaterialApp(
+            home: Scaffold(
+              body: Column(
+                children: [
+                  EqualizerIcon(color: barColor),
+                  ElevatedButton(
+                    onPressed: () => setState(() => barColor = Colors.blue),
+                    child: const Text('Change'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+
+      await tester.tap(find.text('Change'));
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final widget = tester.widget<EqualizerIcon>(find.byType(EqualizerIcon));
+      expect(widget.color, Colors.blue);
+    });
   });
 }
