@@ -16,13 +16,24 @@ class ApiRetryService {
         }
         return result;
       } catch (e) {
+        // Never retry authentication errors — the token is expired and
+        // retrying the same request with the same token will always fail.
+        final errorStr = e.toString().toLowerCase();
+        final isAuthError = errorStr.contains('401') ||
+            errorStr.contains('403') ||
+            errorStr.contains('authentication error') ||
+            errorStr.contains('unauthorized');
+        if (isAuthError) {
+          AppLogger.error('$operation failed with auth error, not retrying', e);
+          rethrow;
+        }
+
         if (attempt == maxRetries) {
           AppLogger.error('$operation failed after ${maxRetries + 1} attempts', e);
           rethrow;
         }
 
         // Check if this is a rate limit error (429)
-        final errorStr = e.toString().toLowerCase();
         final isRateLimitError = errorStr.contains('429') || errorStr.contains('rate limit');
 
         Duration delay;
