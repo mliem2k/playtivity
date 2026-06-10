@@ -159,8 +159,8 @@ class SpotifyBuddyService {
           throw Exception('Failed to fetch friend activity: ${response.statusCode}');
         }
 
-        AppLogger.spotify('Raw buddylist response (${response.body.length} bytes): '
-            '${response.body.substring(0, response.body.length.clamp(0, 800))}');
+        AppLogger.warning('Buddylist raw (${response.body.length}b): '
+            '${response.body.substring(0, response.body.length.clamp(0, 1200))}');
         final activities = parseFriendsJson(response.body);
         _cachedBuddyActivities = activities;
         _lastBuddyListFetch = DateTime.now();
@@ -217,7 +217,7 @@ class SpotifyBuddyService {
           final playlistInfo = friend['playlist'] is Map ? friend['playlist'] as Map : null;
           final episodeInfo = friend['episode'] is Map ? friend['episode'] as Map : null;
 
-          AppLogger.spotify(
+          AppLogger.warning(
             'Friend "${user.displayName}": keys=${friend is Map ? friend.keys.toList() : "?"}',
           );
 
@@ -316,9 +316,9 @@ class SpotifyBuddyService {
                 type: ActivityType.playlist,
               ));
             } else {
-              AppLogger.spotify(
-                'Skipped friend "${user.displayName}" — no parseable activity'
-                ' (keys: ${friend is Map ? friend.keys.toList() : "not a map"})',
+              AppLogger.warning(
+                'Skipped "${user.displayName}" — no track/episode/playlist/context'
+                ' (friend keys: ${friend is Map ? friend.keys.toList() : "not a map"})',
               );
             }
           }
