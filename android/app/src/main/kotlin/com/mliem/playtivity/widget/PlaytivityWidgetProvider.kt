@@ -15,13 +15,13 @@ import com.mliem.playtivity.R
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
-import kotlin.math.abs
 
 data class ActivityItem(
     val friendName: String,
     val trackName: String,
     val artistName: String,
     val cachedImagePath: String,
+    val cachedAlbumArtPath: String = "",
     val timestamp: Long,
     val isCurrentlyPlaying: Boolean,
     val activityType: String,
@@ -86,35 +86,37 @@ class PlaytivityWidgetProvider : AppWidgetProvider() {
                 val activities = mutableListOf<ActivityItem>()
                 
                 for (i in 0 until activitiesCount) {
-                    val friendName = prefs.getString("friend_${i}_name", "") 
+                    val friendName = prefs.getString("friend_${i}_name", "")
                         ?: flutterPrefs.getString("flutter.friend_${i}_name", "") ?: ""
-                    val trackName = prefs.getString("friend_${i}_track", "") 
+                    val trackName = prefs.getString("friend_${i}_track", "")
                         ?: flutterPrefs.getString("flutter.friend_${i}_track", "") ?: ""
-                    val artistName = prefs.getString("friend_${i}_artist", "") 
+                    val artistName = prefs.getString("friend_${i}_artist", "")
                         ?: flutterPrefs.getString("flutter.friend_${i}_artist", "") ?: ""
-                    val cachedImagePath = prefs.getString("friend_${i}_cached_image", "") 
+                    val cachedImagePath = prefs.getString("friend_${i}_cached_image", "")
                         ?: flutterPrefs.getString("flutter.friend_${i}_cached_image", "") ?: ""
-                    val timestampString = prefs.getString("friend_${i}_timestamp", "0") 
+                    val cachedAlbumArtPath = prefs.getString("friend_${i}_cached_album_art", "")
+                        ?: flutterPrefs.getString("flutter.friend_${i}_cached_album_art", "") ?: ""
+                    val timestampString = prefs.getString("friend_${i}_timestamp", "0")
                         ?: flutterPrefs.getString("flutter.friend_${i}_timestamp", "0") ?: "0"
-                    val isCurrentlyPlayingString = prefs.getString("friend_${i}_is_currently_playing", "false") 
+                    val isCurrentlyPlayingString = prefs.getString("friend_${i}_is_currently_playing", "false")
                         ?: flutterPrefs.getString("flutter.friend_${i}_is_currently_playing", "false") ?: "false"
-                    val activityType = prefs.getString("friend_${i}_activity_type", "track") 
+                    val activityType = prefs.getString("friend_${i}_activity_type", "track")
                         ?: flutterPrefs.getString("flutter.friend_${i}_activity_type", "track") ?: "track"
-                    val userId = prefs.getString("friend_${i}_user_id", "") 
+                    val userId = prefs.getString("friend_${i}_user_id", "")
                         ?: flutterPrefs.getString("flutter.friend_${i}_user_id", "") ?: ""
-                    
+
                     val timestamp = try {
                         timestampString.toLongOrNull() ?: System.currentTimeMillis()
                     } catch (e: Exception) {
                         System.currentTimeMillis()
                     }
-                    
+
                     val isCurrentlyPlaying = try {
                         isCurrentlyPlayingString.toBoolean()
                     } catch (e: Exception) {
                         false
                     }
-                    
+
                     if (friendName.isNotEmpty() && trackName.isNotEmpty()) {
                         activities.add(
                             ActivityItem(
@@ -122,6 +124,7 @@ class PlaytivityWidgetProvider : AppWidgetProvider() {
                                 trackName = trackName,
                                 artistName = artistName,
                                 cachedImagePath = cachedImagePath,
+                                cachedAlbumArtPath = cachedAlbumArtPath,
                                 timestamp = timestamp,
                                 isCurrentlyPlaying = isCurrentlyPlaying,
                                 activityType = activityType,
@@ -237,25 +240,27 @@ class PlaytivityWidgetItemFactory(
         val activity = activities[position]
         val views = RemoteViews(context.packageName, R.layout.widget_activity_item)
         
-        // Set track name
-        views.setTextViewText(R.id.track_name, activity.trackName)
-        
-        // Set friend and artist
-        views.setTextViewText(R.id.friend_artist, "${activity.friendName} • ${activity.artistName}")
-        
-        // Set timestamp
-        views.setTextViewText(R.id.timestamp, activity.getTimeAgoText())
-        
-        // Set status indicator
+        // Friend name (bold, top of info column)
+        views.setTextViewText(R.id.friend_name, activity.friendName)
+
+        // Status line: green "Listening now" or tertiary time-ago
         if (activity.isCurrentlyPlaying) {
-            views.setViewVisibility(R.id.status_indicator, View.VISIBLE)
-            views.setTextViewText(R.id.status_indicator, "🎵")
+            views.setTextViewText(R.id.status_text, "Listening now")
+            views.setTextColor(R.id.status_text, 0xFF1DB954.toInt())
         } else {
-            views.setViewVisibility(R.id.status_indicator, View.GONE)
+            views.setTextViewText(R.id.status_text, activity.getTimeAgoText())
+            views.setTextColor(R.id.status_text, 0xB3FFFFFF.toInt())
         }
-        
-        // Load friend image
+
+        // Track / playlist name
+        views.setTextViewText(R.id.track_name, activity.trackName)
+
+        // Artist / context subtitle
+        views.setTextViewText(R.id.friend_artist, activity.artistName)
+
+        // Friend avatar and album art
         loadFriendImage(views, activity.cachedImagePath)
+        loadAlbumArtImage(views, activity.cachedAlbumArtPath)
         
         // Set click intent to open friend profile only if we have a valid user ID
         if (activity.userId.isNotEmpty()) {
@@ -293,35 +298,37 @@ class PlaytivityWidgetItemFactory(
         }
         
         for (i in 0 until activitiesCount) {
-            val friendName = prefs.getString("friend_${i}_name", "") 
+            val friendName = prefs.getString("friend_${i}_name", "")
                 ?: flutterPrefs.getString("flutter.friend_${i}_name", "") ?: ""
-            val trackName = prefs.getString("friend_${i}_track", "") 
+            val trackName = prefs.getString("friend_${i}_track", "")
                 ?: flutterPrefs.getString("flutter.friend_${i}_track", "") ?: ""
-            val artistName = prefs.getString("friend_${i}_artist", "") 
+            val artistName = prefs.getString("friend_${i}_artist", "")
                 ?: flutterPrefs.getString("flutter.friend_${i}_artist", "") ?: ""
-            val cachedImagePath = prefs.getString("friend_${i}_cached_image", "") 
+            val cachedImagePath = prefs.getString("friend_${i}_cached_image", "")
                 ?: flutterPrefs.getString("flutter.friend_${i}_cached_image", "") ?: ""
-            val timestampString = prefs.getString("friend_${i}_timestamp", "0") 
+            val cachedAlbumArtPath = prefs.getString("friend_${i}_cached_album_art", "")
+                ?: flutterPrefs.getString("flutter.friend_${i}_cached_album_art", "") ?: ""
+            val timestampString = prefs.getString("friend_${i}_timestamp", "0")
                 ?: flutterPrefs.getString("flutter.friend_${i}_timestamp", "0") ?: "0"
-            val isCurrentlyPlayingString = prefs.getString("friend_${i}_is_currently_playing", "false") 
+            val isCurrentlyPlayingString = prefs.getString("friend_${i}_is_currently_playing", "false")
                 ?: flutterPrefs.getString("flutter.friend_${i}_is_currently_playing", "false") ?: "false"
-            val activityType = prefs.getString("friend_${i}_activity_type", "track") 
+            val activityType = prefs.getString("friend_${i}_activity_type", "track")
                 ?: flutterPrefs.getString("flutter.friend_${i}_activity_type", "track") ?: "track"
-            val userId = prefs.getString("friend_${i}_user_id", "") 
+            val userId = prefs.getString("friend_${i}_user_id", "")
                 ?: flutterPrefs.getString("flutter.friend_${i}_user_id", "") ?: ""
-            
+
             val timestamp = try {
                 timestampString.toLongOrNull() ?: System.currentTimeMillis()
             } catch (e: Exception) {
                 System.currentTimeMillis()
             }
-            
+
             val isCurrentlyPlaying = try {
                 isCurrentlyPlayingString.toBoolean()
             } catch (e: Exception) {
                 false
             }
-            
+
             if (friendName.isNotEmpty() && trackName.isNotEmpty()) {
                 activities.add(
                     ActivityItem(
@@ -329,6 +336,7 @@ class PlaytivityWidgetItemFactory(
                         trackName = trackName,
                         artistName = artistName,
                         cachedImagePath = cachedImagePath,
+                        cachedAlbumArtPath = cachedAlbumArtPath,
                         timestamp = timestamp,
                         isCurrentlyPlaying = isCurrentlyPlaying,
                         activityType = activityType,
@@ -363,8 +371,24 @@ class PlaytivityWidgetItemFactory(
                 }
             }
         }
-        
-        // Fallback to default icon
         views.setImageViewResource(R.id.friend_image, R.drawable.ic_person)
+    }
+
+    private fun loadAlbumArtImage(views: RemoteViews, cachedAlbumArtPath: String) {
+        if (cachedAlbumArtPath.isNotEmpty()) {
+            val file = File(cachedAlbumArtPath)
+            if (file.exists() && file.canRead() && file.length() > 0) {
+                try {
+                    val bitmap = BitmapFactory.decodeFile(cachedAlbumArtPath)
+                    if (bitmap != null && !bitmap.isRecycled) {
+                        views.setImageViewBitmap(R.id.album_art, bitmap)
+                        return
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("PlaytivityWidget", "Error loading album art", e)
+                }
+            }
+        }
+        views.setImageViewResource(R.id.album_art, R.drawable.default_album_art)
     }
 }

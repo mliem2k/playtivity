@@ -40,25 +40,27 @@ class ImageCacheService : IntentService("ImageCacheService") {
                 for (i in 0 until activitiesCount) {
                     val friendImage = prefs.getString("friend_${i}_image", "") ?: ""
                     val friendName = prefs.getString("friend_${i}_name", "") ?: ""
-                    
+                    val albumArtUrl = prefs.getString("friend_${i}_album_art", "") ?: ""
+
                     if (friendImage.isNotEmpty() && friendName.isNotEmpty()) {
                         val cachedPath = ImageDownloader.downloadAndCacheImage(this@ImageCacheService, friendImage, i)
-                        
+
                         if (cachedPath != null) {
-                            // Save the cached path to both preference sources for the widget to use
-                            prefs.edit()
-                                .putString("friend_${i}_cached_image", cachedPath)
-                                .apply()
-                            
-                            // Also save to Flutter preferences as backup
+                            prefs.edit().putString("friend_${i}_cached_image", cachedPath).apply()
                             val flutterPrefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-                            flutterPrefs.edit()
-                                .putString("flutter.friend_${i}_cached_image", cachedPath)
-                                .apply()
-                            
+                            flutterPrefs.edit().putString("flutter.friend_${i}_cached_image", cachedPath).apply()
                             cachedCount++
                         } else {
                             failedCount++
+                        }
+                    }
+
+                    if (albumArtUrl.isNotEmpty()) {
+                        val cachedAlbumArtPath = ImageDownloader.downloadAndCacheAlbumArt(this@ImageCacheService, albumArtUrl, i)
+                        if (cachedAlbumArtPath != null) {
+                            prefs.edit().putString("friend_${i}_cached_album_art", cachedAlbumArtPath).apply()
+                            val flutterPrefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+                            flutterPrefs.edit().putString("flutter.friend_${i}_cached_album_art", cachedAlbumArtPath).apply()
                         }
                     }
                 }
