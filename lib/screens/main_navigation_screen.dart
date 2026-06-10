@@ -33,12 +33,23 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
         .then((_) => _navigating = false);
   }
 
+  void _navigateToProfile() {
+    if (_navigating) return;
+    _navigating = true;
+    setState(() => _currentIndex = 1);
+    _pageController
+        .animateToPage(1,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut)
+        .then((_) => _navigating = false);
+  }
+
   @override
   void initState() {
     super.initState();
     _pageController = PageController();
     _screens = [
-      const _KeepAlive(child: HomeScreen()),
+      _KeepAlive(child: HomeScreen(onSwipeToProfile: _navigateToProfile)),
       _KeepAlive(child: ProfileScreen(onSwipeBack: _navigateToActivities)),
     ];
     AppLogger.info('🏠 MainNavigationScreen initialized');
@@ -106,6 +117,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       extendBody: true,
       body: PageView(
         controller: _pageController,
+        physics: const NeverScrollableScrollPhysics(),
         onPageChanged: (index) => setState(() => _currentIndex = index),
         children: _screens,
       ),

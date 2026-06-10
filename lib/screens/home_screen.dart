@@ -14,7 +14,8 @@ import '../services/app_logger.dart';
 import '../constants/app_constants.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final VoidCallback? onSwipeToProfile;
+  const HomeScreen({super.key, this.onSwipeToProfile});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -22,6 +23,8 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
   Timer? _refreshTimer;
+  Offset _dragStart = Offset.zero;
+  bool _didSwipeToProfile = false;
 
   @override
   void initState() {
@@ -83,27 +86,43 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
   Widget build(BuildContext context) {
     return Scaffold(
       extendBodyBehindAppBar: true,
-      body: HomeScreenDataSelector(
-        builder: (context, isAuthenticated, isLoading, activities, error) {
-          if (!isAuthenticated) return _buildUnauthenticated();
-          return RefreshIndicator(
-            onRefresh: _refreshData,
-            color: AppTheme.primary,
-            child: CustomScrollView(
-              slivers: [
-                _buildSliverAppBar(isLoading && activities.isNotEmpty),
-                if (isLoading && activities.isEmpty)
-                  _buildSkeletonSliver()
-                else if (error != null)
-                  SliverFillRemaining(child: _buildError(error))
-                else if (activities.isEmpty)
-                  SliverFillRemaining(child: _buildEmpty())
-                else
-                  _buildActivityList(activities),
-              ],
-            ),
-          );
+      body: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (e) {
+          _dragStart = e.position;
+          _didSwipeToProfile = false;
         },
+        onPointerMove: (e) {
+          if (_didSwipeToProfile || widget.onSwipeToProfile == null) return;
+          final dx = e.position.dx - _dragStart.dx;
+          final dy = (e.position.dy - _dragStart.dy).abs();
+          if (dx < -80 && -dx > dy * 1.5) {
+            _didSwipeToProfile = true;
+            widget.onSwipeToProfile!();
+          }
+        },
+        child: HomeScreenDataSelector(
+          builder: (context, isAuthenticated, isLoading, activities, error) {
+            if (!isAuthenticated) return _buildUnauthenticated();
+            return RefreshIndicator(
+              onRefresh: _refreshData,
+              color: AppTheme.primary,
+              child: CustomScrollView(
+                slivers: [
+                  _buildSliverAppBar(isLoading && activities.isNotEmpty),
+                  if (isLoading && activities.isEmpty)
+                    _buildSkeletonSliver()
+                  else if (error != null)
+                    SliverFillRemaining(child: _buildError(error))
+                  else if (activities.isEmpty)
+                    SliverFillRemaining(child: _buildEmpty())
+                  else
+                    _buildActivityList(activities),
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }
