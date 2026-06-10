@@ -134,12 +134,16 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
   Widget _buildSkeletonSliver() => const _SkeletonList();
 
   Widget _buildActivityList(List<Activity> activities) {
+    // Layout: index 0 = header, odd indices = cards, even indices ≥ 2 = dividers,
+    // last index (activities.length * 2) = nav-bar spacer.
+    // childCount = 1 (header) + n (cards) + (n-1) (dividers) + 1 (spacer) = 2n + 1
+    final childCount = activities.length * 2 + 1;
     return SliverList(
       delegate: SliverChildBuilderDelegate(
         (context, index) {
           if (index == 0) {
             return const Padding(
-              padding: EdgeInsets.only(left: 24, top: 20, bottom: 12),
+              padding: EdgeInsets.only(left: 24, top: 8, bottom: 12),
               child: Text(
                 'Friend Activity',
                 style: TextStyle(
@@ -150,16 +154,17 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
               ),
             );
           }
-          final activity = activities[index - 1];
-          return Column(
-            children: [
-              RepaintBoundary(child: ActivityCard(activity: activity)),
-              if (index < activities.length)
-                const Divider(height: 1, color: AppTheme.dividerColor),
-            ],
-          );
+          if (index == childCount - 1) {
+            return SizedBox(height: MediaQuery.of(context).padding.bottom);
+          }
+          if (index.isOdd) {
+            final activity = activities[(index - 1) ~/ 2];
+            return RepaintBoundary(child: ActivityCard(activity: activity));
+          }
+          // Even index ≥ 2: divider between cards
+          return const Divider(height: 1, color: AppTheme.dividerColor);
         },
-        childCount: activities.length + 1,
+        childCount: childCount,
       ),
     );
   }
@@ -247,8 +252,13 @@ class _SkeletonListState extends State<_SkeletonList>
   Widget build(BuildContext context) {
     return SliverList(
       delegate: SliverChildBuilderDelegate(
-        (_, _) => ActivitySkeleton(animation: _animation),
-        childCount: 6,
+        (context, index) {
+          if (index == 6) {
+            return SizedBox(height: MediaQuery.of(context).padding.bottom);
+          }
+          return ActivitySkeleton(animation: _animation);
+        },
+        childCount: 7,
       ),
     );
   }
