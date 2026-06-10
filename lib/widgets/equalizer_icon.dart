@@ -19,6 +19,8 @@ class _EqualizerIconState extends State<EqualizerIcon>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final List<Animation<double>> _animations;
+  late BoxDecoration _barDecoration;
+  late double _barWidth;
 
   @override
   void initState() {
@@ -50,6 +52,24 @@ class _EqualizerIconState extends State<EqualizerIcon>
         ),
       ),
     ];
+
+    _barDecoration = BoxDecoration(
+      color: widget.color,
+      borderRadius: BorderRadius.circular(1),
+    );
+    _barWidth = (widget.size - 4) / 3;
+  }
+
+  @override
+  void didUpdateWidget(EqualizerIcon oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.color != widget.color || oldWidget.size != widget.size) {
+      _barDecoration = BoxDecoration(
+        color: widget.color,
+        borderRadius: BorderRadius.circular(1),
+      );
+      _barWidth = (widget.size - 4) / 3;
+    }
   }
 
   @override
@@ -71,12 +91,9 @@ class _EqualizerIconState extends State<EqualizerIcon>
           (i) => AnimatedBuilder(
             animation: _animations[i],
             builder: (_, _) => Container(
-              width: (widget.size - 4) / 3,
+              width: _barWidth,
               height: widget.size * _animations[i].value,
-              decoration: BoxDecoration(
-                color: widget.color,
-                borderRadius: BorderRadius.circular(1),
-              ),
+              decoration: _barDecoration,
             ),
           ),
         ),
