@@ -361,8 +361,37 @@ After installation, authenticate with: gh auth login
 
     // ==================== GitHub Release ====================
 
+    cleanDraftReleases() {
+        try {
+            const raw = execSync('gh release list --json tagName,isDraft --limit 30 --include-drafts', {
+                encoding: 'utf8',
+                cwd: this.projectRoot,
+                stdio: ['ignore', 'pipe', 'ignore'],
+            });
+            const releases = JSON.parse(raw);
+            const drafts = releases.filter(r => r.isDraft && r.tagName.startsWith('nightly-'));
+            for (const draft of drafts) {
+                this.log(`Removing orphaned draft: ${draft.tagName}`, 'clean');
+                try {
+                    execSync(`gh release delete "${draft.tagName}" --yes --cleanup-tag`, {
+                        stdio: 'ignore',
+                        cwd: this.projectRoot,
+                    });
+                } catch (e) {
+                    this.log(`Could not delete ${draft.tagName}: ${e.message}`, 'warning');
+                }
+            }
+            if (drafts.length > 0) {
+                this.log(`Removed ${drafts.length} orphaned draft(s)`, 'success');
+            }
+        } catch (e) {
+            this.log(`Draft cleanup skipped: ${e.message}`, 'warning');
+        }
+    }
+
     createGitHubRelease(apkInfo, prerelease = true) {
         this.log('Creating GitHub release', 'github');
+        this.cleanDraftReleases();
 
         const tagName = `nightly-${this.buildInfo.buildId}`;
         const releaseName = `Nightly Build ${this.buildInfo.buildId}`;
