@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/spotify_provider.dart';
 import '../widgets/spotify_webview_login.dart';
 import '../services/app_logger.dart';
 
@@ -104,12 +105,33 @@ class AuthUtils {
     return true;
   }
 
-  /// Handles 401/403 errors by logging out and navigating to login screen.
+  /// Handles 401/403 errors.
+  ///
+  /// Tries silent token recovery first (stored sp_dc, then WebView cookie store).
+  /// Only forces logout and shows the login screen when all silent paths fail.
   static Future<void> handleAuthenticationError(BuildContext context, {String? errorMessage}) async {
-    AppLogger.auth('Authentication error detected: ${errorMessage ?? "401/403 error"}');
+    AppLogger.auth('Auth error: ${errorMessage ?? "401/403"} — attempting silent recovery');
+
+    if (!context.mounted) return;
+    final authProvider = context.read<AuthProvider>();
 
     try {
-      final authProvider = context.read<AuthProvider>();
+      final recovered = await authProvider.tryRecoverFromExpiredToken();
+      if (recovered) {
+        AppLogger.auth('Silent recovery succeeded — reloading data');
+        if (context.mounted) {
+          final sp = context.read<SpotifyProvider>();
+          sp.clearAuthError();
+          sp.refreshData();
+        }
+        return;
+      }
+    } catch (e) {
+      AppLogger.error('Silent recovery threw unexpectedly', e);
+    }
+
+    AppLogger.auth('Silent recovery failed — forcing re-login');
+    try {
       await authProvider.logout();
       if (context.mounted && errorMessage != null) {
         ScaffoldMessenger.of(context).showSnackBar(

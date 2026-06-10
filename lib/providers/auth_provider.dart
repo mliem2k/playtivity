@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/spotify_buddy_service.dart';
 import '../models/user.dart';
@@ -288,6 +289,71 @@ class AuthProvider extends ChangeNotifier {
     _authState = AuthState.unauthenticated;
     _addEvent('Logged out');
     notifyListeners();
+  }
+
+  bool _isRecovering = false;
+
+  /// Attempts to recover from a 401 without showing the login screen.
+  ///
+  /// Strategy:
+  ///   1. Try stored sp_dc via normal silent refresh.
+  ///   2. If that fails, read sp_dc from the WebView's persistent cookie store
+  ///      (which the OS retains across sessions). If a different value is found,
+  ///      update storage and retry the silent refresh.
+  ///
+  /// Returns true when the app is successfully re-authenticated.
+  Future<bool> tryRecoverFromExpiredToken() async {
+    if (_isRecovering) {
+      _addEvent('Recovery already in progress — skipping duplicate call');
+      return false;
+    }
+    _isRecovering = true;
+    _addEvent('Token recovery: starting...');
+    try {
+      // Step 1: stored sp_dc
+      final ok = await _trySilentRefresh();
+      if (ok) {
+        _authState = AuthState.authenticated;
+        _addEvent('Token recovery: OK via stored sp_dc');
+        notifyListeners();
+        return true;
+      }
+
+      // Step 2: WebView persistent cookie store
+      try {
+        final cookies = await CookieManager.instance().getCookies(
+          url: WebUri('https://open.spotify.com'),
+        );
+        final spDcCookie = cookies.firstWhere(
+          (c) => c.name == 'sp_dc' && (c.value as String).isNotEmpty,
+          orElse: () => Cookie(name: '', value: ''),
+        );
+        final webViewSpDc = spDcCookie.name.isNotEmpty ? spDcCookie.value as String : null;
+        if (webViewSpDc != null && webViewSpDc != _spDc) {
+          _addEvent('Found fresher sp_dc in WebView cookie store — retrying');
+          _spDc = webViewSpDc;
+          await _prefs.setString(_spDcKey, webViewSpDc);
+          final ok2 = await _trySilentRefresh();
+          if (ok2) {
+            _authState = AuthState.authenticated;
+            _addEvent('Token recovery: OK via WebView cookie store');
+            notifyListeners();
+            return true;
+          }
+        } else if (webViewSpDc != null) {
+          _addEvent('WebView sp_dc matches stored — no improvement possible');
+        } else {
+          _addEvent('No sp_dc found in WebView cookie store');
+        }
+      } catch (e) {
+        _addEvent('WebView cookie read error: $e');
+      }
+
+      _addEvent('Token recovery: all silent paths failed');
+      return false;
+    } finally {
+      _isRecovering = false;
+    }
   }
 
   /// Refresh the token if currently authenticated. Returns false if not
