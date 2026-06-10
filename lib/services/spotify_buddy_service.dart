@@ -181,96 +181,44 @@ class SpotifyBuddyService {
       final friends = data['friends'] as List?;
       if (friends == null) return [];
 
-      AppLogger.spotify('Buddylist API returned ${friends.length} friends');
+      AppLogger.spotify('Buddylist: ${friends.length} friends from API');
       final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
       final activities = <Activity>[];
 
       for (final friend in friends) {
         try {
-        final userInfo = friend['user'];
-        final rawTimestamp = friend['timestamp'];
-        final ts = rawTimestamp is int ? rawTimestamp : now;
+          final userInfo = friend['user'];
+          final rawTimestamp = friend['timestamp'];
+          final ts = rawTimestamp is int ? rawTimestamp : now;
 
-        final userUri = userInfo['uri'] ?? '';
-        final userId = userUri.startsWith('spotify:user:')
-            ? userUri.substring('spotify:user:'.length)
-            : userUri;
+          final userUri = userInfo['uri'] ?? '';
+          final userId = userUri.startsWith('spotify:user:')
+              ? userUri.substring('spotify:user:'.length)
+              : userUri;
 
-        final user = User(
-          id: userId,
-          displayName: userInfo['name'] ?? 'Unknown User',
-          email: '',
-          imageUrl: userInfo['imageUrl'] as String?,
-          followers: 0,
-          country: '',
-        );
-
-        final trackInfo = friend['track'];
-        final playlistInfo = friend['playlist'];
-        // Spotify sometimes returns episode entries under 'episode' key
-        final episodeInfo = friend['episode'];
-        // Context-only entries (e.g. browsing a playlist without playing)
-        final contextInfo = friend['context'];
-
-        if (playlistInfo != null) {
-          final playlist = Playlist(
-            id: (playlistInfo['uri'] as String?)?.split(':').last ?? '',
-            name: playlistInfo['name'] ?? 'Unknown Playlist',
-            description: playlistInfo['description'] as String?,
-            imageUrl: playlistInfo['imageUrl'] as String?,
-            trackCount: playlistInfo['trackCount'] ?? 0,
-            uri: playlistInfo['uri'] ?? '',
-            ownerId: playlistInfo['owner']?['id'] ?? '',
-            ownerName: playlistInfo['owner']?['name'] ?? 'Unknown',
-            isPublic: playlistInfo['public'] ?? false,
+          final user = User(
+            id: userId,
+            displayName: userInfo['name'] ?? 'Unknown User',
+            email: '',
+            imageUrl: userInfo['imageUrl'] as String?,
+            followers: 0,
+            country: '',
           );
-          activities.add(Activity(
-            user: user,
-            playlist: playlist,
-            timestamp: DateTime.fromMillisecondsSinceEpoch(ts),
-            isCurrentlyPlaying: false,
-            type: ActivityType.playlist,
-          ));
-        } else if (trackInfo != null || episodeInfo != null) {
-          final content = trackInfo ?? episodeInfo as Map<String, dynamic>;
-          final albumInfo = content['album'] ?? content['show'] ?? <String, dynamic>{};
-          final artistInfo = content['artist'] ?? content['podcast'] ?? content['show'] ?? <String, dynamic>{};
 
-          final elapsedMs = now - ts;
-          final isCurrentlyPlaying = elapsedMs >= 0 && elapsedMs < _currentlyPlayingThresholdMs;
+          final trackInfo = friend['track'];
+          final playlistInfo = friend['playlist'];
 
-          final track = Track(
-            id: content['uri'] ?? '',
-            name: content['name'] ?? 'Unknown',
-            artists: [artistInfo['name'] as String? ?? 'Unknown Artist'],
-            album: albumInfo['name'] ?? '',
-            albumUri: albumInfo['uri'] as String?,
-            imageUrl: (content['imageUrl'] ?? albumInfo['imageUrl']) as String?,
-            durationMs: 0,
-            uri: content['uri'] ?? '',
-          );
-          activities.add(Activity(
-            user: user,
-            track: track,
-            timestamp: DateTime.fromMillisecondsSinceEpoch(ts),
-            isCurrentlyPlaying: isCurrentlyPlaying,
-            type: ActivityType.track,
-          ));
-        } else {
-          // Friend has no recognisable activity (e.g. context-only or unknown type)
-          AppLogger.spotify('Skipped friend "${userInfo?["name"]}" — no track/playlist/episode in response (keys: ${friend.keys.toList()})');
-          final contextUri = contextInfo?['uri'] as String?;
-          if (contextUri != null && contextUri.isNotEmpty) {
+          if (playlistInfo != null) {
             final playlist = Playlist(
-              id: contextUri.split(':').last,
-              name: contextInfo?['name'] ?? 'Unknown',
-              description: null,
-              imageUrl: contextInfo?['imageUrl'] as String?,
-              trackCount: 0,
-              uri: contextUri,
-              ownerId: '',
-              ownerName: '',
-              isPublic: false,
+              id: (playlistInfo['uri'] as String?)?.split(':').last ?? '',
+              name: playlistInfo['name'] ?? 'Unknown Playlist',
+              description: playlistInfo['description'] as String?,
+              imageUrl: playlistInfo['imageUrl'] as String?,
+              trackCount: playlistInfo['trackCount'] ?? 0,
+              uri: playlistInfo['uri'] ?? '',
+              ownerId: playlistInfo['owner']?['id'] ?? '',
+              ownerName: playlistInfo['owner']?['name'] ?? 'Unknown',
+              isPublic: playlistInfo['public'] ?? false,
             );
             activities.add(Activity(
               user: user,
@@ -279,14 +227,39 @@ class SpotifyBuddyService {
               isCurrentlyPlaying: false,
               type: ActivityType.playlist,
             ));
+          } else if (trackInfo != null) {
+            final albumInfo = trackInfo['album'] ?? <String, dynamic>{};
+            final artistInfo = trackInfo['artist'] ?? <String, dynamic>{};
+
+            final elapsedMs = now - ts;
+            final isCurrentlyPlaying = elapsedMs >= 0 && elapsedMs < _currentlyPlayingThresholdMs;
+
+            final track = Track(
+              id: trackInfo['uri'] ?? '',
+              name: trackInfo['name'] ?? 'Unknown Track',
+              artists: [artistInfo['name'] as String? ?? 'Unknown Artist'],
+              album: albumInfo['name'] ?? 'Unknown Album',
+              albumUri: albumInfo['uri'] as String?,
+              imageUrl: (trackInfo['imageUrl'] ?? albumInfo['imageUrl']) as String?,
+              durationMs: 0,
+              uri: trackInfo['uri'] ?? '',
+            );
+            activities.add(Activity(
+              user: user,
+              track: track,
+              timestamp: DateTime.fromMillisecondsSinceEpoch(ts),
+              isCurrentlyPlaying: isCurrentlyPlaying,
+              type: ActivityType.track,
+            ));
+          } else {
+            AppLogger.spotify('Skipped friend "${userInfo?["name"]}" — no track or playlist in response');
           }
-        }
         } catch (e) {
-          AppLogger.error('Failed to parse individual friend activity entry', e);
+          AppLogger.error('Failed to parse friend entry', e);
         }
       }
 
-      AppLogger.spotify('Parsed ${activities.length} activities from ${friends.length} friends');
+      AppLogger.spotify('Parsed ${activities.length}/${friends.length} activities');
       activities.sort((a, b) => b.timestamp.compareTo(a.timestamp));
       return activities;
     } catch (_) {
