@@ -112,13 +112,11 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
     return SliverAppBar(
       pinned: true,
       floating: false,
+      toolbarHeight: 0,
       expandedHeight: 0,
       backgroundColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
       scrolledUnderElevation: 0,
-      flexibleSpace: FlexibleSpaceBar(
-        background: Container(color: Colors.transparent),
-      ),
       bottom: PreferredSize(
         preferredSize: Size.fromHeight(showProgress ? 2 : 0),
         child: showProgress
@@ -142,9 +140,9 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
       delegate: SliverChildBuilderDelegate(
         (context, index) {
           if (index == 0) {
-            return const Padding(
-              padding: EdgeInsets.only(left: 24, top: 8, bottom: 12),
-              child: Text(
+            return Padding(
+              padding: EdgeInsets.only(left: 24, top: MediaQuery.of(context).padding.top + 8, bottom: 12),
+              child: const Text(
                 'Friend Activity',
                 style: TextStyle(
                   color: AppTheme.textPrimary,
@@ -253,12 +251,11 @@ class _SkeletonListState extends State<_SkeletonList>
     return SliverList(
       delegate: SliverChildBuilderDelegate(
         (context, index) {
-          if (index == 6) {
-            return SizedBox(height: MediaQuery.of(context).padding.bottom);
-          }
+          if (index == 0) return SizedBox(height: MediaQuery.of(context).padding.top + 8);
+          if (index == 7) return SizedBox(height: MediaQuery.of(context).padding.bottom);
           return ActivitySkeleton(animation: _animation);
         },
-        childCount: 7,
+        childCount: 8,
       ),
     );
   }
