@@ -4,7 +4,7 @@
   # Playtivity - Spotify Friends Activity App
   
   A Flutter app that shows your friends' Spotify activities in real-time. Built with Flutter and the Spotify Web API.
-  
+
   <img src="https://img.shields.io/badge/Flutter-3.8+-blue?logo=flutter" alt="Flutter Version"/>
   <img src="https://img.shields.io/badge/Platform-Android-green" alt="Platform Support"/>
   <img src="https://img.shields.io/badge/License-MIT-yellow" alt="License"/>
@@ -12,11 +12,11 @@
 
 ## Features
 
-- **🔐 Secure Login**: OAuth authentication through embedded WebView
-- **🎵 Real Friend Activities**: Automatically extracts `sp_dc` cookie during login for friend activity access
-- **📱 Profile Dashboard**: View currently playing, top tracks, and top artists
-- **🌙 Dark Mode**: Toggle between light and dark themes
-- **🎨 Spotify Design**: Authentic Spotify branding and colors
+- **Secure Login**: OAuth authentication through embedded WebView
+- **Real Friend Activities**: Automatically extracts `sp_dc` cookie during login for friend activity access
+- **Profile Dashboard**: View currently playing, top tracks, and top artists
+- **Home Screen Widget**: Android widget showing friend activity and currently playing track
+- **Spotify Design**: Authentic Spotify dark theme, branding and colors
 
 ## Screenshots
 
@@ -84,7 +84,7 @@ The app uses an innovative approach to show friend activities without requiring 
    flutter run
    ```
 
-## 🛠️ Development Scripts
+## Development Scripts
 
 The `scripts/` folder contains utility scripts for development:
 
@@ -102,22 +102,26 @@ python scripts/convert_icon.py your_logo.png
 ```
 
 **What it creates:**
-- 📱 **Android Icons**: All mipmap densities (mdpi, hdpi, xhdpi, xxhdpi, xxxhdpi)
-- 🖼️ **Flutter Images**: Login screen logos, button icons, display images
-- 🎨 **Multiple Sizes**: 24x24 to 200x200 pixels for different use cases
+- Android Icons: All mipmap densities (mdpi, hdpi, xhdpi, xxhdpi, xxxhdpi)
+- Flutter Images: Login screen logos, button icons, display images
+- Multiple Sizes: 24x24 to 200x200 pixels for different use cases
 
 See `scripts/README.md` for detailed usage instructions.
 
 ## Dependencies
 
 - `provider` - State management
-- `http` - API requests  
+- `http` - API requests
 - `shared_preferences` - Local storage
-- `webview_flutter` - Embedded OAuth login
+- `flutter_inappwebview` - Embedded OAuth login via WebView
 - `cached_network_image` - Image caching
 - `timeago` - Time formatting
-- `font_awesome_flutter` - Spotify icons
+- `url_launcher` - Deep-link into the Spotify app
 - `crypto` - HMAC-SHA1 for TOTP generation
+- `home_widget` - Home screen widget support
+- `workmanager` - Background widget refresh
+- `logger` - Structured logging
+- `package_info_plus` - App version info
 
 ## Architecture
 
@@ -129,33 +133,36 @@ See `scripts/README.md` for detailed usage instructions.
 
 ## Current Status
 
-✅ OAuth authentication with automatic cookie extraction  
-✅ Real friend activities via unofficial API  
-✅ Profile data (currently playing, top tracks/artists)  
-✅ Dark mode toggle
+- OAuth authentication with automatic cookie extraction
+- Real friend activities via unofficial API
+- Profile data (currently playing, top tracks/artists)
+- Home screen widget with background refresh
+- 341 automated tests passing
 
-## 🧪 Testing Status
+## Platform Support
 
-- **Android**: ✅ Fully tested on Android 15
-- **iOS**: ❌ Not tested - community contributions welcome!
+**Android**: Fully tested on Android 15.
 
-> **Note**: This app has only been tested on Android 15. While it's built with Flutter and should theoretically work on iOS, no testing has been performed on iOS devices. iOS users may encounter platform-specific issues. We welcome iOS testers and contributors!
+**iOS**: Not yet supported. iOS support is planned for a future release. The app is built with Flutter and the majority of the code is cross-platform, but iOS-specific integration has not been implemented or tested. Contributions are welcome.
 
-## 🗺️ Roadmap
+## Testing
 
-Future improvements planned:
+- **Android**: Fully tested on Android 15
+- **iOS**: Not yet tested - community contributions welcome
 
-- [✅] **Complete API-free implementation** - Remove all dependencies on Spotify API client/secret
-- [ ] **iOS testing and support** - Test and fix iOS-specific issues
-- [ ] **Home screen widgets** - Android widgets showing friend activity and currently playing
+## Roadmap
 
-**Want to contribute?** Check out our [Contributing Guidelines](#-contributing) below!  
+- [x] Complete API-free implementation - Remove all dependencies on Spotify API client/secret
+- [x] Home screen widgets - Android widgets showing friend activity and currently playing
+- [ ] iOS support - Implement and test iOS-specific integration
 
-## 🤝 Contributing
+**Want to contribute?** Check out our [Contributing](#contributing) section below.
+
+## Contributing
 
 We welcome contributions from the community! Here's how you can help:
 
-### 🐛 Bug Reports
+### Bug Reports
 - **Found a bug?** Please [open an issue](../../issues) with:
   - Clear description of the problem
   - Steps to reproduce
@@ -163,7 +170,7 @@ We welcome contributions from the community! Here's how you can help:
   - Screenshots if applicable
   - Device/OS information
 
-### 🚀 Pull Requests
+### Pull Requests
 - **Pull requests are welcome!** Please:
   - Fork the repository
   - Create a feature branch (`git checkout -b feature/amazing-feature`)
@@ -173,18 +180,18 @@ We welcome contributions from the community! Here's how you can help:
   - Push to your branch
   - Open a pull request with detailed description
 
-### 🍴 Forks
+### Forks
 - **Forks are encouraged!** Feel free to:
   - Fork this project for your own use
   - Customize it for your needs
   - Share your improvements back with the community
   - Create your own variations
 
-### 💡 Feature Requests
+### Feature Requests
 - Have an idea? [Open an issue](../../issues) with the `enhancement` label
 - Describe your use case and proposed solution
 
-## 📄 License
+## License
 
 This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
 
