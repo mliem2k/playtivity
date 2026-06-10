@@ -44,8 +44,21 @@ class SpotifyBuddyService {
   List<Activity>? _cachedBuddyActivities;
   DateTime? _lastBuddyListFetch;
 
-  // Cache duration - refresh every 1.5 minutes
-  static const Duration _buddyListCacheDuration = Duration(minutes: 1, seconds: 30);
+  // Adaptive cache duration:
+  //   • ≥1 friend currently playing → 30s (tracks change often, stay responsive)
+  //   • nobody playing             → 5min (save battery/data when feed is quiet)
+  static const Duration _activeCacheDuration = Duration(seconds: 30);
+  static const Duration _quietCacheDuration = Duration(minutes: 5);
+
+  Duration get _buddyListCacheDuration {
+    if (_cachedBuddyActivities == null || _cachedBuddyActivities!.isEmpty) {
+      return _activeCacheDuration; // no data yet — poll soon
+    }
+    final hasActive = _cachedBuddyActivities!.any(
+      (a) => a.type == ActivityType.track && a.isCurrentlyPlaying,
+    );
+    return hasActive ? _activeCacheDuration : _quietCacheDuration;
+  }
 
 
   /// Clears the buddy list cache to force a fresh fetch on next request
@@ -93,16 +106,15 @@ class SpotifyBuddyService {
   bool _shouldRefreshBuddyList() {
     final now = DateTime.now();
 
-    // If no cache exists or cache is older than 1.5 minutes, refresh
     if (_cachedBuddyActivities == null || _lastBuddyListFetch == null) {
       AppLogger.spotify('📊 Cache refresh needed: No cached data');
       return true;
     }
 
-    // Check if cache has expired (1.5 minutes)
+    final cacheDuration = _buddyListCacheDuration;
     final cacheAge = now.difference(_lastBuddyListFetch!);
-    if (cacheAge >= _buddyListCacheDuration) {
-      AppLogger.spotify('📊 Cache refresh needed: Cache expired (${cacheAge.inSeconds}s > ${_buddyListCacheDuration.inSeconds}s)');
+    if (cacheAge >= cacheDuration) {
+      AppLogger.spotify('📊 Cache refresh needed: ${cacheAge.inSeconds}s > ${cacheDuration.inSeconds}s');
       return true;
     }
 
