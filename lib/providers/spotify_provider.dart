@@ -27,6 +27,13 @@ class SpotifyProvider extends ChangeNotifier {
   // Flag to indicate if an authentication error occurred
   bool _hasAuthError = false;
   String? _authErrorMessage;
+
+  bool _batchMode = false;
+
+  void _notify() {
+    if (!_batchMode) notifyListeners();
+  }
+
   List<Track> get topTracks => _topTracks;
   List<Artist> get topArtists => _topArtists;
   List<Activity> get friendsActivities => _friendsActivities;
@@ -83,7 +90,7 @@ class SpotifyProvider extends ChangeNotifier {
     if (showLoading) {
       _isLoading = true;
       _error = null;
-      notifyListeners();
+      _notify();
     }
 
     try {
@@ -102,7 +109,7 @@ class SpotifyProvider extends ChangeNotifier {
     }
 
     if (showLoading) _isLoading = false;
-    notifyListeners();
+    _notify();
 
     // Update widget with new currently playing data
     await _updateWidget();
@@ -112,14 +119,14 @@ class SpotifyProvider extends ChangeNotifier {
     final token = _bearerToken;
     if (token == null) {
       _error = 'Not authenticated';
-      notifyListeners();
+      _notify();
       return;
     }
 
     if (showLoading) {
       _isLoading = true;
       _error = null;
-      notifyListeners();
+      _notify();
     }
 
     try {
@@ -129,21 +136,21 @@ class SpotifyProvider extends ChangeNotifier {
     }
 
     if (showLoading) _isLoading = false;
-    notifyListeners();
+    _notify();
   }
 
   Future<void> loadTopArtists({String timeRange = 'medium_term', bool showLoading = false}) async {
     final token = _bearerToken;
     if (token == null) {
       _error = 'Not authenticated';
-      notifyListeners();
+      _notify();
       return;
     }
 
     if (showLoading) {
       _isLoading = true;
       _error = null;
-      notifyListeners();
+      _notify();
     }
 
     try {
@@ -162,25 +169,25 @@ class SpotifyProvider extends ChangeNotifier {
     }
 
     if (showLoading) _isLoading = false;
-    notifyListeners();
+    _notify();
   }
 
   Future<void> loadFriendsActivities({bool showLoading = false, bool showSkeleton = false}) async {
     final token = _bearerToken;
     if (token == null) {
       _error = 'Not authenticated';
-      notifyListeners();
+      _notify();
       return;
     }
 
     if (showLoading) {
       _isLoading = true;
       _error = null;
-      notifyListeners();
+      _notify();
     } else if (showSkeleton) {
       _isSkeletonLoading = true;
       _error = null;
-      notifyListeners();
+      _notify();
     }
 
     try {
@@ -213,7 +220,7 @@ class SpotifyProvider extends ChangeNotifier {
 
     if (showLoading) _isLoading = false;
     if (showSkeleton) _isSkeletonLoading = false;
-    notifyListeners();
+    _notify();
 
     if (_friendsActivities.isNotEmpty) await _updateWidget();
   }
@@ -239,18 +246,16 @@ class SpotifyProvider extends ChangeNotifier {
   }
 
   Future<void> refreshData({bool showLoading = false}) async {
-    List<Future> futures = [];
-
-    // Load all features using Bearer token authentication
-    futures.addAll([
-      loadCurrentlyPlaying(showLoading: showLoading),
-      loadTopTracks(showLoading: showLoading),
-      loadTopArtists(showLoading: showLoading),
-      loadFriendsActivities(showLoading: showLoading),
-    ]);
-
-    if (futures.isNotEmpty) {
-      await Future.wait(futures);
+    _batchMode = true;
+    try {
+      await Future.wait([
+        loadCurrentlyPlaying(showLoading: showLoading),
+        loadTopTracks(showLoading: showLoading),
+        loadTopArtists(showLoading: showLoading),
+        loadFriendsActivities(showLoading: showLoading),
+      ]);
+    } finally {
+      _batchMode = false;
     }
 
     _lastUpdated = DateTime.now();
