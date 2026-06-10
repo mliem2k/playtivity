@@ -327,8 +327,4 @@ class SpotifyProvider extends ChangeNotifier {
     await _updateWidget(currentUser: currentUser);
   }
 
-  /// Debug method for widget testing
-  Future<void> debugWidget() async {
-    await WidgetService.debugWidgetData();
-  }
 }
