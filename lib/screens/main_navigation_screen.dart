@@ -19,17 +19,28 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     with WidgetsBindingObserver {
   int _currentIndex = 0;
   late final PageController _pageController;
-  bool _handlingOverscroll = false;
+  late final List<Widget> _screens;
+  bool _navigating = false;
 
-  final List<Widget> _screens = [
-    const _KeepAlive(child: HomeScreen()),
-    const _KeepAlive(child: ProfileScreen()),
-  ];
+  void _navigateToActivities() {
+    if (_navigating) return;
+    _navigating = true;
+    setState(() => _currentIndex = 0);
+    _pageController
+        .animateToPage(0,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut)
+        .then((_) => _navigating = false);
+  }
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController();
+    _screens = [
+      const _KeepAlive(child: HomeScreen()),
+      _KeepAlive(child: ProfileScreen(onSwipeBack: _navigateToActivities)),
+    ];
     AppLogger.info('🏠 MainNavigationScreen initialized');
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -93,26 +104,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   Widget _buildScaffold() {
     return Scaffold(
       extendBody: true,
-      body: NotificationListener<OverscrollNotification>(
-        onNotification: (notification) {
-          if (_currentIndex == 1 &&
-              notification.overscroll < 0 &&
-              !_handlingOverscroll) {
-            _handlingOverscroll = true;
-            setState(() => _currentIndex = 0);
-            _pageController
-                .animateToPage(0,
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut)
-                .then((_) => _handlingOverscroll = false);
-          }
-          return false;
-        },
-        child: PageView(
-          controller: _pageController,
-          onPageChanged: (index) => setState(() => _currentIndex = index),
-          children: _screens,
-        ),
+      body: PageView(
+        controller: _pageController,
+        onPageChanged: (index) => setState(() => _currentIndex = index),
+        children: _screens,
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
