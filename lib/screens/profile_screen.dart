@@ -94,8 +94,8 @@ class _ProfileScreenState extends State<ProfileScreen>
           builder: (ctx, data, _) => TabBarView(
             controller: _tabController,
             children: [
-              _buildTopSongs(data.topTracks, data.isLoading),
-              _buildTopArtists(data.topArtists, data.isLoading),
+              _buildTopSongs(ctx, data.topTracks, data.isLoading),
+              _buildTopArtists(ctx, data.topArtists, data.isLoading),
             ],
           ),
         ),
@@ -196,7 +196,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  Widget _buildTopSongs(List<Track> topTracks, bool isLoading) {
+  Widget _buildTopSongs(BuildContext context, List<Track> topTracks, bool isLoading) {
     if (isLoading) {
       return const Center(
         child: CircularProgressIndicator(color: AppTheme.primary),
@@ -216,7 +216,10 @@ class _ProfileScreenState extends State<ProfileScreen>
       );
     }
     return ListView.separated(
-      padding: const EdgeInsets.only(top: 8, bottom: 100),
+      padding: EdgeInsets.only(
+        top: 8,
+        bottom: MediaQuery.of(context).padding.bottom + 16,
+      ),
       itemCount: topTracks.length,
       addAutomaticKeepAlives: false,
       addRepaintBoundaries: false,
@@ -228,7 +231,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  Widget _buildTopArtists(List<Artist> topArtists, bool isLoading) {
+  Widget _buildTopArtists(BuildContext context, List<Artist> topArtists, bool isLoading) {
     if (isLoading) {
       return const Center(
         child: CircularProgressIndicator(color: AppTheme.primary),
@@ -248,7 +251,10 @@ class _ProfileScreenState extends State<ProfileScreen>
       );
     }
     return ListView.separated(
-      padding: const EdgeInsets.only(top: 8, bottom: 100),
+      padding: EdgeInsets.only(
+        top: 8,
+        bottom: MediaQuery.of(context).padding.bottom + 16,
+      ),
       itemCount: topArtists.length,
       addAutomaticKeepAlives: false,
       addRepaintBoundaries: false,
