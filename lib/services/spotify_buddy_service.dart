@@ -283,7 +283,40 @@ class SpotifyBuddyService {
               type: ActivityType.track,
             ));
           } else {
-            AppLogger.spotify('Skipped friend "${userInfo?["name"]}" — unknown activity type');
+            // Friends browsing without actively playing have only a context
+            // key (playlist/album URI). Treat as a playlist activity so they
+            // appear in the feed rather than being silently dropped.
+            final contextInfo = friend['context'];
+            if (contextInfo is Map && contextInfo['uri'] != null) {
+              final contextUri = contextInfo['uri'] as String? ?? '';
+              if (contextUri.isNotEmpty) {
+                final playlist = Playlist(
+                  id: contextUri.split(':').last,
+                  name: contextInfo['name'] as String? ?? 'Spotify',
+                  description: null,
+                  imageUrl: contextInfo['imageUrl'] as String?,
+                  trackCount: 0,
+                  uri: contextUri,
+                  ownerId: '',
+                  ownerName: '',
+                  isPublic: true,
+                );
+                activities.add(Activity(
+                  user: user,
+                  playlist: playlist,
+                  timestamp: DateTime.fromMillisecondsSinceEpoch(ts),
+                  isCurrentlyPlaying: false,
+                  type: ActivityType.playlist,
+                ));
+              } else {
+                AppLogger.spotify('Skipped friend "${userInfo?["name"]}" — empty context URI');
+              }
+            } else {
+              AppLogger.spotify(
+                'Skipped friend "${userInfo?["name"]}" — unknown activity type'
+                ' (keys: ${friend is Map ? friend.keys.toList() : "not a map"})',
+              );
+            }
           }
         } catch (e) {
           AppLogger.error('Failed to parse friend entry', e);

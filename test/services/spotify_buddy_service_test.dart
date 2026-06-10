@@ -541,4 +541,110 @@ void main() {
       expect(activities[0].track!.imageUrl, 'https://example.com/album.jpg');
     });
   });
+
+  group('SpotifyBuddyService.parseFriendsJson — context-only (browsing) activity', () {
+    const contextBody = '''
+{
+  "friends": [
+    {
+      "timestamp": 1780948000000,
+      "user": {"uri": "spotify:user:browser1", "name": "Browser", "imageUrl": null},
+      "context": {"uri": "spotify:playlist:abc123", "name": "Chill Vibes", "imageUrl": "https://example.com/playlist.jpg"}
+    }
+  ]
+}
+''';
+
+    test('context-only friend appears in results', () {
+      final activities = SpotifyBuddyService.parseFriendsJson(contextBody);
+      expect(activities.length, 1);
+    });
+
+    test('context activity has playlist type', () {
+      final activities = SpotifyBuddyService.parseFriendsJson(contextBody);
+      expect(activities[0].type, ActivityType.playlist);
+    });
+
+    test('context playlist name is mapped', () {
+      final activities = SpotifyBuddyService.parseFriendsJson(contextBody);
+      expect(activities[0].playlist!.name, 'Chill Vibes');
+    });
+
+    test('context playlist uri is mapped', () {
+      final activities = SpotifyBuddyService.parseFriendsJson(contextBody);
+      expect(activities[0].playlist!.uri, 'spotify:playlist:abc123');
+    });
+
+    test('context playlist id is last segment of uri', () {
+      final activities = SpotifyBuddyService.parseFriendsJson(contextBody);
+      expect(activities[0].playlist!.id, 'abc123');
+    });
+
+    test('context playlist imageUrl is mapped', () {
+      final activities = SpotifyBuddyService.parseFriendsJson(contextBody);
+      expect(activities[0].playlist!.imageUrl, 'https://example.com/playlist.jpg');
+    });
+
+    test('context friend user is mapped', () {
+      final activities = SpotifyBuddyService.parseFriendsJson(contextBody);
+      expect(activities[0].user.displayName, 'Browser');
+    });
+
+    test('context-only friend is not currently playing', () {
+      final activities = SpotifyBuddyService.parseFriendsJson(contextBody);
+      expect(activities[0].isCurrentlyPlaying, false);
+    });
+
+    test('mixed: track friend and context friend both appear', () {
+      const mixedBody = '''
+{
+  "friends": [
+    {
+      "timestamp": 1780948000000,
+      "user": {"uri": "spotify:user:u1", "name": "Player", "imageUrl": null},
+      "track": {"uri": "spotify:track:t1", "name": "Song", "imageUrl": null, "album": {"name": "Album"}, "artist": {"name": "Artist"}}
+    },
+    {
+      "timestamp": 1780947000000,
+      "user": {"uri": "spotify:user:u2", "name": "Browser", "imageUrl": null},
+      "context": {"uri": "spotify:playlist:p1", "name": "My Playlist", "imageUrl": null}
+    }
+  ]
+}
+''';
+      final activities = SpotifyBuddyService.parseFriendsJson(mixedBody);
+      expect(activities.length, 2);
+      expect(activities[0].user.displayName, 'Player');
+      expect(activities[1].user.displayName, 'Browser');
+    });
+
+    test('friend with empty context uri is skipped', () {
+      const body = '''
+{
+  "friends": [
+    {
+      "timestamp": 1780948000000,
+      "user": {"uri": "spotify:user:u1", "name": "Ghost", "imageUrl": null},
+      "context": {"uri": "", "name": "nothing"}
+    }
+  ]
+}
+''';
+      expect(SpotifyBuddyService.parseFriendsJson(body), isEmpty);
+    });
+
+    test('friend with no activity keys at all is skipped', () {
+      const body = '''
+{
+  "friends": [
+    {
+      "timestamp": 1780948000000,
+      "user": {"uri": "spotify:user:u1", "name": "Ghost", "imageUrl": null}
+    }
+  ]
+}
+''';
+      expect(SpotifyBuddyService.parseFriendsJson(body), isEmpty);
+    });
+  });
 }
