@@ -207,6 +207,7 @@ class SpotifyBuddyService {
 
           final trackInfo = friend['track'];
           final playlistInfo = friend['playlist'];
+          final episodeInfo = friend['episode'];
 
           if (playlistInfo != null) {
             final playlist = Playlist(
@@ -228,21 +229,51 @@ class SpotifyBuddyService {
               type: ActivityType.playlist,
             ));
           } else if (trackInfo != null) {
-            final albumInfo = trackInfo['album'] ?? <String, dynamic>{};
-            final artistInfo = trackInfo['artist'] ?? <String, dynamic>{};
+            final albumInfo = trackInfo['album'] is Map
+                ? trackInfo['album'] as Map
+                : <String, dynamic>{};
+            final artistInfo = trackInfo['artist'] is Map
+                ? trackInfo['artist'] as Map
+                : <String, dynamic>{};
 
             final elapsedMs = now - ts;
             final isCurrentlyPlaying = elapsedMs >= 0 && elapsedMs < _currentlyPlayingThresholdMs;
 
             final track = Track(
-              id: trackInfo['uri'] ?? '',
-              name: trackInfo['name'] ?? 'Unknown Track',
+              id: trackInfo['uri'] as String? ?? '',
+              name: trackInfo['name'] as String? ?? 'Unknown Track',
               artists: [artistInfo['name'] as String? ?? 'Unknown Artist'],
-              album: albumInfo['name'] ?? 'Unknown Album',
+              album: albumInfo['name'] as String? ?? 'Unknown Album',
               albumUri: albumInfo['uri'] as String?,
-              imageUrl: (trackInfo['imageUrl'] ?? albumInfo['imageUrl']) as String?,
+              imageUrl: trackInfo['imageUrl'] as String? ?? albumInfo['imageUrl'] as String?,
               durationMs: 0,
-              uri: trackInfo['uri'] ?? '',
+              uri: trackInfo['uri'] as String? ?? '',
+            );
+            activities.add(Activity(
+              user: user,
+              track: track,
+              timestamp: DateTime.fromMillisecondsSinceEpoch(ts),
+              isCurrentlyPlaying: isCurrentlyPlaying,
+              type: ActivityType.track,
+            ));
+          } else if (episodeInfo != null) {
+            final showInfo = episodeInfo['show'] is Map
+                ? episodeInfo['show'] as Map
+                : <String, dynamic>{};
+
+            final elapsedMs = now - ts;
+            final isCurrentlyPlaying = elapsedMs >= 0 && elapsedMs < _currentlyPlayingThresholdMs;
+
+            final showName = showInfo['name'] as String? ?? 'Unknown Podcast';
+            final track = Track(
+              id: episodeInfo['uri'] as String? ?? '',
+              name: episodeInfo['name'] as String? ?? 'Unknown Episode',
+              artists: [showName],
+              album: showName,
+              albumUri: showInfo['uri'] as String?,
+              imageUrl: episodeInfo['imageUrl'] as String? ?? showInfo['imageUrl'] as String?,
+              durationMs: 0,
+              uri: episodeInfo['uri'] as String? ?? '',
             );
             activities.add(Activity(
               user: user,
@@ -252,7 +283,7 @@ class SpotifyBuddyService {
               type: ActivityType.track,
             ));
           } else {
-            AppLogger.spotify('Skipped friend "${userInfo?["name"]}" — no track or playlist in response');
+            AppLogger.spotify('Skipped friend "${userInfo?["name"]}" — unknown activity type');
           }
         } catch (e) {
           AppLogger.error('Failed to parse friend entry', e);
@@ -262,7 +293,8 @@ class SpotifyBuddyService {
       AppLogger.spotify('Parsed ${activities.length}/${friends.length} activities');
       activities.sort((a, b) => b.timestamp.compareTo(a.timestamp));
       return activities;
-    } catch (_) {
+    } catch (e) {
+      AppLogger.error('parseFriendsJson: failed to decode response', e);
       return [];
     }
   }
