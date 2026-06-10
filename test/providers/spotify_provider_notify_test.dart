@@ -57,5 +57,21 @@ void main() {
       expect(provider.error, isNotNull);
       expect(notifyCount, equals(1));
     });
+
+    test('refreshData fires exactly 1 notification when no token is set', () async {
+      int notifyCount = 0;
+      provider.addListener(() => notifyCount++);
+      await provider.refreshData(showLoading: false);
+      expect(notifyCount, 1);
+    });
+
+    test('refreshData fires exactly 1 notification when token is set but requests fail', () async {
+      provider.setBearer('dummy-token');
+      int notifyCount = 0;
+      provider.addListener(() => notifyCount++);
+      await provider.refreshData(showLoading: false);
+      // All loaders will fail (no real server) but batching should still fire exactly 1
+      expect(notifyCount, 1);
+    });
   });
 }
