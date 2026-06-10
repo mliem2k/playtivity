@@ -159,6 +159,8 @@ class SpotifyBuddyService {
           throw Exception('Failed to fetch friend activity: ${response.statusCode}');
         }
 
+        AppLogger.spotify('Raw buddylist response (${response.body.length} bytes): '
+            '${response.body.substring(0, response.body.length.clamp(0, 800))}');
         final activities = parseFriendsJson(response.body);
         _cachedBuddyActivities = activities;
         _lastBuddyListFetch = DateTime.now();
@@ -175,6 +177,10 @@ class SpotifyBuddyService {
   /// [nowMs] overrides the current timestamp for [isCurrentlyPlaying] calculations.
   /// Defaults to [DateTime.now] when omitted. Exposed as a static method so
   /// tests can call it directly with a fixed clock.
+  /// Safely extracts a String from a dynamic value; returns null for any
+  /// non-String type rather than throwing a TypeError.
+  static String? _str(dynamic v) => v is String ? v : null;
+
   static List<Activity> parseFriendsJson(String responseBody, {int? nowMs}) {
     try {
       final data = json.decode(responseBody);
@@ -186,40 +192,47 @@ class SpotifyBuddyService {
       final activities = <Activity>[];
 
       for (final friend in friends) {
+        if (friend == null) continue;
         try {
           final userInfo = friend['user'];
+          if (userInfo == null) continue;
           final rawTimestamp = friend['timestamp'];
           final ts = rawTimestamp is int ? rawTimestamp : now;
 
-          final userUri = userInfo['uri'] ?? '';
+          final userUri = _str(userInfo['uri']) ?? '';
           final userId = userUri.startsWith('spotify:user:')
               ? userUri.substring('spotify:user:'.length)
               : userUri;
 
           final user = User(
             id: userId,
-            displayName: userInfo['name'] ?? 'Unknown User',
+            displayName: _str(userInfo['name']) ?? 'Unknown User',
             email: '',
-            imageUrl: userInfo['imageUrl'] as String?,
+            imageUrl: _str(userInfo['imageUrl']),
             followers: 0,
             country: '',
           );
 
-          final trackInfo = friend['track'];
-          final playlistInfo = friend['playlist'];
-          final episodeInfo = friend['episode'];
+          final trackInfo = friend['track'] is Map ? friend['track'] as Map : null;
+          final playlistInfo = friend['playlist'] is Map ? friend['playlist'] as Map : null;
+          final episodeInfo = friend['episode'] is Map ? friend['episode'] as Map : null;
+
+          AppLogger.spotify(
+            'Friend "${user.displayName}": keys=${friend is Map ? friend.keys.toList() : "?"}',
+          );
 
           if (playlistInfo != null) {
+            final playlistUri = _str(playlistInfo['uri']) ?? '';
             final playlist = Playlist(
-              id: (playlistInfo['uri'] as String?)?.split(':').last ?? '',
-              name: playlistInfo['name'] ?? 'Unknown Playlist',
-              description: playlistInfo['description'] as String?,
-              imageUrl: playlistInfo['imageUrl'] as String?,
-              trackCount: playlistInfo['trackCount'] ?? 0,
-              uri: playlistInfo['uri'] ?? '',
-              ownerId: playlistInfo['owner']?['id'] ?? '',
-              ownerName: playlistInfo['owner']?['name'] ?? 'Unknown',
-              isPublic: playlistInfo['public'] ?? false,
+              id: playlistUri.split(':').last,
+              name: _str(playlistInfo['name']) ?? 'Unknown Playlist',
+              description: _str(playlistInfo['description']),
+              imageUrl: _str(playlistInfo['imageUrl']),
+              trackCount: playlistInfo['trackCount'] is int ? playlistInfo['trackCount'] as int : 0,
+              uri: playlistUri,
+              ownerId: _str(playlistInfo['owner']?['id']) ?? '',
+              ownerName: _str(playlistInfo['owner']?['name']) ?? 'Unknown',
+              isPublic: playlistInfo['public'] == true,
             );
             activities.add(Activity(
               user: user,
@@ -229,25 +242,21 @@ class SpotifyBuddyService {
               type: ActivityType.playlist,
             ));
           } else if (trackInfo != null) {
-            final albumInfo = trackInfo['album'] is Map
-                ? trackInfo['album'] as Map
-                : <String, dynamic>{};
-            final artistInfo = trackInfo['artist'] is Map
-                ? trackInfo['artist'] as Map
-                : <String, dynamic>{};
+            final albumInfo = trackInfo['album'] is Map ? trackInfo['album'] as Map : <String, dynamic>{};
+            final artistInfo = trackInfo['artist'] is Map ? trackInfo['artist'] as Map : <String, dynamic>{};
 
             final elapsedMs = now - ts;
             final isCurrentlyPlaying = elapsedMs >= 0 && elapsedMs < _currentlyPlayingThresholdMs;
 
             final track = Track(
-              id: trackInfo['uri'] as String? ?? '',
-              name: trackInfo['name'] as String? ?? 'Unknown Track',
-              artists: [artistInfo['name'] as String? ?? 'Unknown Artist'],
-              album: albumInfo['name'] as String? ?? 'Unknown Album',
-              albumUri: albumInfo['uri'] as String?,
-              imageUrl: trackInfo['imageUrl'] as String? ?? albumInfo['imageUrl'] as String?,
+              id: _str(trackInfo['uri']) ?? '',
+              name: _str(trackInfo['name']) ?? 'Unknown Track',
+              artists: [_str(artistInfo['name']) ?? 'Unknown Artist'],
+              album: _str(albumInfo['name']) ?? 'Unknown Album',
+              albumUri: _str(albumInfo['uri']),
+              imageUrl: _str(trackInfo['imageUrl']) ?? _str(albumInfo['imageUrl']),
               durationMs: 0,
-              uri: trackInfo['uri'] as String? ?? '',
+              uri: _str(trackInfo['uri']) ?? '',
             );
             activities.add(Activity(
               user: user,
@@ -257,23 +266,21 @@ class SpotifyBuddyService {
               type: ActivityType.track,
             ));
           } else if (episodeInfo != null) {
-            final showInfo = episodeInfo['show'] is Map
-                ? episodeInfo['show'] as Map
-                : <String, dynamic>{};
+            final showInfo = episodeInfo['show'] is Map ? episodeInfo['show'] as Map : <String, dynamic>{};
 
             final elapsedMs = now - ts;
             final isCurrentlyPlaying = elapsedMs >= 0 && elapsedMs < _currentlyPlayingThresholdMs;
 
-            final showName = showInfo['name'] as String? ?? 'Unknown Podcast';
+            final showName = _str(showInfo['name']) ?? 'Unknown Podcast';
             final track = Track(
-              id: episodeInfo['uri'] as String? ?? '',
-              name: episodeInfo['name'] as String? ?? 'Unknown Episode',
+              id: _str(episodeInfo['uri']) ?? '',
+              name: _str(episodeInfo['name']) ?? 'Unknown Episode',
               artists: [showName],
               album: showName,
-              albumUri: showInfo['uri'] as String?,
-              imageUrl: episodeInfo['imageUrl'] as String? ?? showInfo['imageUrl'] as String?,
+              albumUri: _str(showInfo['uri']),
+              imageUrl: _str(episodeInfo['imageUrl']) ?? _str(showInfo['imageUrl']),
               durationMs: 0,
-              uri: episodeInfo['uri'] as String? ?? '',
+              uri: _str(episodeInfo['uri']) ?? '',
             );
             activities.add(Activity(
               user: user,
@@ -284,42 +291,39 @@ class SpotifyBuddyService {
             ));
           } else {
             // Friends browsing without actively playing have only a context
-            // key (playlist/album URI). Treat as a playlist activity so they
-            // appear in the feed rather than being silently dropped.
-            final contextInfo = friend['context'];
-            if (contextInfo is Map && contextInfo['uri'] != null) {
-              final contextUri = contextInfo['uri'] as String? ?? '';
-              if (contextUri.isNotEmpty) {
-                final playlist = Playlist(
-                  id: contextUri.split(':').last,
-                  name: contextInfo['name'] as String? ?? 'Spotify',
-                  description: null,
-                  imageUrl: contextInfo['imageUrl'] as String?,
-                  trackCount: 0,
-                  uri: contextUri,
-                  ownerId: '',
-                  ownerName: '',
-                  isPublic: true,
-                );
-                activities.add(Activity(
-                  user: user,
-                  playlist: playlist,
-                  timestamp: DateTime.fromMillisecondsSinceEpoch(ts),
-                  isCurrentlyPlaying: false,
-                  type: ActivityType.playlist,
-                ));
-              } else {
-                AppLogger.spotify('Skipped friend "${userInfo?["name"]}" — empty context URI');
-              }
+            // key (playlist/album/show URI). Treat as a playlist activity so
+            // they appear in the feed rather than being silently dropped.
+            final rawContext = friend['context'];
+            final contextInfo = rawContext is Map ? rawContext : null;
+            final contextUri = _str(contextInfo?['uri']) ?? '';
+            if (contextUri.isNotEmpty) {
+              final playlist = Playlist(
+                id: contextUri.split(':').last,
+                name: _str(contextInfo?['name']) ?? 'Spotify',
+                description: null,
+                imageUrl: _str(contextInfo?['imageUrl']),
+                trackCount: 0,
+                uri: contextUri,
+                ownerId: '',
+                ownerName: '',
+                isPublic: true,
+              );
+              activities.add(Activity(
+                user: user,
+                playlist: playlist,
+                timestamp: DateTime.fromMillisecondsSinceEpoch(ts),
+                isCurrentlyPlaying: false,
+                type: ActivityType.playlist,
+              ));
             } else {
               AppLogger.spotify(
-                'Skipped friend "${userInfo?["name"]}" — unknown activity type'
+                'Skipped friend "${user.displayName}" — no parseable activity'
                 ' (keys: ${friend is Map ? friend.keys.toList() : "not a map"})',
               );
             }
           }
-        } catch (e) {
-          AppLogger.error('Failed to parse friend entry', e);
+        } catch (e, st) {
+          AppLogger.error('Failed to parse friend entry: $e\n$st', e);
         }
       }
 
