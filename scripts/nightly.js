@@ -17,19 +17,19 @@ class NightlyBuilder {
 
     log(message, type = 'info') {
         const timestamp = new Date().toLocaleTimeString();
-        const emojis = {
-            'info': '📘',
-            'success': '✅',
-            'error': '❌',
-            'warning': '⚠️',
-            'build': '🔨',
-            'nightly': '🌙',
-            'github': '🐙',
-            'upload': '📤',
-            'clean': '🧹'
+        const labels = {
+            'info': 'INFO',
+            'success': 'OK',
+            'error': 'ERR',
+            'warning': 'WARN',
+            'build': 'BUILD',
+            'nightly': 'NIGHTLY',
+            'github': 'GITHUB',
+            'upload': 'UPLOAD',
+            'clean': 'CLEAN'
         };
-        
-        console.log(`[${timestamp}] ${emojis[type] || 'ℹ️'} ${message}`);
+
+        console.log(`[${timestamp}] [${labels[type] || 'INFO'}] ${message}`);
     }
 
     // ==================== Setup & Validation ====================
@@ -365,7 +365,7 @@ After installation, authenticate with: gh auth login
         this.log('Creating GitHub release', 'github');
 
         const tagName = `nightly-${this.buildInfo.buildId}`;
-        const releaseName = `🌙 Nightly Build ${this.buildInfo.buildId}`;
+        const releaseName = `Nightly Build ${this.buildInfo.buildId}`;
         const releaseNotes = this.generateReleaseNotes(apkInfo);
         
         const notesFile = path.join(this.outputDir, `release-notes-temp.md`);
@@ -394,57 +394,18 @@ After installation, authenticate with: gh auth login
     generateReleaseNotes(apkInfo) {
         const { version, baseVersion, git, apk, environment } = this.buildInfo;
 
-        return `# 🌙 Playtivity Nightly Build
+        return `Nightly development build — unstable, not for production use.
 
-**⚠️ NIGHTLY DEVELOPMENT BUILD - Use at your own risk!**
+**Commit**: \`${git.commitShort}\` — ${git.commitMessage}
+**Branch**: \`${git.branch}\`
+**Flutter**: ${environment.flutterVersion} / Dart ${environment.dartVersion}
 
-## Build Information
-- **Version**: \`${version.fullVersion}\`
-- **Base Version**: \`${baseVersion}\`
-- **Build Date**: ${new Date().toLocaleString()}
-- **Build ID**: \`${this.buildInfo.buildId}\`
+**APK**: ${apk.fileName} (${apk.size} MB)
+**SHA256**: \`${apk.checksum}\`
 
-## Git Information
-- **Branch**: \`${git.branch}\`
-- **Commit**: \`${git.commit}\`
-- **Message**: "${git.commitMessage}"
-- **Author**: ${git.author}
+Download the APK from the assets below, enable "Install from unknown sources" on your device, and install it.
 
-## Build Environment
-- **Flutter**: ${environment.flutterVersion}
-- **Dart**: ${environment.dartVersion}
-
-## APK Details
-- **File**: ${apk.fileName}
-- **Size**: ${apk.size} MB
-- **SHA256**: \`${apk.checksum}\`
-
-## Installation
-
-### Android Device
-1. Download the APK from the assets section below
-2. Enable "Install from unknown sources" in your device settings
-3. Open and install the APK
-
-### Using ADB
-\`\`\`bash
-adb install ${apk.fileName}
-\`\`\`
-
-## ⚠️ Important Notes
-- This is unstable development code
-- May contain bugs or incomplete features
-- Not recommended for production use
-- Always backup your data before installing
-
-## Checking for Updates
-The app includes an automatic update checker for nightly builds. Enable nightly updates in Settings to receive automatic update notifications.
-
-## Feedback
-Report issues with build ID: \`${this.buildInfo.buildId}\`
-
----
-*Automated nightly build from commit ${git.commitShort}*`;
+Report issues with build ID: \`${this.buildInfo.buildId}\``;
     }
 
     // ==================== Cleanup ====================
@@ -497,7 +458,7 @@ Report issues with build ID: \`${this.buildInfo.buildId}\`
         let versionBackup = null;
 
         try {
-            this.log('🌙 Starting Nightly Build & Release Process', 'nightly');
+            this.log('Starting Nightly Build & Release Process', 'nightly');
             
             // Setup
             this.ensureOutputDirectory();
@@ -542,7 +503,7 @@ Report issues with build ID: \`${this.buildInfo.buildId}\`
             versionBackup = null;
             
             // Success summary
-            this.log('🎉 Nightly build & release completed!', 'success');
+            this.log('Nightly build & release completed!', 'success');
             this.printSummary(versionInfo, gitInfo, apkInfo, skipGitHub);
             
         } catch (error) {
@@ -562,23 +523,21 @@ Report issues with build ID: \`${this.buildInfo.buildId}\`
     }
 
     printSummary(versionInfo, gitInfo, apkInfo, skipGitHub) {
-        console.log('\n📊 Build Summary:');
+        console.log('\nBuild Summary:');
         console.log(`   Version: ${versionInfo.nightly.fullVersion}`);
         console.log(`   Base: ${versionInfo.baseVersion}`);
         console.log(`   Branch: ${gitInfo.branch}`);
         console.log(`   Commit: ${gitInfo.commitShort}`);
         console.log(`   APK Size: ${apkInfo.size} MB`);
         console.log(`   Location: ${apkInfo.fileName}`);
-        
+
         if (!skipGitHub && this.githubRepo) {
-            console.log(`\n🐙 GitHub Release:`);
+            console.log(`\nGitHub Release:`);
             console.log(`   https://github.com/${this.githubRepo}/releases/tag/nightly-${this.buildInfo.buildId}`);
         }
-        
-        console.log('\n📱 Installation:');
-        console.log(`   adb install "${apkInfo.latestPath}"`);
-        
-        console.log('\n⚠️  This is a NIGHTLY BUILD - not for production use!');
+
+        console.log(`   APK: ${apkInfo.latestPath}`);
+        console.log('\nNOTE: Nightly build — not for production use.');
     }
 }
 
@@ -586,7 +545,7 @@ Report issues with build ID: \`${this.buildInfo.buildId}\`
 
 function showHelp() {
     console.log(`
-🌙 Playtivity Nightly Builder & Releaser
+Playtivity Nightly Builder & Releaser
 
 Usage: node nightly.js [options]
 
@@ -610,12 +569,12 @@ Requirements:
   - Git repository with GitHub remote
 
 The script will:
-  ✅ Create nightly version with timestamp
-  ✅ Build optimized APK
-  ✅ Generate build metadata and checksums
-  ✅ Create GitHub release with APK
-  ✅ Clean old builds automatically
-  ✅ Restore original version after build
+  - Create nightly version with timestamp
+  - Build optimized APK
+  - Generate build metadata and checksums
+  - Create GitHub release with APK
+  - Clean old builds automatically
+  - Restore original version after build
 `);
 }
 

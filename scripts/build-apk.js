@@ -14,15 +14,15 @@ class APKBuilder {
 
     log(message, type = 'info') {
         const timestamp = new Date().toLocaleTimeString();
-        const prefix = {
-            'info': '📱',
-            'success': '✅',
-            'error': '❌',
-            'warning': '⚠️',
-            'build': '🔨'
-        }[type] || 'ℹ️';
-        
-        console.log(`[${timestamp}] ${prefix} ${message}`);
+        const labels = {
+            'info': 'INFO',
+            'success': 'OK',
+            'error': 'ERR',
+            'warning': 'WARN',
+            'build': 'BUILD'
+        };
+
+        console.log(`[${timestamp}] [${labels[type] || 'INFO'}] ${message}`);
     }
 
     ensureOutputDirectory() {
@@ -228,7 +228,7 @@ class APKBuilder {
 
     async build(incrementType = 'build') {
         try {
-            this.log('🚀 Starting Playtivity APK Build Process');
+            this.log('Starting Playtivity APK Build Process');
             
             // Ensure output directory exists
             this.ensureOutputDirectory();
@@ -249,13 +249,13 @@ class APKBuilder {
             const fileInfo = this.getAPKInfo(apkInfo.timestampedPath);
             
             // Success summary
-            this.log('🎉 Build completed successfully!', 'success');
-            console.log('\n📋 Build Summary:');
+            this.log('Build completed successfully!', 'success');
+            console.log('\nBuild Summary:');
             console.log(`   Version: ${newVersion.fullVersion}`);
             console.log(`   APK Size: ${fileInfo.size} MB`);
             console.log(`   Location: ${apkInfo.timestampedPath}`);
             console.log(`   Latest: ${apkInfo.latestPath}`);
-            console.log('\n📱 Installation:');
+            console.log('\nInstallation:');
             console.log(`   adb install "${apkInfo.latestPath}"`);
             console.log('   or transfer to your device and install manually');
             
@@ -269,7 +269,7 @@ class APKBuilder {
 // CLI interface
 function showHelp() {
     console.log(`
-🔨 Playtivity APK Builder
+Playtivity APK Builder
 
 Usage: node build-apk.js [increment-type]
 
@@ -287,10 +287,10 @@ Examples:
   node build-apk.js major     # Increment major version
 
 The script will:
-  ✅ Automatically increment the version in pubspec.yaml
-  ✅ Clean and build the APK
-  ✅ Copy the APK to builds/ folder with timestamp
-  ✅ Create a "latest" APK for easy installation
+  - Automatically increment the version in pubspec.yaml
+  - Clean and build the APK
+  - Copy the APK to builds/ folder with timestamp
+  - Create a "latest" APK for easy installation
 `);
 }
 
@@ -307,7 +307,7 @@ if (require.main === module) {
     const validTypes = ['build', 'patch', 'minor', 'major'];
     
     if (!validTypes.includes(incrementType)) {
-        console.error(`❌ Invalid increment type: ${incrementType}`);
+        console.error(`[ERR] Invalid increment type: ${incrementType}`);
         console.error(`Valid types: ${validTypes.join(', ')}`);
         process.exit(1);
     }
