@@ -181,10 +181,12 @@ class SpotifyBuddyService {
       final friends = data['friends'] as List?;
       if (friends == null) return [];
 
+      AppLogger.spotify('Buddylist API returned ${friends.length} friends');
       final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
       final activities = <Activity>[];
 
       for (final friend in friends) {
+        try {
         final userInfo = friend['user'];
         final rawTimestamp = friend['timestamp'];
         final ts = rawTimestamp is int ? rawTimestamp : now;
@@ -205,6 +207,10 @@ class SpotifyBuddyService {
 
         final trackInfo = friend['track'];
         final playlistInfo = friend['playlist'];
+        // Spotify sometimes returns episode entries under 'episode' key
+        final episodeInfo = friend['episode'];
+        // Context-only entries (e.g. browsing a playlist without playing)
+        final contextInfo = friend['context'];
 
         if (playlistInfo != null) {
           final playlist = Playlist(
@@ -225,22 +231,23 @@ class SpotifyBuddyService {
             isCurrentlyPlaying: false,
             type: ActivityType.playlist,
           ));
-        } else if (trackInfo != null) {
-          final albumInfo = trackInfo['album'] ?? <String, dynamic>{};
-          final artistInfo = trackInfo['artist'] ?? <String, dynamic>{};
+        } else if (trackInfo != null || episodeInfo != null) {
+          final content = trackInfo ?? episodeInfo as Map<String, dynamic>;
+          final albumInfo = content['album'] ?? content['show'] ?? <String, dynamic>{};
+          final artistInfo = content['artist'] ?? content['podcast'] ?? content['show'] ?? <String, dynamic>{};
 
           final elapsedMs = now - ts;
           final isCurrentlyPlaying = elapsedMs >= 0 && elapsedMs < _currentlyPlayingThresholdMs;
 
           final track = Track(
-            id: trackInfo['uri'] ?? '',
-            name: trackInfo['name'] ?? 'Unknown Track',
+            id: content['uri'] ?? '',
+            name: content['name'] ?? 'Unknown',
             artists: [artistInfo['name'] as String? ?? 'Unknown Artist'],
-            album: albumInfo['name'] ?? 'Unknown Album',
+            album: albumInfo['name'] ?? '',
             albumUri: albumInfo['uri'] as String?,
-            imageUrl: (trackInfo['imageUrl'] ?? albumInfo['imageUrl']) as String?,
+            imageUrl: (content['imageUrl'] ?? albumInfo['imageUrl']) as String?,
             durationMs: 0,
-            uri: trackInfo['uri'] ?? '',
+            uri: content['uri'] ?? '',
           );
           activities.add(Activity(
             user: user,
@@ -249,9 +256,37 @@ class SpotifyBuddyService {
             isCurrentlyPlaying: isCurrentlyPlaying,
             type: ActivityType.track,
           ));
+        } else {
+          // Friend has no recognisable activity (e.g. context-only or unknown type)
+          AppLogger.spotify('Skipped friend "${userInfo?["name"]}" — no track/playlist/episode in response (keys: ${friend.keys.toList()})');
+          final contextUri = contextInfo?['uri'] as String?;
+          if (contextUri != null && contextUri.isNotEmpty) {
+            final playlist = Playlist(
+              id: contextUri.split(':').last,
+              name: contextInfo?['name'] ?? 'Unknown',
+              description: null,
+              imageUrl: contextInfo?['imageUrl'] as String?,
+              trackCount: 0,
+              uri: contextUri,
+              ownerId: '',
+              ownerName: '',
+              isPublic: false,
+            );
+            activities.add(Activity(
+              user: user,
+              playlist: playlist,
+              timestamp: DateTime.fromMillisecondsSinceEpoch(ts),
+              isCurrentlyPlaying: false,
+              type: ActivityType.playlist,
+            ));
+          }
+        }
+        } catch (e) {
+          AppLogger.error('Failed to parse individual friend activity entry', e);
         }
       }
 
+      AppLogger.spotify('Parsed ${activities.length} activities from ${friends.length} friends');
       activities.sort((a, b) => b.timestamp.compareTo(a.timestamp));
       return activities;
     } catch (_) {
