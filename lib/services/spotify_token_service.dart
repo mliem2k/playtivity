@@ -12,7 +12,7 @@ class SpotifyTokenService {
 
   /// Fetches Spotify's server time via the HTTP Date header for TOTP sync.
   static Future<int> fetchServerTime() async {
-    final client = io.HttpClient();
+    final client = io.HttpClient()..connectionTimeout = const Duration(seconds: 10);
     try {
       final request = await client.getUrl(Uri.parse('https://open.spotify.com/'));
       final response = await request.close();
@@ -62,7 +62,7 @@ class SpotifyTokenService {
   /// Fetches a Bearer access token using a stored sp_dc cookie value.
   /// Returns null if the request fails or sp_dc has expired.
   static Future<String?> fetchBearerToken(String spDc) async {
-    final client = io.HttpClient();
+    final client = io.HttpClient()..connectionTimeout = const Duration(seconds: 10);
     try {
       AppLogger.auth('Fetching Bearer token from sp_dc...');
       final serverTime = await fetchServerTime();
@@ -141,7 +141,7 @@ class SpotifyTokenService {
   /// Unlike /v1/me, this endpoint is not rate-limited and works with just
   /// the sp_dc cookie — no bearer token or OAuth scopes needed.
   static Future<({String email, String country})?> fetchAccountProfile(String spDc) async {
-    final client = io.HttpClient();
+    final client = io.HttpClient()..connectionTimeout = const Duration(seconds: 10);
     try {
       final req = await client.getUrl(
         Uri.parse('https://www.spotify.com/api/account-settings/v1/profile'),
