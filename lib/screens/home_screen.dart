@@ -112,54 +112,47 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
     return SliverAppBar(
       pinned: true,
       floating: false,
-      toolbarHeight: 0,
-      expandedHeight: 0,
-      backgroundColor: Colors.transparent,
+      toolbarHeight: 52,
+      expandedHeight: 52,
+      backgroundColor: AppTheme.background,
       surfaceTintColor: Colors.transparent,
       scrolledUnderElevation: 0,
-      bottom: PreferredSize(
-        preferredSize: Size.fromHeight(showProgress ? 2 : 0),
-        child: showProgress
-            ? const LinearProgressIndicator(
+      title: const Text(
+        'Friend Activity',
+        style: TextStyle(
+          color: AppTheme.textPrimary,
+          fontWeight: FontWeight.w700,
+          fontSize: 18,
+        ),
+      ),
+      titleSpacing: 16,
+      bottom: showProgress
+          ? const PreferredSize(
+              preferredSize: Size.fromHeight(2),
+              child: LinearProgressIndicator(
                 color: AppTheme.primary,
                 backgroundColor: Colors.transparent,
-              )
-            : const SizedBox.shrink(),
-      ),
+              ),
+            )
+          : null,
     );
   }
 
   Widget _buildSkeletonSliver() => const _SkeletonList();
 
   Widget _buildActivityList(List<Activity> activities) {
-    // Layout: index 0 = header, odd indices = cards, even indices ≥ 2 = dividers,
-    // last index (activities.length * 2) = nav-bar spacer.
-    // childCount = 1 (header) + n (cards) + (n-1) (dividers) + 1 (spacer) = 2n + 1
-    final childCount = activities.length * 2 + 1;
+    // Layout: even indices = cards, odd indices = dividers, last index = nav-bar spacer.
+    // childCount = n (cards) + (n-1) (dividers) + 1 (spacer) = 2n
+    final childCount = activities.length * 2;
     return SliverList(
       delegate: SliverChildBuilderDelegate(
         (context, index) {
-          if (index == 0) {
-            return Padding(
-              padding: EdgeInsets.only(left: 24, top: MediaQuery.of(context).padding.top + 8, bottom: 12),
-              child: const Text(
-                'Friend Activity',
-                style: TextStyle(
-                  color: AppTheme.textPrimary,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 18,
-                ),
-              ),
-            );
-          }
           if (index == childCount - 1) {
             return SizedBox(height: MediaQuery.of(context).padding.bottom);
           }
-          if (index.isOdd) {
-            final activity = activities[(index - 1) ~/ 2];
-            return RepaintBoundary(child: ActivityCard(activity: activity));
+          if (index.isEven) {
+            return RepaintBoundary(child: ActivityCard(activity: activities[index ~/ 2]));
           }
-          // Even index ≥ 2: divider between cards
           return const Divider(height: 1, color: AppTheme.dividerColor);
         },
         childCount: childCount,
@@ -251,11 +244,10 @@ class _SkeletonListState extends State<_SkeletonList>
     return SliverList(
       delegate: SliverChildBuilderDelegate(
         (context, index) {
-          if (index == 0) return SizedBox(height: MediaQuery.of(context).padding.top + 8);
-          if (index == 7) return SizedBox(height: MediaQuery.of(context).padding.bottom);
+          if (index == 6) return SizedBox(height: MediaQuery.of(context).padding.bottom);
           return ActivitySkeleton(animation: _animation);
         },
-        childCount: 8,
+        childCount: 7,
       ),
     );
   }
