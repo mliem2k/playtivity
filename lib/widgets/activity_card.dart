@@ -1,3 +1,4 @@
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../models/activity.dart';
 import '../utils/theme.dart';
@@ -87,15 +88,110 @@ class _InfoColumn extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 2),
-          Text(
-            '${activity.track!.artistsString} · ${activity.track!.album}',
+          _RunningText(
+            text: '${activity.track!.artistsString} · ${activity.track!.album}',
             style: tt.bodyMedium,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
           ),
         ],
       ],
     );
+  }
+}
+
+class _RunningText extends StatefulWidget {
+  final String text;
+  final TextStyle? style;
+  const _RunningText({required this.text, this.style});
+  @override
+  State<_RunningText> createState() => _RunningTextState();
+}
+
+class _RunningTextState extends State<_RunningText>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late Animation<double> _anim;
+  double _overflow = 0;
+  double? _lastWidth;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this);
+    _anim = const AlwaysStoppedAnimation(0);
+  }
+
+  @override
+  void didUpdateWidget(_RunningText old) {
+    super.didUpdateWidget(old);
+    if (old.text != widget.text) {
+      _ctrl.stop();
+      _ctrl.reset();
+      _lastWidth = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _measure(double containerWidth) {
+    if (_lastWidth == containerWidth) return;
+    _lastWidth = containerWidth;
+
+    final style = widget.style ?? const TextStyle();
+    final tp = ui.ParagraphBuilder(ui.ParagraphStyle(maxLines: 1))
+      ..pushStyle(style.getTextStyle())
+      ..addText(widget.text);
+    final paragraph = tp.build()..layout(const ui.ParagraphConstraints(width: double.infinity));
+    _overflow = (paragraph.longestLine - containerWidth).clamp(0.0, double.infinity);
+
+    _ctrl.stop();
+    _ctrl.reset();
+    _ctrl.removeStatusListener(_onStatus);
+
+    if (_overflow > 0) {
+      _ctrl.duration = Duration(milliseconds: (_overflow / 40 * 1000).round());
+      _anim = Tween<double>(begin: 0, end: _overflow)
+          .animate(CurvedAnimation(parent: _ctrl, curve: Curves.linear));
+      _ctrl.addStatusListener(_onStatus);
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) _ctrl.forward();
+      });
+    }
+  }
+
+  void _onStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed) {
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) _ctrl.reverse();
+      });
+    } else if (status == AnimationStatus.dismissed) {
+      Future.delayed(const Duration(seconds: 1), () {
+        if (mounted) _ctrl.forward();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(builder: (_, constraints) {
+      _measure(constraints.maxWidth);
+      if (_overflow <= 0) {
+        return Text(widget.text, style: widget.style, maxLines: 1, overflow: TextOverflow.ellipsis);
+      }
+      return ClipRect(
+        child: AnimatedBuilder(
+          animation: _anim,
+          builder: (_, child) => Transform.translate(
+            offset: Offset(-_anim.value, 0),
+            child: child,
+          ),
+          child: Text(widget.text, style: widget.style, maxLines: 1, softWrap: false),
+        ),
+      );
+    });
   }
 }
 
