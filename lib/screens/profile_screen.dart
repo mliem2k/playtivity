@@ -145,7 +145,11 @@ class _ProfileScreenState extends State<ProfileScreen>
                   radius: 44,
                   backgroundColor: AppTheme.surfaceElevated,
                   backgroundImage: user?.imageUrl != null
-                      ? CachedNetworkImageProvider(user!.imageUrl!)
+                      ? CachedNetworkImageProvider(
+                          user!.imageUrl!,
+                          maxWidth: 264,
+                          maxHeight: 264,
+                        )
                       : null,
                   child: user?.imageUrl == null
                       ? Text(

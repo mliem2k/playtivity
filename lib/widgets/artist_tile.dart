@@ -34,7 +34,11 @@ class ArtistTile extends StatelessWidget {
               radius: 24,
               backgroundColor: AppTheme.surfaceElevated,
               backgroundImage: artist.imageUrl != null
-                  ? CachedNetworkImageProvider(artist.imageUrl!)
+                  ? CachedNetworkImageProvider(
+                      artist.imageUrl!,
+                      maxWidth: 144,
+                      maxHeight: 144,
+                    )
                   : null,
               child: artist.imageUrl == null
                   ? const Icon(
