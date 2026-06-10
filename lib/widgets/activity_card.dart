@@ -4,7 +4,7 @@ import '../utils/theme.dart';
 import '../utils/spotify_launcher.dart';
 import '../utils/friend_profile_launcher.dart';
 import 'avatar_widget.dart';
-import 'cached_image_widget.dart';
+import 'common/album_art_widget.dart';
 import 'equalizer_icon.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
@@ -27,7 +27,7 @@ class ActivityCard extends StatelessWidget {
             const SizedBox(width: 16),
             Expanded(child: _InfoColumn(activity: activity)),
             const SizedBox(width: 12),
-            _AlbumArt(activity: activity),
+            AlbumArtWidget(imageUrl: activity.track?.imageUrl, size: 48),
           ],
         ),
       ),
@@ -41,11 +41,12 @@ class _Avatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return InkWell(
       onTap: () async => FriendProfileLauncher.openFriendProfile(
         activity.user.id,
         friendName: activity.user.displayName,
       ),
+      customBorder: const CircleBorder(),
       child: AvatarWidget(
         imageUrl: activity.user.imageUrl,
         displayName: activity.user.displayName,
@@ -61,17 +62,14 @@ class _InfoColumn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
           activity.user.displayName,
-          style: const TextStyle(
-            color: AppTheme.textPrimary,
-            fontWeight: FontWeight.w600,
-            fontSize: 14,
-          ),
+          style: tt.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -84,21 +82,14 @@ class _InfoColumn extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             activity.track!.name,
-            style: const TextStyle(
-              color: AppTheme.textPrimary,
-              fontWeight: FontWeight.w500,
-              fontSize: 14,
-            ),
+            style: tt.bodyLarge,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 2),
           Text(
             '${activity.track!.artistsString} · ${activity.track!.album}',
-            style: const TextStyle(
-              color: AppTheme.textSecondary,
-              fontSize: 13,
-            ),
+            style: tt.bodyMedium,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -115,18 +106,15 @@ class _StatusLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
     if (isCurrentlyPlaying) {
-      return const Row(
+      return Row(
         children: [
-          EqualizerIcon(size: 12),
-          SizedBox(width: 4),
+          const EqualizerIcon(size: 12),
+          const SizedBox(width: 4),
           Text(
             'Listening now',
-            style: TextStyle(
-              color: AppTheme.primaryActive,
-              fontWeight: FontWeight.w500,
-              fontSize: 11,
-            ),
+            style: tt.labelSmall?.copyWith(color: AppTheme.primaryActive),
           ),
         ],
       );
@@ -137,37 +125,9 @@ class _StatusLine extends StatelessWidget {
         const SizedBox(width: 4),
         Text(
           timeago.format(timestamp),
-          style: const TextStyle(
-            color: AppTheme.textSecondary,
-            fontSize: 11,
-          ),
+          style: tt.labelSmall,
         ),
       ],
-    );
-  }
-}
-
-class _AlbumArt extends StatelessWidget {
-  final Activity activity;
-  const _AlbumArt({required this.activity});
-
-  @override
-  Widget build(BuildContext context) {
-    final imageUrl = activity.track?.imageUrl;
-    if (imageUrl != null && imageUrl.isNotEmpty) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(4),
-        child: CachedImageWidget(imageUrl: imageUrl, width: 48, height: 48),
-      );
-    }
-    return Container(
-      width: 48,
-      height: 48,
-      decoration: BoxDecoration(
-        color: AppTheme.surfaceElevated,
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: const Icon(Icons.music_note, color: AppTheme.textSubdued, size: 20),
     );
   }
 }

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'providers/auth_provider.dart';
-import 'providers/theme_provider.dart';
 import 'providers/spotify_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
@@ -55,7 +54,6 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => AuthProvider(prefs)),
         ChangeNotifierProvider(create: (_) => SpotifyProvider()),
       ],
