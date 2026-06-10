@@ -17,18 +17,18 @@ class NightlyReleaser {
 
     log(message, type = 'info') {
         const timestamp = new Date().toLocaleTimeString();
-        const prefix = {
-            'info': '📱',
-            'success': '✅',
-            'error': '❌',
-            'warning': '⚠️',
-            'build': '🔨',
-            'release': '🚀',
-            'nightly': '🌙',
-            'promote': '⬆️'
-        }[type] || 'ℹ️';
-        
-        console.log(`[${timestamp}] ${prefix} ${message}`);
+        const labels = {
+            'info': 'INFO',
+            'success': 'OK',
+            'error': 'ERR',
+            'warning': 'WARN',
+            'build': 'BUILD',
+            'release': 'RELEASE',
+            'nightly': 'NIGHTLY',
+            'promote': 'PROMOTE'
+        };
+
+        console.log(`[${timestamp}] [${labels[type] || 'INFO'}] ${message}`);
     }
 
     ensureDirectories() {
@@ -463,10 +463,10 @@ ${releaseInfo.files.map(file => `
 This release was created by promoting a nightly development build to a stable release. The nightly build was tested and deemed stable enough for release.
 
 ### Why Promote from Nightly?
-- ✅ Nightly build was thoroughly tested
-- ✅ Contains important bug fixes or features
-- ✅ Faster than creating a new release build from scratch
-- ✅ Maintains development-to-release traceability
+- Nightly build was thoroughly tested
+- Contains important bug fixes or features
+- Faster than creating a new release build from scratch
+- Maintains development-to-release traceability
 
 ## Installation Instructions
 
@@ -510,13 +510,13 @@ You can verify the integrity of the downloaded files using their SHA256 checksum
         } = options;
 
         try {
-            this.log('🚀 Starting Nightly-to-Release Promotion Process', 'promote');
+            this.log('Starting Nightly-to-Release Promotion Process', 'promote');
             
             // List available nightly builds
             const nightlyBuilds = this.listNightlyBuilds();
             
             if (listOnly) {
-                console.log('\n📋 Available Nightly Builds:');
+                console.log('\nAvailable Nightly Builds:');
                 nightlyBuilds.forEach((build, index) => {
                     const gitInfo = build.buildInfo?.git || {};
                     console.log(`\n${index + 1}. ${build.fileName}`);
@@ -561,25 +561,25 @@ You can verify the integrity of the downloaded files using their SHA256 checksum
             const releaseNotesPath = this.generateReleaseNotes(releaseVersion, releaseInfo, selectedBuild);
             
             // Success summary
-            this.log('🎉 Nightly-to-Release promotion completed successfully!', 'success');
-            
-            console.log('\n📋 Release Promotion Summary:');
+            this.log('Nightly-to-Release promotion completed successfully!', 'success');
+
+            console.log('\nRelease Promotion Summary:');
             console.log(`   Source Nightly: ${selectedBuild.fileName}`);
             console.log(`   Release Version: ${releaseVersion.fullVersion}`);
             console.log(`   Release Directory: ${this.releasesDir}`);
             console.log(`   Release Notes: ${releaseNotesPath}`);
-            
-            console.log('\n📱 Release Files:');
+
+            console.log('\nRelease Files:');
             releaseInfo.files.forEach(file => {
                 console.log(`   ${file.type}: ${file.name} (${file.size} MB)`);
             });
-            
-            console.log('\n🔐 Security:');
-            console.log('   ✅ APK signed with release keystore');
-            console.log('   ✅ SHA256 checksums generated');
-            console.log('   ✅ Promoted from tested nightly build');
-            
-            console.log('\n📤 Next Steps:');
+
+            console.log('\nSecurity:');
+            console.log('   APK signed with release keystore');
+            console.log('   SHA256 checksums generated');
+            console.log('   Promoted from tested nightly build');
+
+            console.log('\nNext Steps:');
             console.log('   1. Test the promoted release APK');
             console.log('   2. Upload AAB to Google Play Console (if available)');
             console.log('   3. Create GitHub release with generated files');
@@ -595,7 +595,7 @@ You can verify the integrity of the downloaded files using their SHA256 checksum
 // CLI interface
 function showHelp() {
     console.log(`
-🚀 Playtivity Nightly Release Promoter
+Playtivity Nightly Release Promoter
 
 Usage: node nightly-release.js [options]
 
@@ -623,11 +623,11 @@ About Nightly Release Promotion:
   - Includes source nightly build information
 
 The script will:
-  ✅ List available nightly builds for selection
-  ✅ Create new release version in pubspec.yaml
-  ✅ Build signed release APK and AAB
-  ✅ Generate checksums and detailed release notes
-  ✅ Organize files in releases/ folder with nightly source info
+  - List available nightly builds for selection
+  - Create new release version in pubspec.yaml
+  - Build signed release APK and AAB
+  - Generate checksums and detailed release notes
+  - Organize files in releases/ folder with nightly source info
 `);
 }
 
@@ -665,7 +665,7 @@ if (require.main === module) {
     
     // Validate increment type
     if (options.incrementType && !['patch', 'minor', 'major', 'none'].includes(options.incrementType)) {
-        console.error(`❌ Invalid increment type: ${options.incrementType}`);
+        console.error(`[ERR] Invalid increment type: ${options.incrementType}`);
         console.error('Valid types: patch, minor, major, none');
         process.exit(1);
     }

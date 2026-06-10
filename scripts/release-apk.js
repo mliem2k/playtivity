@@ -18,17 +18,17 @@ class APKReleaser {
 
     log(message, type = 'info') {
         const timestamp = new Date().toLocaleTimeString();
-        const prefix = {
-            'info': '📱',
-            'success': '✅',
-            'error': '❌',
-            'warning': '⚠️',
-            'build': '🔨',
-            'release': '🚀',
-            'security': '🔐'
-        }[type] || 'ℹ️';
-        
-        console.log(`[${timestamp}] ${prefix} ${message}`);
+        const labels = {
+            'info': 'INFO',
+            'success': 'OK',
+            'error': 'ERR',
+            'warning': 'WARN',
+            'build': 'BUILD',
+            'release': 'RELEASE',
+            'security': 'SECURITY'
+        };
+
+        console.log(`[${timestamp}] [${labels[type] || 'INFO'}] ${message}`);
     }
 
     ensureOutputDirectory() {
@@ -430,7 +430,7 @@ You can verify the integrity of the downloaded files using their SHA256 checksum
 
     async release(incrementType = 'patch', buildBundle = true) {
         try {
-            this.log('🚀 Starting Playtivity Release Process', 'release');
+            this.log('Starting Playtivity Release Process', 'release');
             
             // Setup
             this.ensureOutputDirectory();
@@ -463,23 +463,23 @@ You can verify the integrity of the downloaded files using their SHA256 checksum
             const releaseNotesPath = this.generateReleaseNotes(newVersion, releaseInfo);
             
             // Success summary
-            this.log('🎉 Release build completed successfully!', 'success');
-            
-            console.log('\n📋 Release Summary:');
+            this.log('Release build completed successfully!', 'success');
+
+            console.log('\nRelease Summary:');
             console.log(`   Version: ${newVersion.fullVersion}`);
             console.log(`   Release Directory: ${this.outputDir}`);
             console.log(`   Release Notes: ${releaseNotesPath}`);
-            
-            console.log('\n📱 Release Files:');
+
+            console.log('\nRelease Files:');
             releaseInfo.files.forEach(file => {
                 console.log(`   ${file.type}: ${file.name} (${file.size} MB)`);
             });
-            
-            console.log('\n🔐 Security:');
-            console.log('   ✅ APK signed with release keystore');
-            console.log('   ✅ SHA256 checksums generated');
-            
-            console.log('\n📤 Next Steps:');
+
+            console.log('\nSecurity:');
+            console.log('   APK signed with release keystore');
+            console.log('   SHA256 checksums generated');
+
+            console.log('\nNext Steps:');
             console.log('   1. Test the release APK on a real device');
             console.log('   2. Upload AAB to Google Play Console (if available)');
             console.log('   3. Create GitHub release with generated files');
@@ -495,7 +495,7 @@ You can verify the integrity of the downloaded files using their SHA256 checksum
 // CLI interface
 function showHelp() {
     console.log(`
-🚀 Playtivity Release Builder
+Playtivity Release Builder
 
 Usage: node release-apk.js [increment-type] [options]
 
@@ -521,12 +521,12 @@ Environment Variables:
   ANDROID_KEY_PASSWORD      - Key password (default: playtivity123)
 
 The script will:
-  ✅ Set up keystore for release signing
-  ✅ Increment version in pubspec.yaml
-  ✅ Build signed release APK
-  ✅ Build signed release AAB (optional)
-  ✅ Generate checksums and release notes
-  ✅ Organize files in releases/ folder
+  - Set up keystore for release signing
+  - Increment version in pubspec.yaml
+  - Build signed release APK
+  - Build signed release AAB (optional)
+  - Generate checksums and release notes
+  - Organize files in releases/ folder
 `);
 }
 
@@ -545,7 +545,7 @@ if (require.main === module) {
     const validTypes = ['patch', 'minor', 'major', 'none'];
     
     if (!validTypes.includes(incrementType)) {
-        console.error(`❌ Invalid increment type: ${incrementType}`);
+        console.error(`[ERR] Invalid increment type: ${incrementType}`);
         console.error(`Valid types: ${validTypes.join(', ')}`);
         process.exit(1);
     }
