@@ -62,6 +62,9 @@ android/app/upload-keystore.jks
 delete-releases.js
 /.omc
 
+# Node
+/node_modules/
+
 # Local debug/probe scripts
 /tool/_*.dart
 /docs/superpowers/
