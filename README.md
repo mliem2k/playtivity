@@ -55,6 +55,8 @@
 
 The app uses Spotify's web login flow to extract the `sp_dc` cookie, which is used to generate access tokens for Spotify's internal friend activity API — the same one used by the Spotify web player.
 
+> **Note**: This app relies on Spotify's unofficial internal API, tested as of June 2026. Spotify may change or deprecate these endpoints at any time without notice, which could break functionality. There is no guarantee of long-term compatibility.
+
 ## Setup
 
 ```bash

@@ -2,8 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:provider/provider.dart';
-import '../providers/auth_provider.dart';
 import '../services/app_logger.dart';
 import '../services/spotify_token_service.dart';
 
@@ -99,7 +97,12 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                     onRetry: () => setState(() => _error = null),
                   ),
                 Expanded(
-                  child: InAppWebView(
+                  child: Visibility(
+                    visible: !_processingAuth,
+                    maintainState: true,
+                    maintainSize: true,
+                    maintainAnimation: true,
+                    child: InAppWebView(
                     initialSettings: InAppWebViewSettings(
                       userAgent: SpotifyTokenService.userAgent,
                       javaScriptEnabled: true,
@@ -139,17 +142,12 @@ class _SpotifyWebViewLoginState extends State<SpotifyWebViewLogin> {
                       _isLoading = false;
                     }),
                   ),
+                  ),
                 ),
               ],
             ),
             if (_processingAuth)
-              Consumer<AuthProvider>(
-                builder: (context, auth, _) => _AuthProcessingOverlay(
-                  step: _processingStep,
-                  events: auth.authEvents,
-                  lastError: auth.lastAuthError,
-                ),
-              ),
+              _AuthProcessingOverlay(step: _processingStep),
           ],
         ),
       ),
@@ -356,24 +354,18 @@ class _ErrorBanner extends StatelessWidget {
 
 class _AuthProcessingOverlay extends StatefulWidget {
   final String step;
-  final List<String> events;
-  final String? lastError;
-  const _AuthProcessingOverlay({required this.step, required this.events, this.lastError});
+  const _AuthProcessingOverlay({required this.step});
 
   @override
   State<_AuthProcessingOverlay> createState() => _AuthProcessingOverlayState();
 }
 
 class _AuthProcessingOverlayState extends State<_AuthProcessingOverlay> {
-  bool _expanded = false;
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final primary = theme.primaryColor;
     final dimColor = theme.colorScheme.onSurface.withValues(alpha: 0.5);
-    final errorColor = Colors.red.shade400;
-    const mono = TextStyle(fontFamily: 'monospace', fontSize: 10);
 
     return Positioned.fill(
       child: Container(
@@ -400,63 +392,6 @@ class _AuthProcessingOverlayState extends State<_AuthProcessingOverlay> {
                   widget.step,
                   style: TextStyle(fontSize: 13, color: dimColor),
                   textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 14),
-                // Debug panel
-                GestureDetector(
-                  onTap: () => setState(() => _expanded = !_expanded),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.7),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: widget.lastError != null
-                            ? errorColor.withValues(alpha: 0.5)
-                            : dimColor.withValues(alpha: 0.25),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(Icons.bug_report, size: 11, color: dimColor),
-                            const SizedBox(width: 3),
-                            Text(
-                              'Debug  ${_expanded ? "▲" : "▼"}',
-                              style: mono.copyWith(color: dimColor, fontWeight: FontWeight.bold),
-                            ),
-                            if (widget.lastError != null) ...[
-                              const SizedBox(width: 6),
-                              Icon(Icons.error_outline, size: 11, color: errorColor),
-                              const SizedBox(width: 2),
-                              Text('error', style: mono.copyWith(color: errorColor)),
-                            ],
-                          ],
-                        ),
-                        if (widget.lastError != null) ...[
-                          const SizedBox(height: 3),
-                          Text(
-                            widget.lastError!,
-                            style: mono.copyWith(color: errorColor),
-                            maxLines: _expanded ? null : 2,
-                            overflow: _expanded ? null : TextOverflow.ellipsis,
-                          ),
-                        ],
-                        if (widget.events.isNotEmpty) ...[
-                          const SizedBox(height: 3),
-                          ...( _expanded
-                              ? widget.events.reversed.take(12)
-                              : [widget.events.last]
-                          ).map(
-                            (e) => Text(e, style: mono.copyWith(color: dimColor), maxLines: 1, overflow: TextOverflow.ellipsis),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
                 ),
               ],
             ),
