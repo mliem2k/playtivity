@@ -308,6 +308,99 @@ void main() {
     });
   });
 
+  group('SpotifyBuddyService.parseFriendsJson — episode/podcast activity', () {
+    const nowMs = 1780948030000;
+
+    const episodeBody = '''
+{
+  "friends": [
+    {
+      "timestamp": 1780948000000,
+      "user": {"uri": "spotify:user:carol789", "name": "Carol", "imageUrl": "https://example.com/carol.jpg"},
+      "episode": {
+        "uri": "spotify:episode:ep001",
+        "name": "The Morning Rundown",
+        "imageUrl": "https://example.com/episode.jpg",
+        "show": {
+          "uri": "spotify:show:show001",
+          "name": "Daily News",
+          "imageUrl": "https://example.com/show.jpg"
+        }
+      }
+    }
+  ]
+}
+''';
+
+    test('episode entry produces one activity', () {
+      final activities = SpotifyBuddyService.parseFriendsJson(episodeBody, nowMs: nowMs);
+      expect(activities.length, 1);
+    });
+
+    test('type is ActivityType.track for episode', () {
+      final activities = SpotifyBuddyService.parseFriendsJson(episodeBody, nowMs: nowMs);
+      expect(activities[0].type, ActivityType.track);
+    });
+
+    test('maps episode name to track name', () {
+      final activities = SpotifyBuddyService.parseFriendsJson(episodeBody, nowMs: nowMs);
+      expect(activities[0].track!.name, 'The Morning Rundown');
+    });
+
+    test('maps show name to artists and album', () {
+      final activities = SpotifyBuddyService.parseFriendsJson(episodeBody, nowMs: nowMs);
+      expect(activities[0].track!.artists, ['Daily News']);
+      expect(activities[0].track!.album, 'Daily News');
+    });
+
+    test('maps show uri to albumUri', () {
+      final activities = SpotifyBuddyService.parseFriendsJson(episodeBody, nowMs: nowMs);
+      expect(activities[0].track!.albumUri, 'spotify:show:show001');
+    });
+
+    test('maps episode imageUrl', () {
+      final activities = SpotifyBuddyService.parseFriendsJson(episodeBody, nowMs: nowMs);
+      expect(activities[0].track!.imageUrl, 'https://example.com/episode.jpg');
+    });
+
+    test('maps episode uri', () {
+      final activities = SpotifyBuddyService.parseFriendsJson(episodeBody, nowMs: nowMs);
+      expect(activities[0].track!.uri, 'spotify:episode:ep001');
+    });
+
+    test('maps user from episode entry', () {
+      final activities = SpotifyBuddyService.parseFriendsJson(episodeBody, nowMs: nowMs);
+      expect(activities[0].user.displayName, 'Carol');
+      expect(activities[0].user.id, 'carol789');
+    });
+
+    test('isCurrentlyPlaying true when within threshold', () {
+      final activities = SpotifyBuddyService.parseFriendsJson(episodeBody, nowMs: nowMs);
+      expect(activities[0].isCurrentlyPlaying, isTrue);
+    });
+
+    test('mixed track and episode friends both appear', () {
+      const mixedBody = '''
+{
+  "friends": [
+    {
+      "timestamp": 1780948000000,
+      "user": {"uri": "spotify:user:alice", "name": "Alice", "imageUrl": null},
+      "track": {"uri": "spotify:track:t1", "name": "Song", "album": {"name": "Album", "uri": "spotify:album:a1"}, "artist": {"name": "Artist"}, "imageUrl": null}
+    },
+    {
+      "timestamp": 1780948001000,
+      "user": {"uri": "spotify:user:carol", "name": "Carol", "imageUrl": null},
+      "episode": {"uri": "spotify:episode:e1", "name": "Podcast Ep", "imageUrl": null, "show": {"uri": "spotify:show:s1", "name": "Show"}}
+    }
+  ]
+}
+''';
+      final activities = SpotifyBuddyService.parseFriendsJson(mixedBody);
+      expect(activities.length, 2);
+    });
+  });
+
   group('SpotifyBuddyService.parseFriendsJson — sort and edge cases', () {
     test('returns activities sorted by timestamp descending (most recent first)', () {
       const body = '''
