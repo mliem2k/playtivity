@@ -312,27 +312,18 @@ class AuthProvider extends ChangeNotifier {
     _isRecovering = true;
     _addEvent('Token recovery: starting...');
     try {
-      // Step 1: stored sp_dc
-      final ok = await _trySilentRefresh();
-      if (ok) {
-        _authState = AuthState.authenticated;
-        _addEvent('Token recovery: OK via stored sp_dc');
-        notifyListeners();
-        return true;
-      }
-
-      // Step 2: headless WebView — the Spotify OAuth session in the browser
+      // Headless WebView re-auth — the Spotify OAuth session in the browser
       // cookie store survives much longer than sp_dc. Loading open.spotify.com
       // invisibly lets Spotify issue a fresh sp_dc without user interaction.
-      final ok3 = await _tryHeadlessWebViewReAuth();
-      if (ok3) {
+      final ok = await _tryHeadlessWebViewReAuth();
+      if (ok) {
         _authState = AuthState.authenticated;
         _addEvent('Token recovery: OK via headless WebView re-auth');
         notifyListeners();
         return true;
       }
 
-      _addEvent('Token recovery: all silent paths failed');
+      _addEvent('Token recovery: headless WebView re-auth failed');
       return false;
     } finally {
       _isRecovering = false;
