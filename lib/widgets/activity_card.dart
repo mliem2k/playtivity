@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../models/activity.dart';
+import '../models/playlist.dart';
 import '../utils/theme.dart';
 import '../utils/spotify_launcher.dart';
 import '../utils/friend_profile_launcher.dart';
@@ -28,10 +30,36 @@ class ActivityCard extends StatelessWidget {
             const SizedBox(width: 16),
             Expanded(child: _InfoColumn(activity: activity)),
             const SizedBox(width: 12),
-            AlbumArtWidget(imageUrl: activity.contentImageUrl, size: 48),
+            _AlbumArt(activity: activity),
           ],
         ),
       ),
+    );
+  }
+}
+
+// Album art with an inset green ring overlay when the friend is currently playing.
+// The overlay is drawn on top of the image via a Stack so card dimensions never change.
+class _AlbumArt extends StatelessWidget {
+  final Activity activity;
+  const _AlbumArt({required this.activity});
+
+  @override
+  Widget build(BuildContext context) {
+    final art = AlbumArtWidget(imageUrl: activity.contentImageUrl, size: 48);
+    if (!activity.isCurrentlyPlaying) return art;
+    return Stack(
+      children: [
+        art,
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: AppTheme.primaryActive, width: 2),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -81,12 +109,7 @@ class _InfoColumn extends StatelessWidget {
         ),
         if (activity.track != null) ...[
           const SizedBox(height: 4),
-          Text(
-            activity.track!.name,
-            style: tt.bodyLarge,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          _RunningText(text: activity.track!.name, style: tt.bodyLarge),
           const SizedBox(height: 2),
           _RunningText(
             text: '${activity.track!.artistsString} · ${activity.track!.album}',
@@ -94,18 +117,32 @@ class _InfoColumn extends StatelessWidget {
           ),
         ] else if (activity.playlist != null) ...[
           const SizedBox(height: 4),
-          Text(
-            activity.contentName,
-            style: tt.bodyLarge,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+          _RunningText(text: activity.contentName, style: tt.bodyLarge),
+          const SizedBox(height: 2),
+          _RunningText(
+            text: _playlistSubtitle(activity.playlist!),
+            style: tt.bodyMedium,
           ),
         ],
       ],
     );
   }
+
+  static String _playlistSubtitle(Playlist playlist) {
+    final owner = playlist.ownerName.isNotEmpty ? playlist.ownerName : null;
+    final count = playlist.trackCount > 0 ? '${playlist.trackCount} tracks' : null;
+    if (owner != null && count != null) return '$owner · $count';
+    if (owner != null) return owner;
+    if (count != null) return 'Playlist · $count';
+    return 'Playlist';
+  }
 }
 
+// Scrolling marquee for text that overflows its container.
+// When the text fits, renders a plain Text widget — no animation overhead.
+// When it overflows, scrolls forward, pauses, scrolls back, pauses, repeats.
+// Uses Timer instead of Future.delayed so pending callbacks are cancelled
+// on dispose and on text changes, avoiding dangling closures in the event queue.
 class _RunningText extends StatefulWidget {
   final String text;
   final TextStyle? style;
@@ -120,6 +157,7 @@ class _RunningTextState extends State<_RunningText>
   late Animation<double> _anim;
   double _overflow = 0;
   double? _lastWidth;
+  Timer? _timer;
 
   @override
   void initState() {
@@ -132,6 +170,7 @@ class _RunningTextState extends State<_RunningText>
   void didUpdateWidget(_RunningText old) {
     super.didUpdateWidget(old);
     if (old.text != widget.text) {
+      _timer?.cancel();
       _ctrl.stop();
       _ctrl.reset();
       _lastWidth = null;
@@ -140,6 +179,7 @@ class _RunningTextState extends State<_RunningText>
 
   @override
   void dispose() {
+    _timer?.cancel();
     _ctrl.dispose();
     super.dispose();
   }
@@ -152,31 +192,36 @@ class _RunningTextState extends State<_RunningText>
     final tp = ui.ParagraphBuilder(ui.ParagraphStyle(maxLines: 1))
       ..pushStyle(style.getTextStyle())
       ..addText(widget.text);
-    final paragraph = tp.build()..layout(const ui.ParagraphConstraints(width: double.infinity));
-    _overflow = (paragraph.longestLine - containerWidth).clamp(0.0, double.infinity);
+    final paragraph = tp.build()
+      ..layout(const ui.ParagraphConstraints(width: double.infinity));
+    _overflow =
+        (paragraph.longestLine - containerWidth).clamp(0.0, double.infinity);
 
+    _timer?.cancel();
     _ctrl.stop();
     _ctrl.reset();
     _ctrl.removeStatusListener(_onStatus);
 
     if (_overflow > 0) {
-      _ctrl.duration = Duration(milliseconds: (_overflow / 40 * 1000).round());
+      _ctrl.duration =
+          Duration(milliseconds: (_overflow / 40 * 1000).round());
       _anim = Tween<double>(begin: 0, end: _overflow)
           .animate(CurvedAnimation(parent: _ctrl, curve: Curves.linear));
       _ctrl.addStatusListener(_onStatus);
-      Future.delayed(const Duration(seconds: 2), () {
+      _timer = Timer(const Duration(seconds: 2), () {
         if (mounted) _ctrl.forward();
       });
     }
   }
 
   void _onStatus(AnimationStatus status) {
+    _timer?.cancel();
     if (status == AnimationStatus.completed) {
-      Future.delayed(const Duration(seconds: 2), () {
+      _timer = Timer(const Duration(seconds: 2), () {
         if (mounted) _ctrl.reverse();
       });
     } else if (status == AnimationStatus.dismissed) {
-      Future.delayed(const Duration(seconds: 1), () {
+      _timer = Timer(const Duration(seconds: 1), () {
         if (mounted) _ctrl.forward();
       });
     }
@@ -187,7 +232,8 @@ class _RunningTextState extends State<_RunningText>
     return LayoutBuilder(builder: (_, constraints) {
       _measure(constraints.maxWidth);
       if (_overflow <= 0) {
-        return Text(widget.text, style: widget.style, maxLines: 1, overflow: TextOverflow.ellipsis);
+        return Text(widget.text,
+            style: widget.style, maxLines: 1, overflow: TextOverflow.ellipsis);
       }
       return ClipRect(
         child: AnimatedBuilder(
@@ -199,7 +245,8 @@ class _RunningTextState extends State<_RunningText>
           child: OverflowBox(
             alignment: Alignment.centerLeft,
             maxWidth: double.infinity,
-            child: Text(widget.text, style: widget.style, maxLines: 1, softWrap: false),
+            child: Text(widget.text,
+                style: widget.style, maxLines: 1, softWrap: false),
           ),
         ),
       );
@@ -210,7 +257,8 @@ class _RunningTextState extends State<_RunningText>
 class _StatusLine extends StatelessWidget {
   final bool isCurrentlyPlaying;
   final DateTime timestamp;
-  const _StatusLine({required this.isCurrentlyPlaying, required this.timestamp});
+  const _StatusLine(
+      {required this.isCurrentlyPlaying, required this.timestamp});
 
   @override
   Widget build(BuildContext context) {
