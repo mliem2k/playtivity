@@ -103,7 +103,12 @@ Future<void> _updateWidgetInBackground(Map<String, dynamic>? inputData) async { 
     
     // Create Spotify buddy service instance
     final buddyService = SpotifyBuddyService.instance;
-    
+
+    // Force a live fetch — the persistence-loaded cache would otherwise appear
+    // valid (last-fetch time is set to "now - 25s" on load) and getFriendActivity
+    // would skip the HTTP request, serving stale data to the widget.
+    buddyService.forceRefresh();
+
     // Fetch friends' activities
     final friendsActivities = await buddyService.getFriendActivity(bearerToken);
     if (friendsActivities.isNotEmpty) {

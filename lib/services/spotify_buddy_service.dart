@@ -18,12 +18,11 @@ class SpotifyBuddyService {
   static const String _artistDetailsCacheKey = 'artist_details_cache';
   static const String _buddyListRawKey = 'buddy_list_raw_json';
   static const String _buddyListMergedKey = 'buddy_list_merged_json';
-  // Friends older than this are evicted from the accumulated set.
-  // 7 days matches the widget's effective retention window: the home widget
-  // is only ever written with non-empty data and never actively cleared, so
-  // the in-app merge must use the same window or the app will always show
-  // fewer friends than the widget.
-  static const Duration _activityMaxAge = Duration(days: 7);
+  // Maximum age of persisted friend activities when loading from disk on startup.
+  // The in-memory merge never evicts by age — past friends must never disappear
+  // from the in-app list just because they haven't listened recently. This cutoff
+  // only discards truly ancient entries during _loadPersistedBuddyList.
+  static const Duration _persistenceMaxAge = Duration(days: 90);
   // Timestamp threshold for "currently playing": if elapsed < 5 min since the
   // friend started this track, show as now-playing. No duration API call needed.
   static const int _currentlyPlayingThresholdMs = 5 * 60 * 1000;
@@ -115,18 +114,21 @@ class SpotifyBuddyService {
   }
 
   /// Merges [fresh] activities with the existing cache, keeping the most recent
-  /// activity per user and discarding entries older than [_activityMaxAge].
+  /// activity per user. No time-based eviction is applied here — the caller
+  /// (_loadPersistedBuddyList) handles cleanup of ancient entries on startup.
+  /// Removing the age filter here prevents past friends from disappearing from
+  /// the in-app list just because they haven't listened in the last N days.
   List<Activity> _mergeWithExisting(List<Activity> fresh) {
     final existing = _cachedBuddyActivities;
     if (existing == null || existing.isEmpty) return fresh;
 
-    final cutoff = DateTime.now().subtract(_activityMaxAge);
     final merged = <String, Activity>{};
 
+    // Keep all existing friends — never evict by age in the merge path.
+    // Fresh data always overrides stale entries for the same user.
     for (final a in existing) {
-      if (a.timestamp.isAfter(cutoff)) merged[a.user.id] = a;
+      merged[a.user.id] = a;
     }
-    // Fresh data always overrides stale entries for the same user
     for (final a in fresh) {
       merged[a.user.id] = a;
     }
@@ -142,12 +144,13 @@ class SpotifyBuddyService {
   }
 
   /// Persists the merged activities list so cross-session accumulation survives restarts.
-  void _saveMergedActivities(List<Activity> activities) {
+  /// Must be awaited in getFriendActivity — fire-and-forget loses data when the
+  /// background-service isolate is killed by Workmanager before the write completes.
+  Future<void> _saveMergedActivities(List<Activity> activities) async {
     try {
       final encoded = json.encode(activities.map((a) => a.toJson()).toList());
-      SharedPreferences.getInstance().then((prefs) {
-        prefs.setString(_buddyListMergedKey, encoded);
-      }).catchError((_) {});
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_buddyListMergedKey, encoded);
     } catch (_) {}
   }
 
@@ -162,7 +165,7 @@ class SpotifyBuddyService {
       if (mergedJson != null && _cachedBuddyActivities == null) {
         try {
           final list = json.decode(mergedJson) as List;
-          final cutoff = DateTime.now().subtract(_activityMaxAge);
+          final cutoff = DateTime.now().subtract(_persistenceMaxAge);
           final activities = list
               .map((e) => Activity.fromJson(e as Map<String, dynamic>))
               .where((a) => a.timestamp.isAfter(cutoff))
@@ -270,6 +273,13 @@ class SpotifyBuddyService {
   Future<List<Activity>> getFriendActivity(String bearerToken) async {
     AppLogger.spotify('🔍 getFriendActivity called');
 
+    // Ensure the initial persistence load has completed before checking the
+    // cache or running the merge. The main app awaits persistenceReady in
+    // fastInitialLoad, but the background service calls this directly — without
+    // this await, _cachedBuddyActivities is null at merge time and the merge
+    // discards all previously accumulated friends.
+    await _persistenceReady;
+
     if (!_shouldRefreshBuddyList()) {
       AppLogger.spotify('✅ Using cached buddy list data');
       return _cachedBuddyActivities!;
@@ -321,7 +331,7 @@ class SpotifyBuddyService {
         if (merged.isNotEmpty) {
           _cachedBuddyActivities = merged;
           _saveBuddyListRaw(response.body);
-          _saveMergedActivities(merged);
+          await _saveMergedActivities(merged);
         }
         return merged;
       },
