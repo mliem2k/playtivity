@@ -793,5 +793,52 @@ void main() {
       expect(activities[0].user.displayName, 'EnvelopeUser');
       expect(activities[1].user.displayName, 'FlatUser');
     });
+
+    test('empty friend envelope falls back to top-level data', () {
+      // Some API responses include "friend":{} as a marker while real data
+      // sits at the top level — the empty envelope must not shadow it.
+      const body = '''
+{
+  "friends": [
+    {
+      "timestamp": 1780948000000,
+      "user": {"uri": "spotify:user:u1", "name": "TopLevel", "imageUrl": null},
+      "track": {"uri": "spotify:track:t1", "name": "Top Song", "imageUrl": null, "album": {"name": "Album"}, "artist": {"name": "Artist"}},
+      "friend": {}
+    }
+  ]
+}
+''';
+      final activities = SpotifyBuddyService.parseFriendsJson(body, nowMs: nowMs);
+      expect(activities.length, 1);
+      expect(activities[0].user.displayName, 'TopLevel');
+      expect(activities[0].track!.name, 'Top Song');
+    });
+
+    test('multiple friends: proper envelope and top-level-with-empty-friend all parsed', () {
+      const body = '''
+{
+  "friends": [
+    {
+      "friend": {
+        "timestamp": 1780948000000,
+        "user": {"uri": "spotify:user:u1", "name": "Enveloped", "imageUrl": null},
+        "track": {"uri": "spotify:track:t1", "name": "Song A", "imageUrl": null, "album": {"name": "A"}, "artist": {"name": "Ar"}}
+      }
+    },
+    {
+      "timestamp": 1780947000000,
+      "user": {"uri": "spotify:user:u2", "name": "TopLevel", "imageUrl": null},
+      "track": {"uri": "spotify:track:t2", "name": "Song B", "imageUrl": null, "album": {"name": "B"}, "artist": {"name": "Ar"}},
+      "friend": {}
+    }
+  ]
+}
+''';
+      final activities = SpotifyBuddyService.parseFriendsJson(body, nowMs: nowMs);
+      expect(activities.length, 2);
+      expect(activities[0].user.displayName, 'Enveloped');
+      expect(activities[1].user.displayName, 'TopLevel');
+    });
   });
 }
