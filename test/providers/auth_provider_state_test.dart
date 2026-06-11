@@ -198,10 +198,10 @@ void main() {
   // 3b. loginComplete — x-prefetched-user header (WebView JS injection path)
   // ---------------------------------------------------------------------------
   group('AuthProvider.loginComplete — x-prefetched-user header', () {
-    const _validToken =
+    const validToken =
         'Bearer.token.abc1234567890123456789012345678901234567890';
 
-    Map<String, String> _headersWithUser(Map<String, dynamic> user) => {
+    Map<String, String> headersWithUser(Map<String, dynamic> user) => {
           'Cookie': 'sp_dc=validSpDc',
           'x-prefetched-user': jsonEncode(user),
         };
@@ -217,8 +217,8 @@ void main() {
       await _waitForInit(provider);
 
       await provider.loginComplete(
-        _validToken,
-        _headersWithUser({
+        validToken,
+        headersWithUser({
           'id': 'spotify-user-abc123',
           'displayName': 'Test Display Name',
           'imageUrl': null,
@@ -238,8 +238,8 @@ void main() {
       await _waitForInit(provider);
 
       await provider.loginComplete(
-        _validToken,
-        _headersWithUser({
+        validToken,
+        headersWithUser({
           'id': 'spotify-user-abc123',
           'displayName': 'Test Display Name',
           'imageUrl': 'https://i.scdn.co/image/abc123',
@@ -267,8 +267,8 @@ void main() {
       await _waitForInit(provider);
 
       await provider.loginComplete(
-        _validToken,
-        _headersWithUser({'id': '', 'displayName': 'Should be ignored'}),
+        validToken,
+        headersWithUser({'id': '', 'displayName': 'Should be ignored'}),
       );
 
       expect(profileFetcherCalled, isTrue,
@@ -287,7 +287,7 @@ void main() {
       await _waitForInit(provider);
 
       await provider.loginComplete(
-        _validToken,
+        validToken,
         {
           'Cookie': 'sp_dc=validSpDc',
           'x-prefetched-user': 'not-valid-json',

@@ -423,7 +423,7 @@ class AuthProvider extends ChangeNotifier {
             if (!completer.isCompleted) completer.complete(null);
           }
         },
-        onReceivedError: (_, _a, _b) {
+        onReceivedError: (_, a, b) {
           if (!completer.isCompleted) completer.complete(null);
         },
       );

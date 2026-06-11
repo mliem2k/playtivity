@@ -274,7 +274,7 @@ void main() {
   // Artist details background fetch — pathfinder queryArtistOverview
   // ---------------------------------------------------------------------------
 
-  Map<String, dynamic> _artistOverviewResponse(int followers, int monthlyListeners) => {
+  Map<String, dynamic> artistOverviewResponse(int followers, int monthlyListeners) => {
     'data': {
       'artist': {
         'stats': {
@@ -295,7 +295,7 @@ void main() {
             json.encode(_topContentResponse(artists: [_artistItem('a1', 'The Weeknd')])), 200);
         }
         if (req.url.path.contains('/v1/query')) {
-          return http.Response(json.encode(_artistOverviewResponse(100, 90000000)), 200);
+          return http.Response(json.encode(artistOverviewResponse(100, 90000000)), 200);
         }
         return http.Response('{}', 404);
       });
@@ -320,7 +320,7 @@ void main() {
           return http.Response(
             json.encode(_topContentResponse(artists: [_artistItem('a1', 'The Weeknd')])), 200);
         }
-        return http.Response(json.encode(_artistOverviewResponse(123000000, 114000000)), 200);
+        return http.Response(json.encode(artistOverviewResponse(123000000, 114000000)), 200);
       });
 
       final completer = Completer<List<Artist>>();
@@ -344,7 +344,7 @@ void main() {
           return http.Response(
             json.encode(_topContentResponse(artists: [_artistItem('a1', 'Artist')])), 200);
         }
-        return http.Response(json.encode(_artistOverviewResponse(1000, 2000)), 200);
+        return http.Response(json.encode(artistOverviewResponse(1000, 2000)), 200);
       });
 
       final completer = Completer<List<Artist>>();
