@@ -297,11 +297,12 @@ class AuthProvider extends ChangeNotifier {
 
   /// Attempts to recover from a 401 without showing the login screen.
   ///
-  /// Strategy:
-  ///   1. Try stored sp_dc via normal silent refresh.
-  ///   2. If that fails, read sp_dc from the WebView's persistent cookie store
-  ///      (which the OS retains across sessions). If a different value is found,
-  ///      update storage and retry the silent refresh.
+  /// Fast path: read sp_dc directly from the WebView cookie store (instant,
+  /// no page load required). If the cookie is already there, exchange it for
+  /// a fresh bearer token via a single HTTP call.
+  ///
+  /// Slow path (fallback): load open.spotify.com in a headless WebView so
+  /// Spotify can issue a fresh sp_dc using the long-lived OAuth session.
   ///
   /// Returns true when the app is successfully re-authenticated.
   Future<bool> tryRecoverFromExpiredToken() async {
@@ -312,18 +313,53 @@ class AuthProvider extends ChangeNotifier {
     _isRecovering = true;
     _addEvent('Token recovery: starting...');
     try {
-      // Headless WebView re-auth — the Spotify OAuth session in the browser
-      // cookie store survives much longer than sp_dc. Loading open.spotify.com
-      // invisibly lets Spotify issue a fresh sp_dc without user interaction.
+      // Fast path: read sp_dc directly from the WebView cookie jar — no page
+      // load, just a cookie store read. This completes in milliseconds.
+      final cookies = await CookieManager.instance()
+          .getCookies(url: WebUri('https://open.spotify.com'));
+      final spDcCookie = cookies.firstWhere(
+        (c) => c.name == 'sp_dc' && (c.value as String).isNotEmpty,
+        orElse: () => Cookie(name: '', value: ''),
+      );
+      final cookieSpDc = spDcCookie.name.isNotEmpty
+          ? spDcCookie.value as String
+          : null;
+
+      if (cookieSpDc != null && cookieSpDc != _spDc) {
+        // Fresh sp_dc found in cookie jar — save it and try a silent refresh.
+        _addEvent('Token recovery: fresh sp_dc found in cookie store (fast path)');
+        _spDc = cookieSpDc;
+        await _prefs.setString(_spDcKey, cookieSpDc);
+        final ok = await _trySilentRefresh();
+        if (ok) {
+          _authState = AuthState.authenticated;
+          _addEvent('Token recovery: OK via cookie-store fast path');
+          notifyListeners();
+          return true;
+        }
+      } else if (cookieSpDc == _spDc && cookieSpDc != null) {
+        // Same sp_dc in store — bearer may have just expired, try refresh directly.
+        _addEvent('Token recovery: sp_dc unchanged, refreshing bearer token');
+        final ok = await _trySilentRefresh();
+        if (ok) {
+          _authState = AuthState.authenticated;
+          _addEvent('Token recovery: OK via bearer refresh');
+          notifyListeners();
+          return true;
+        }
+      }
+
+      // Slow path: load a page so Spotify can issue a fresh sp_dc.
+      _addEvent('Token recovery: fast path failed, starting headless WebView...');
       final ok = await _tryHeadlessWebViewReAuth();
       if (ok) {
         _authState = AuthState.authenticated;
-        _addEvent('Token recovery: OK via headless WebView re-auth');
+        _addEvent('Token recovery: OK via headless WebView');
         notifyListeners();
         return true;
       }
 
-      _addEvent('Token recovery: headless WebView re-auth failed');
+      _addEvent('Token recovery: all paths failed — need login');
       return false;
     } finally {
       _isRecovering = false;
@@ -372,7 +408,6 @@ class AuthProvider extends ChangeNotifier {
         onLoadStop: (controller, url) async {
           if (completer.isCompleted || url == null) return;
           final urlStr = url.toString();
-          // If Spotify redirected to login the OAuth session is gone — give up.
           if (urlStr.contains('accounts.spotify.com') ||
               urlStr.contains('/login') ||
               urlStr.contains('/auth/')) {
@@ -383,7 +418,6 @@ class AuthProvider extends ChangeNotifier {
           if (!urlStr.contains('open.spotify.com')) return;
           await checkForSpDc(controller);
           if (!completer.isCompleted) {
-            // SPA may not have written the cookie on first onLoadStop; retry once.
             await Future.delayed(const Duration(seconds: 2));
             await checkForSpDc(controller);
             if (!completer.isCompleted) completer.complete(null);
