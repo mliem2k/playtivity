@@ -453,6 +453,50 @@ Download the APK below. Enable "Install from unknown sources" in Android setting
         return releaseNotesPath;
     }
 
+    commitAndPublish(releaseVersion, releaseInfo, releaseNotesPath) {
+        const tag = `v${releaseVersion.versionName}`;
+        const apkFile = releaseInfo.files.find(f => f.type === 'APK');
+        if (!apkFile) {
+            this.log('No APK file found to publish', 'warning');
+            return;
+        }
+        const apkPath = path.join(this.releasesDir, apkFile.name);
+
+        // Commit the pubspec.yaml version bump.
+        try {
+            execSync('git add pubspec.yaml', { cwd: this.projectRoot, stdio: 'pipe' });
+            execSync(
+                `git commit -m "chore: bump version to ${releaseVersion.fullVersion}"`,
+                { cwd: this.projectRoot, stdio: 'pipe' }
+            );
+            this.log(`Committed pubspec.yaml at ${releaseVersion.fullVersion}`, 'success');
+        } catch (e) {
+            this.log(`pubspec.yaml commit skipped (${e.message.trim().split('\n')[0]})`, 'warning');
+        }
+
+        // Publish to GitHub. The commit must be pushed before this step so the
+        // tag points to the correct commit. If the push hasn't happened yet,
+        // run: git push && re-run: gh release create (shown in Next Steps).
+        try {
+            const title = `Playtivity ${tag}`;
+            const createCmd = [
+                'gh', 'release', 'create', tag, `"${apkPath}"`,
+                '--title', `"${title}"`,
+                '--notes-file', `"${releaseNotesPath}"`,
+                '--latest',
+            ].join(' ');
+            this.log(`Creating GitHub release ${tag}...`, 'release');
+            const releaseUrl = execSync(createCmd, { cwd: this.projectRoot, encoding: 'utf8' }).trim();
+            console.log(releaseUrl);
+            this.log(`GitHub release published: ${releaseUrl}`, 'success');
+        } catch (e) {
+            this.log('GitHub release creation failed (commit may not be pushed yet)', 'warning');
+            console.log(`\nTo publish manually after pushing:`);
+            console.log(`  git push`);
+            console.log(`  gh release create "${tag}" "${apkPath}" --title "Playtivity ${tag}" --notes-file "${releaseNotesPath}" --latest`);
+        }
+    }
+
     async releaseFromNightly(options = {}) {
         const {
             buildId = null,
@@ -509,10 +553,13 @@ Download the APK below. Enable "Install from unknown sources" in Android setting
             
             // Copy and organize release files
             const releaseInfo = this.copyReleaseFiles(releaseVersion, selectedBuild);
-            
+
             // Generate release notes
             const releaseNotesPath = this.generateReleaseNotes(releaseVersion, releaseInfo, selectedBuild);
-            
+
+            // Commit pubspec.yaml version bump and publish to GitHub
+            this.commitAndPublish(releaseVersion, releaseInfo, releaseNotesPath);
+
             // Success summary
             this.log('Nightly-to-Release promotion completed successfully!', 'success');
 
@@ -531,12 +578,6 @@ Download the APK below. Enable "Install from unknown sources" in Android setting
             console.log('   APK signed with release keystore');
             console.log('   SHA256 checksums generated');
             console.log('   Promoted from tested nightly build');
-
-            console.log('\nNext Steps:');
-            console.log('   1. Test the promoted release APK');
-            console.log('   2. Upload AAB to Google Play Console (if available)');
-            console.log('   3. Create GitHub release with generated files');
-            console.log('   4. Update release notes with actual changes');
             
         } catch (error) {
             this.log(`Nightly-to-Release promotion failed: ${error.message}`, 'error');
