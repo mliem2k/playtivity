@@ -353,8 +353,8 @@ class SpotifyBuddyService {
           final envelopeCandidate = friend is Map ? friend['friend'] : null;
           final Map friendData =
               envelopeCandidate is Map && envelopeCandidate['user'] != null
-                  ? envelopeCandidate as Map
-                  : (friend is Map ? friend as Map : <dynamic, dynamic>{});
+                  ? envelopeCandidate
+                  : (friend is Map ? friend : <dynamic, dynamic>{});
 
           final userInfo = friendData['user'];
           if (userInfo == null) {
