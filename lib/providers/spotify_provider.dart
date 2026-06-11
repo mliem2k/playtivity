@@ -146,7 +146,12 @@ class SpotifyProvider extends ChangeNotifier {
     try {
       _topTracks = await _buddyService.getTopTracks(token, timeRange: timeRange);
     } catch (e) {
-      _error = e.toString();
+      final errorMessage = e.toString();
+      if (_isAuthenticationError(errorMessage)) {
+        await _handleAuthenticationError(errorMessage);
+      } else {
+        _error = errorMessage;
+      }
     }
 
     if (showLoading) _isLoading = false;
@@ -179,7 +184,12 @@ class SpotifyProvider extends ChangeNotifier {
       );
       _topArtists = newTopArtists;
     } catch (e) {
-      _error = e.toString();
+      final errorMessage = e.toString();
+      if (_isAuthenticationError(errorMessage)) {
+        await _handleAuthenticationError(errorMessage);
+      } else {
+        _error = errorMessage;
+      }
     }
 
     if (showLoading) _isLoading = false;
