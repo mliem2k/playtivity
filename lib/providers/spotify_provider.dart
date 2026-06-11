@@ -229,17 +229,18 @@ class SpotifyProvider extends ChangeNotifier {
         }
       }
 
-      if (fetchSucceeded) {
-        // Honor the result even when empty — the buddy service already merges
-        // and ages out friends, so an empty success means there is genuinely
-        // nothing to show.
+      if (fetchSucceeded && activities.isNotEmpty) {
         _friendsActivities = activities;
-        if (activities.isNotEmpty) _lastUpdated = DateTime.now();
+        _lastUpdated = DateTime.now();
       } else if (!authFailed) {
-        // Transient (non-auth) failure: never drop to zero cards. Keep the
-        // friends already on screen, and recover from the buddy service's
-        // accumulated cache — the same data the home widget keeps rendering —
-        // when we currently have nothing.
+        // Empty success or transient (non-auth) failure: never drop to zero
+        // cards. Spotify's buddylist intermittently returns an empty feed even
+        // when friends are active, so an empty result is not reliably "nothing
+        // to show". Keep the friends already on screen — the home widget never
+        // blanks on an empty refresh (its update is guarded by isNotEmpty), and
+        // the in-app list must stay consistent with it. When we currently have
+        // nothing, recover from the buddy service's accumulated cache, the same
+        // data the widget renders from.
         if (_friendsActivities.isEmpty) {
           final cached = _buddyService.cachedActivities;
           if (cached != null && cached.isNotEmpty) {

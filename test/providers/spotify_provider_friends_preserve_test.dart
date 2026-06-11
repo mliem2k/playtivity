@@ -76,15 +76,31 @@ void main() {
           reason: 'should fall back to the widget cache instead of showing 0');
     });
 
-    test('a successful empty refresh is still honored', () async {
+    test('a successful empty refresh does not wipe a populated feed', () async {
       fake.result = [_activity('a')];
       await provider.loadFriendsActivities();
       expect(provider.friendsActivities, hasLength(1));
 
-      // Service genuinely reports an empty (post-merge) result — honor it.
+      // Spotify's buddylist intermittently returns an empty feed even when
+      // friends are active. The home widget never blanks on an empty refresh,
+      // so the in-app list must stay consistent and keep showing the friends.
       fake.result = [];
       await provider.loadFriendsActivities();
-      expect(provider.friendsActivities, isEmpty);
+      expect(provider.friendsActivities, hasLength(1),
+          reason: 'empty success must not drop to zero cards');
+    });
+
+    test('an empty refresh with nothing on screen recovers from cache',
+        () async {
+      // Cold start: live fetch comes back empty, but the buddy service has
+      // accumulated data (the same source the home widget renders from).
+      fake.result = [];
+      fake.cache = [_activity('a'), _activity('b')];
+
+      await provider.loadFriendsActivities();
+
+      expect(provider.friendsActivities, hasLength(2),
+          reason: 'should fall back to the widget cache instead of showing 0');
     });
   });
 }
