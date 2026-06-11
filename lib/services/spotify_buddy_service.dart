@@ -44,6 +44,13 @@ class SpotifyBuddyService {
   List<Activity>? _cachedBuddyActivities;
   DateTime? _lastBuddyListFetch;
 
+  // Diagnostic fields — populated on each fetch so the UI can surface them
+  static String lastDiagnostic = 'No fetch yet';
+  static String lastRawSnippet = '';
+  static int lastApiBytes = 0;
+  static int lastApiFriendCount = -1;
+  static int lastParsedCount = -1;
+
   // Adaptive cache duration:
   //   • ≥1 friend currently playing → 30s (tracks change often, stay responsive)
   //   • nobody playing             → 5min (save battery/data when feed is quiet)
@@ -159,6 +166,8 @@ class SpotifyBuddyService {
           throw Exception('Failed to fetch friend activity: ${response.statusCode}');
         }
 
+        lastApiBytes = response.body.length;
+        lastRawSnippet = response.body.substring(0, response.body.length.clamp(0, 300));
         AppLogger.warning('Buddylist raw (${response.body.length}b): '
             '${response.body.substring(0, response.body.length.clamp(0, 1200))}');
         final activities = parseFriendsJson(response.body);
@@ -185,8 +194,14 @@ class SpotifyBuddyService {
     try {
       final data = json.decode(responseBody);
       final friends = data['friends'] as List?;
-      if (friends == null) return [];
+      if (friends == null) {
+        lastApiFriendCount = 0;
+        lastParsedCount = 0;
+        lastDiagnostic = '${lastApiBytes}b — no "friends" key — snippet: $lastRawSnippet';
+        return [];
+      }
 
+      lastApiFriendCount = friends.length;
       AppLogger.warning('Friend Activity: ${friends.length} friends from API');
       final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
       final activities = <Activity>[];
@@ -350,10 +365,14 @@ class SpotifyBuddyService {
         }
       }
 
+      lastParsedCount = activities.length;
+      lastDiagnostic =
+          '${lastApiBytes}b | api=${friends.length} friends | parsed=${activities.length} | snippet: $lastRawSnippet';
       AppLogger.warning('Friend Activity: parsed ${activities.length}/${friends.length} activities');
       activities.sort((a, b) => b.timestamp.compareTo(a.timestamp));
       return activities;
     } catch (e) {
+      lastDiagnostic = '${lastApiBytes}b | parse error: $e | snippet: $lastRawSnippet';
       AppLogger.error('parseFriendsJson: failed to decode response', e);
       return [];
     }
