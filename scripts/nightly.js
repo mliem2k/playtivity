@@ -396,27 +396,63 @@ After installation, authenticate with: gh auth login
         const tagName = `nightly-${this.buildInfo.buildId}`;
         const releaseName = `Nightly Build ${this.buildInfo.buildId}`;
         const releaseNotes = this.generateReleaseNotes(apkInfo);
-        
+
         const notesFile = path.join(this.outputDir, `release-notes-temp.md`);
         fs.writeFileSync(notesFile, releaseNotes);
 
         try {
             const prereleaseFlag = prerelease ? '--prerelease' : '';
             const createCmd = `gh release create "${tagName}" "${apkInfo.path}" --title "${releaseName}" --notes-file "${notesFile}" ${prereleaseFlag}`;
-            
+
             this.log('Uploading to GitHub...', 'upload');
-            execSync(createCmd, { 
+            execSync(createCmd, {
                 stdio: 'inherit',
                 cwd: this.projectRoot
             });
-            
+
             this.log(`GitHub release created: https://github.com/${this.githubRepo}/releases/tag/${tagName}`, 'success');
+
+            // Keep a rolling "latest-nightly" release so that
+            // github.com/.../releases/latest always resolves and the repo
+            // sidebar shows a non-zero release count.
+            this.updateLatestNightlyRelease(apkInfo, releaseNotes);
         } catch (error) {
             throw new Error(`Failed to create GitHub release: ${error.message}`);
         } finally {
             if (fs.existsSync(notesFile)) {
                 fs.unlinkSync(notesFile);
             }
+        }
+    }
+
+    updateLatestNightlyRelease(apkInfo, releaseNotes) {
+        this.log('Updating latest-nightly release...', 'github');
+        const latestTag = 'latest-nightly';
+        const latestNotes = `${releaseNotes}\n\n---\n*This tag always points to the most recent nightly build.*`;
+        const notesFile = path.join(this.outputDir, 'release-notes-latest-temp.md');
+        fs.writeFileSync(notesFile, latestNotes);
+
+        try {
+            // Delete existing latest-nightly release + tag if present.
+            try {
+                execSync(`gh release delete "${latestTag}" --yes --cleanup-tag`, {
+                    stdio: 'ignore',
+                    cwd: this.projectRoot,
+                });
+                this.log('Removed previous latest-nightly release', 'clean');
+            } catch (_) {
+                // Fine if it didn't exist yet.
+            }
+
+            execSync(
+                `gh release create "${latestTag}" "${apkInfo.path}" --title "Latest Nightly" --notes-file "${notesFile}"`,
+                { stdio: 'inherit', cwd: this.projectRoot }
+            );
+            this.log(`latest-nightly updated: https://github.com/${this.githubRepo}/releases/latest`, 'success');
+        } catch (error) {
+            this.log(`Failed to update latest-nightly (non-fatal): ${error.message}`, 'warning');
+        } finally {
+            if (fs.existsSync(notesFile)) fs.unlinkSync(notesFile);
         }
     }
 
