@@ -467,9 +467,13 @@ class UpdateModal {
       if (filePath != null && context.mounted) {
         final installed = await showInstallDialog(context, filePath);
         if (installed) {
-          // Clear cache — installation started, file will be consumed.
-          _cachedFilePath = null;
-          _cachedVersion = null;
+          // Do NOT clear the cache here. installApk() returns true as soon as
+          // Android accepts the install intent — it does not wait for the user
+          // to confirm or for the installation to complete. If the user cancels
+          // the Android installer prompt the app is still running, and we want
+          // the next attempt to reuse the already-downloaded file. If the install
+          // actually succeeds the system kills and replaces the app, so the
+          // static variables are reset naturally on restart anyway.
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -479,7 +483,8 @@ class UpdateModal {
             );
           }
         }
-        // If cancelled, cache is kept so the next call reuses the file.
+        // Cache (both in-memory and on-disk via deterministic path) is always
+        // preserved so the next call skips the download.
       } else if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

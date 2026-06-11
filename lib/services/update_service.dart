@@ -415,11 +415,25 @@ class UpdateService {
   }) async {
     try {
       AppLogger.info('Downloading update: ${updateInfo.version} (${updateInfo.apkUrl})');
-      
+
       // Get the download directory
       final directory = await getTemporaryDirectory();
       final filePath = '${directory.path}/${updateInfo.apkFileName}';
-      
+
+      // Reuse an already-complete download (e.g. user cancelled the Android
+      // installer prompt and tries again — no need to re-download).
+      final existingFile = File(filePath);
+      if (updateInfo.fileSizeBytes > 0 &&
+          await existingFile.exists() &&
+          await existingFile.length() == updateInfo.fileSizeBytes) {
+        AppLogger.info('Reusing existing download: $filePath');
+        return UpdateDownloadResult(
+          success: true,
+          filePath: filePath,
+          updateInfo: updateInfo,
+        );
+      }
+
       // Create the file
       final file = File(filePath);
       
