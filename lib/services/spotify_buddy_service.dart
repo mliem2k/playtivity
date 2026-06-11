@@ -154,11 +154,15 @@ class SpotifyBuddyService {
       final prefs = await SharedPreferences.getInstance();
 
       // Try merged activities first — they cover more friends than a single API call.
+      // Use a 7-day window (vs the 24h merge cutoff) so the app can show stale data
+      // on launch the same way the home widget does — widget data is never cleared, so
+      // the app and widget must use the same "last known good" approach.
       final mergedJson = prefs.getString(_buddyListMergedKey);
       if (mergedJson != null && _cachedBuddyActivities == null) {
         try {
           final list = json.decode(mergedJson) as List;
-          final cutoff = DateTime.now().subtract(_activityMaxAge);
+          const displayMaxAge = Duration(days: 7);
+          final cutoff = DateTime.now().subtract(displayMaxAge);
           final activities = list
               .map((e) => Activity.fromJson(e as Map<String, dynamic>))
               .where((a) => a.timestamp.isAfter(cutoff))
@@ -306,10 +310,19 @@ class SpotifyBuddyService {
         if (merged.length > fresh.length) {
           lastDiagnostic += ' | merged=${merged.length}';
         }
-        _cachedBuddyActivities = merged;
+        // Always record the fetch time so the cache-expiry logic doesn't
+        // hammer the API on every call when the result is empty.
         _lastBuddyListFetch = DateTime.now();
-        _saveBuddyListRaw(response.body);
-        _saveMergedActivities(merged);
+        // Only overwrite the in-memory cache and persistence when the merged
+        // result is non-empty — mirroring how _updateWidget() is guarded by
+        // isNotEmpty. Saving [] to SharedPreferences would wipe the last-known
+        // good data and cause the next app launch to show 0 cards even when
+        // the home widget is still showing friends.
+        if (merged.isNotEmpty) {
+          _cachedBuddyActivities = merged;
+          _saveBuddyListRaw(response.body);
+          _saveMergedActivities(merged);
+        }
         return merged;
       },
       operation: 'Get Friend Activity',
