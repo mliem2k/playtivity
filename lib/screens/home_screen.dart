@@ -86,7 +86,6 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      extendBodyBehindAppBar: true,
       body: Listener(
         behavior: HitTestBehavior.translucent,
         onPointerDown: (e) {
@@ -105,25 +104,18 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
         child: HomeScreenDataSelector(
           builder: (context, isAuthenticated, isLoading, activities, error) {
             if (!isAuthenticated) return _buildUnauthenticated();
-            return RefreshIndicator(
-              onRefresh: _refreshData,
-              color: AppTheme.primary,
-              child: CustomScrollView(
-                physics: const BouncingScrollPhysics(
-                  parent: AlwaysScrollableScrollPhysics(),
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildHeader(isLoading && activities.isNotEmpty),
+                Expanded(
+                  child: RefreshIndicator(
+                    onRefresh: _refreshData,
+                    color: AppTheme.primary,
+                    child: _buildContent(isLoading, activities, error),
+                  ),
                 ),
-                slivers: [
-                  _buildSliverAppBar(isLoading && activities.isNotEmpty),
-                  if (isLoading && activities.isEmpty)
-                    _buildSkeletonSliver()
-                  else if (error != null)
-                    SliverFillRemaining(child: _buildError(error))
-                  else if (activities.isEmpty)
-                    SliverFillRemaining(child: _buildEmpty())
-                  else
-                    _buildActivityList(activities),
-                ],
-              ),
+              ],
             );
           },
         ),
@@ -131,69 +123,87 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
     );
   }
 
-  Widget _buildSliverAppBar(bool showProgress) {
+  Widget _buildHeader(bool showProgress) {
     final sp = context.read<SpotifyProvider>();
     final apiCount = sp.buddylistApiCount;
     final parsedCount = sp.buddylistParsedCount;
     final hasMismatch = apiCount > 0 && parsedCount >= 0 && parsedCount < apiCount;
     final countLabel = hasMismatch ? ' ($parsedCount/$apiCount)' : '';
 
-    return SliverAppBar(
-      pinned: true,
-      floating: false,
-      toolbarHeight: 52,
-      expandedHeight: 52,
-      backgroundColor: AppTheme.background,
-      surfaceTintColor: Colors.transparent,
-      scrolledUnderElevation: 0,
-      title: GestureDetector(
-        onLongPress: () {
-          Clipboard.setData(ClipboardData(text: sp.buddylistDiagnostic));
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Debug info copied'), duration: Duration(seconds: 2)),
-          );
-        },
-        child: Text(
-          'Friend Activity$countLabel',
-          style: TextStyle(
-            color: hasMismatch ? Colors.orange : AppTheme.textPrimary,
-            fontWeight: FontWeight.w700,
-            fontSize: 18,
-          ),
-        ),
-      ),
-      titleSpacing: 16,
-      bottom: showProgress
-          ? const PreferredSize(
-              preferredSize: Size.fromHeight(2),
-              child: LinearProgressIndicator(
+    return Material(
+      color: AppTheme.background,
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              height: 52,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: GestureDetector(
+                    onLongPress: () {
+                      Clipboard.setData(ClipboardData(text: sp.buddylistDiagnostic));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Debug info copied'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                    child: Text(
+                      'Friend Activity$countLabel',
+                      style: TextStyle(
+                        color: hasMismatch ? Colors.orange : AppTheme.textPrimary,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 18,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            if (showProgress)
+              const LinearProgressIndicator(
                 color: AppTheme.primary,
                 backgroundColor: Colors.transparent,
+                minHeight: 2,
               ),
-            )
-          : null,
+          ],
+        ),
+      ),
     );
   }
 
-  Widget _buildSkeletonSliver() => const _SkeletonList();
+  Widget _buildContent(bool isLoading, List<Activity> activities, String? error) {
+    if (isLoading && activities.isEmpty) return const _SkeletonList();
+    if (error != null) return _buildFullHeightScrollable(_buildError(error));
+    if (activities.isEmpty) return _buildFullHeightScrollable(_buildEmpty());
+    return _buildActivityList(activities);
+  }
+
+  // Wraps a single widget in a full-height ListView so RefreshIndicator always triggers.
+  Widget _buildFullHeightScrollable(Widget child) {
+    return LayoutBuilder(
+      builder: (context, constraints) => ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          SizedBox(height: constraints.maxHeight, child: child),
+        ],
+      ),
+    );
+  }
 
   Widget _buildActivityList(List<Activity> activities) {
-    // Layout: even indices = cards, odd indices = dividers, last index = nav-bar spacer.
-    // childCount = n (cards) + (n-1) (dividers) + 1 (spacer) = 2n
-    final childCount = activities.length * 2;
-    return SliverList(
-      delegate: SliverChildBuilderDelegate(
-        (context, index) {
-          if (index == childCount - 1) {
-            return SizedBox(height: MediaQuery.of(context).padding.bottom);
-          }
-          if (index.isEven) {
-            return RepaintBoundary(child: ActivityCard(activity: activities[index ~/ 2]));
-          }
-          return const Divider(height: 1, color: AppTheme.dividerColor);
-        },
-        childCount: childCount,
-      ),
+    return ListView.separated(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom),
+      itemCount: activities.length,
+      separatorBuilder: (context, index) => const Divider(height: 1, color: AppTheme.dividerColor),
+      itemBuilder: (_, i) => RepaintBoundary(child: ActivityCard(activity: activities[i])),
     );
   }
 
@@ -275,14 +285,10 @@ class _SkeletonListState extends State<_SkeletonList>
 
   @override
   Widget build(BuildContext context) {
-    return SliverList(
-      delegate: SliverChildBuilderDelegate(
-        (context, index) {
-          if (index == 6) return SizedBox(height: MediaQuery.of(context).padding.bottom);
-          return ActivitySkeleton(animation: _animation);
-        },
-        childCount: 7,
-      ),
+    return ListView.builder(
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: 6,
+      itemBuilder: (context, index) => ActivitySkeleton(animation: _animation),
     );
   }
 }
@@ -314,7 +320,10 @@ class _DiagnosticEmpty extends StatelessWidget {
               onLongPress: () {
                 Clipboard.setData(ClipboardData(text: diagnostic));
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Debug info copied'), duration: Duration(seconds: 2)),
+                  const SnackBar(
+                    content: Text('Debug info copied'),
+                    duration: Duration(seconds: 2),
+                  ),
                 );
               },
               child: Text(
