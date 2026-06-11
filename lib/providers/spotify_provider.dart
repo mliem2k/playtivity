@@ -272,17 +272,14 @@ class SpotifyProvider extends ChangeNotifier {
 
   /// Loads only profile-related data (currently playing, top tracks, top artists).
   /// Does NOT fetch friend activity — home screen owns that call.
+  /// Does NOT use _batchMode so its loading state never suppresses notifications
+  /// from concurrent friend-activity fetches started by fastInitialLoad.
   Future<void> refreshProfileData({bool showLoading = false}) async {
-    _batchMode = true;
-    try {
-      await Future.wait([
-        loadCurrentlyPlaying(showLoading: showLoading),
-        loadTopTracks(showLoading: showLoading),
-        loadTopArtists(showLoading: showLoading),
-      ]);
-    } finally {
-      _batchMode = false;
-    }
+    await Future.wait([
+      loadCurrentlyPlaying(showLoading: showLoading),
+      loadTopTracks(showLoading: showLoading),
+      loadTopArtists(showLoading: showLoading),
+    ]);
     _lastUpdated = DateTime.now();
     notifyListeners();
   }
@@ -300,24 +297,28 @@ class SpotifyProvider extends ChangeNotifier {
     }
   }
 
-  /// Fast initial load - shows skeleton while loading basic data, then loads detailed info
+  /// Fast initial load — shows persisted stale data instantly, then fetches fresh.
   Future<void> fastInitialLoad() async {
     try {
-      // First, show skeleton loading
-      if (_friendsActivities.isEmpty) {
+      // Wait for SharedPreferences persistence load (typically <30ms)
+      await _buddyService.persistenceReady;
+
+      final stale = _buddyService.cachedActivities;
+      if (stale != null && stale.isNotEmpty) {
+        // Show stale data immediately — no skeleton needed
+        _friendsActivities = stale;
+        notifyListeners();
+      } else {
         _isSkeletonLoading = true;
         notifyListeners();
-
-        // Small delay to show skeleton
-        await Future.delayed(const Duration(milliseconds: 100));
       }
 
+      // Force a live fetch regardless of in-memory cache age
+      _buddyService.clearBuddyListCache();
       await loadFriendsActivities(showSkeleton: _friendsActivities.isEmpty);
 
       _lastUpdated = DateTime.now();
       notifyListeners();
-
-      // Update widget after initial load
       await _updateWidget();
     } catch (e) {
       AppLogger.error('Error during fast initial load', e);

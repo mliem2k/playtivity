@@ -16,6 +16,7 @@ import 'spotify_token_service.dart';
 class SpotifyBuddyService {
   static const String _baseUrl = 'https://guc-spclient.spotify.com';
   static const String _artistDetailsCacheKey = 'artist_details_cache';
+  static const String _buddyListRawKey = 'buddy_list_raw_json';
   // Timestamp threshold for "currently playing": if elapsed < 5 min since the
   // friend started this track, show as now-playing. No duration API call needed.
   static const int _currentlyPlayingThresholdMs = 5 * 60 * 1000;
@@ -31,18 +32,26 @@ class SpotifyBuddyService {
   SpotifyBuddyService._internal() {
     _artistDetailsCache = LRUCache<String, Map<String, dynamic>>(200);
     _loadArtistDetailsCache();
+    _persistenceReady = _loadPersistedBuddyList();
   }
 
   // Public factory constructor that returns the singleton
   factory SpotifyBuddyService() => instance;
 
   late final LRUCache<String, Map<String, dynamic>> _artistDetailsCache;
+  late final Future<void> _persistenceReady;
 
   bool _artistCacheModified = false;
 
   // Cache for buddy list activities to reduce API hits
   List<Activity>? _cachedBuddyActivities;
   DateTime? _lastBuddyListFetch;
+
+  /// Completes when the persisted buddy list JSON has been loaded from disk.
+  Future<void> get persistenceReady => _persistenceReady;
+
+  /// Returns in-memory cached activities (may be stale persisted data on first launch).
+  List<Activity>? get cachedActivities => _cachedBuddyActivities;
 
   // Diagnostic fields — populated on each fetch so the UI can surface them
   static String lastDiagnostic = 'No fetch yet';
@@ -80,6 +89,33 @@ class SpotifyBuddyService {
     _cachedBuddyActivities = null;
     _lastBuddyListFetch = null;
     AppLogger.spotify('🗑️ Cleared buddy list cache - next request will fetch fresh data');
+  }
+
+  /// Loads the last-known buddy list JSON from SharedPreferences so we can
+  /// show stale data instantly on next launch before the network call finishes.
+  Future<void> _loadPersistedBuddyList() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_buddyListRawKey);
+      if (raw != null && _cachedBuddyActivities == null) {
+        final activities = parseFriendsJson(raw);
+        if (activities.isNotEmpty) {
+          _cachedBuddyActivities = activities;
+          // Mark as nearly-expired so a live fetch runs promptly after display
+          _lastBuddyListFetch = DateTime.now().subtract(const Duration(seconds: 25));
+          AppLogger.spotify('📦 Loaded ${activities.length} persisted buddy activities');
+        }
+      }
+    } catch (e) {
+      AppLogger.spotify('⚠️ Could not load persisted buddy list: $e');
+    }
+  }
+
+  /// Saves the raw API response JSON to SharedPreferences (fire-and-forget).
+  void _saveBuddyListRaw(String raw) {
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setString(_buddyListRawKey, raw);
+    }).catchError((_) {});
   }
 
   void clearActivityCache() {
@@ -188,6 +224,7 @@ class SpotifyBuddyService {
         final activities = parseFriendsJson(response.body);
         _cachedBuddyActivities = activities;
         _lastBuddyListFetch = DateTime.now();
+        _saveBuddyListRaw(response.body);
         return activities;
       },
       operation: 'Get Friend Activity',
