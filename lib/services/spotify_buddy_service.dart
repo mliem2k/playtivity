@@ -187,16 +187,31 @@ class SpotifyBuddyService {
       final friends = data['friends'] as List?;
       if (friends == null) return [];
 
-      AppLogger.spotify('Buddylist: ${friends.length} friends from API');
+      AppLogger.warning('Friend Activity: ${friends.length} friends from API');
       final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
       final activities = <Activity>[];
 
       for (final friend in friends) {
-        if (friend == null) continue;
+        if (friend == null) {
+          AppLogger.warning('Friend Activity: skipped null entry in friends list');
+          continue;
+        }
         try {
-          final userInfo = friend['user'];
-          if (userInfo == null) continue;
-          final rawTimestamp = friend['timestamp'];
+          // Support both flat {"user":...,"track":...} and envelope-wrapped
+          // {"friend":{"user":...,"track":...}} formats from the spclient API.
+          final Map friendData = friend is Map && friend['friend'] is Map
+              ? friend['friend'] as Map
+              : (friend is Map ? friend as Map : <dynamic, dynamic>{});
+
+          final userInfo = friendData['user'];
+          if (userInfo == null) {
+            AppLogger.warning(
+              'Friend Activity: skipped (no user field) — '
+              'entry keys: ${friendData.keys.toList()}',
+            );
+            continue;
+          }
+          final rawTimestamp = friendData['timestamp'];
           final ts = rawTimestamp is int ? rawTimestamp : now;
 
           final userUri = _str(userInfo['uri']) ?? '';
@@ -213,12 +228,16 @@ class SpotifyBuddyService {
             country: '',
           );
 
-          final trackInfo = friend['track'] is Map ? friend['track'] as Map : null;
-          final playlistInfo = friend['playlist'] is Map ? friend['playlist'] as Map : null;
-          final episodeInfo = friend['episode'] is Map ? friend['episode'] as Map : null;
+          final trackInfo = friendData['track'] is Map ? friendData['track'] as Map : null;
+          final playlistInfo = friendData['playlist'] is Map ? friendData['playlist'] as Map : null;
+          final episodeInfo = friendData['episode'] is Map ? friendData['episode'] as Map : null;
 
           AppLogger.warning(
-            'Friend "${user.displayName}": keys=${friend is Map ? friend.keys.toList() : "?"}',
+            'Friend "${user.displayName}": '
+            'track=${friendData["track"]?.runtimeType}, '
+            'episode=${friendData["episode"]?.runtimeType}, '
+            'playlist=${friendData["playlist"]?.runtimeType}, '
+            'context=${friendData["context"]?.runtimeType}',
           );
 
           if (playlistInfo != null) {
@@ -293,7 +312,7 @@ class SpotifyBuddyService {
             // Friends browsing without actively playing have only a context
             // key (playlist/album/show URI). Treat as a playlist activity so
             // they appear in the feed rather than being silently dropped.
-            final rawContext = friend['context'];
+            final rawContext = friendData['context'];
             final contextInfo = rawContext is Map ? rawContext : null;
             final contextUri = _str(contextInfo?['uri']) ?? '';
             if (contextUri.isNotEmpty) {
@@ -318,7 +337,7 @@ class SpotifyBuddyService {
             } else {
               AppLogger.warning(
                 'Skipped "${user.displayName}" — no track/episode/playlist/context'
-                ' (friend keys: ${friend is Map ? friend.keys.toList() : "not a map"})',
+                ' (entry keys: ${friendData.keys.toList()})',
               );
             }
           }
@@ -327,7 +346,7 @@ class SpotifyBuddyService {
         }
       }
 
-      AppLogger.spotify('Parsed ${activities.length}/${friends.length} activities');
+      AppLogger.warning('Friend Activity: parsed ${activities.length}/${friends.length} activities');
       activities.sort((a, b) => b.timestamp.compareTo(a.timestamp));
       return activities;
     } catch (e) {

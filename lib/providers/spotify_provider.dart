@@ -176,6 +176,8 @@ class SpotifyProvider extends ChangeNotifier {
     final token = _bearerToken;
     if (token == null) {
       _error = 'Not authenticated';
+      if (showLoading) _isLoading = false;
+      if (showSkeleton) _isSkeletonLoading = false;
       _notify();
       return;
     }
