@@ -647,4 +647,151 @@ void main() {
       expect(SpotifyBuddyService.parseFriendsJson(body), isEmpty);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // parseFriendsJson — envelope-wrapped format {"friend": {...}}
+  // This is the format returned by the current spclient API (post-2025 change).
+  // ---------------------------------------------------------------------------
+
+  group('SpotifyBuddyService.parseFriendsJson — envelope-wrapped format', () {
+    const nowMs = 1780948030000;
+
+    const envelopeTrackBody = '''
+{
+  "friends": [
+    {
+      "friend": {
+        "timestamp": 1780948000000,
+        "user": {"uri": "spotify:user:abc123", "name": "Alice", "imageUrl": "https://example.com/alice.jpg"},
+        "track": {
+          "uri": "spotify:track:xyz789",
+          "name": "Test Song",
+          "album": {"name": "Test Album", "uri": "spotify:album:alb123"},
+          "artist": {"name": "Test Artist"},
+          "imageUrl": "https://example.com/track.jpg"
+        }
+      }
+    }
+  ]
+}
+''';
+
+    test('envelope-wrapped track activity is parsed', () {
+      final activities = SpotifyBuddyService.parseFriendsJson(envelopeTrackBody, nowMs: nowMs);
+      expect(activities.length, 1);
+    });
+
+    test('envelope: user id extracted from nested user field', () {
+      final activities = SpotifyBuddyService.parseFriendsJson(envelopeTrackBody, nowMs: nowMs);
+      expect(activities[0].user.id, 'abc123');
+    });
+
+    test('envelope: user displayName mapped', () {
+      final activities = SpotifyBuddyService.parseFriendsJson(envelopeTrackBody, nowMs: nowMs);
+      expect(activities[0].user.displayName, 'Alice');
+    });
+
+    test('envelope: track name mapped', () {
+      final activities = SpotifyBuddyService.parseFriendsJson(envelopeTrackBody, nowMs: nowMs);
+      expect(activities[0].track!.name, 'Test Song');
+    });
+
+    test('envelope: track artist mapped', () {
+      final activities = SpotifyBuddyService.parseFriendsJson(envelopeTrackBody, nowMs: nowMs);
+      expect(activities[0].track!.artists, ['Test Artist']);
+    });
+
+    test('envelope: album name mapped', () {
+      final activities = SpotifyBuddyService.parseFriendsJson(envelopeTrackBody, nowMs: nowMs);
+      expect(activities[0].track!.album, 'Test Album');
+    });
+
+    test('envelope: track imageUrl mapped', () {
+      final activities = SpotifyBuddyService.parseFriendsJson(envelopeTrackBody, nowMs: nowMs);
+      expect(activities[0].track!.imageUrl, 'https://example.com/track.jpg');
+    });
+
+    test('envelope: type is ActivityType.track', () {
+      final activities = SpotifyBuddyService.parseFriendsJson(envelopeTrackBody, nowMs: nowMs);
+      expect(activities[0].type, ActivityType.track);
+    });
+
+    test('envelope: isCurrentlyPlaying true when elapsed < 5 minutes', () {
+      final activities = SpotifyBuddyService.parseFriendsJson(envelopeTrackBody, nowMs: nowMs);
+      expect(activities[0].isCurrentlyPlaying, isTrue);
+    });
+
+    test('envelope-wrapped playlist activity is parsed', () {
+      const body = '''
+{
+  "friends": [
+    {
+      "friend": {
+        "timestamp": 1780947000000,
+        "user": {"uri": "spotify:user:def456", "name": "Bob", "imageUrl": null},
+        "playlist": {
+          "uri": "spotify:playlist:plist123",
+          "name": "Chill Mix",
+          "imageUrl": "https://example.com/playlist.jpg",
+          "trackCount": 20,
+          "owner": {"id": "owner1", "name": "Owner Name"},
+          "public": true
+        }
+      }
+    }
+  ]
+}
+''';
+      final activities = SpotifyBuddyService.parseFriendsJson(body);
+      expect(activities.length, 1);
+      expect(activities[0].type, ActivityType.playlist);
+      expect(activities[0].playlist!.name, 'Chill Mix');
+      expect(activities[0].user.displayName, 'Bob');
+    });
+
+    test('envelope-wrapped context-only activity is parsed', () {
+      const body = '''
+{
+  "friends": [
+    {
+      "friend": {
+        "timestamp": 1780948000000,
+        "user": {"uri": "spotify:user:browser1", "name": "Browser", "imageUrl": null},
+        "context": {"uri": "spotify:playlist:ctx123", "name": "My Mix", "imageUrl": null}
+      }
+    }
+  ]
+}
+''';
+      final activities = SpotifyBuddyService.parseFriendsJson(body);
+      expect(activities.length, 1);
+      expect(activities[0].type, ActivityType.playlist);
+      expect(activities[0].playlist!.name, 'My Mix');
+    });
+
+    test('mixed envelope and flat entries in the same response are both parsed', () {
+      const body = '''
+{
+  "friends": [
+    {
+      "friend": {
+        "timestamp": 1780948000000,
+        "user": {"uri": "spotify:user:u1", "name": "EnvelopeUser", "imageUrl": null},
+        "track": {"uri": "spotify:track:t1", "name": "Envelope Song", "imageUrl": null, "album": {"name": "Album"}, "artist": {"name": "Artist"}}
+      }
+    },
+    {
+      "timestamp": 1780947000000,
+      "user": {"uri": "spotify:user:u2", "name": "FlatUser", "imageUrl": null},
+      "track": {"uri": "spotify:track:t2", "name": "Flat Song", "imageUrl": null, "album": {"name": "Album2"}, "artist": {"name": "Artist2"}}
+    }
+  ]
+}
+''';
+      final activities = SpotifyBuddyService.parseFriendsJson(body, nowMs: nowMs);
+      expect(activities.length, 2);
+      expect(activities[0].user.displayName, 'EnvelopeUser');
+      expect(activities[1].user.displayName, 'FlatUser');
+    });
+  });
 }

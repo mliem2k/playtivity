@@ -28,7 +28,7 @@ class ActivityCard extends StatelessWidget {
             const SizedBox(width: 16),
             Expanded(child: _InfoColumn(activity: activity)),
             const SizedBox(width: 12),
-            AlbumArtWidget(imageUrl: activity.track?.imageUrl, size: 48),
+            AlbumArtWidget(imageUrl: activity.contentImageUrl, size: 48),
           ],
         ),
       ),
@@ -91,6 +91,14 @@ class _InfoColumn extends StatelessWidget {
           _RunningText(
             text: '${activity.track!.artistsString} · ${activity.track!.album}',
             style: tt.bodyMedium,
+          ),
+        ] else if (activity.playlist != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            activity.contentName,
+            style: tt.bodyLarge,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ],

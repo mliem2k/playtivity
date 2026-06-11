@@ -153,7 +153,7 @@ class HomeScreenDataSelector extends StatelessWidget {
     return Selector2<AuthProvider, SpotifyProvider, _HomeScreenData>(
       selector: (context, authProvider, spotifyProvider) => _HomeScreenData(
         isAuthenticated: authProvider.isAuthenticated,
-        isLoading: authProvider.isLoading || spotifyProvider.isLoading,
+        isLoading: authProvider.isLoading || spotifyProvider.isLoading || spotifyProvider.isSkeletonLoading,
         activities: spotifyProvider.friendsActivities,
         error: spotifyProvider.error,
       ),
