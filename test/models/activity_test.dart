@@ -75,4 +75,33 @@ void main() {
       expect(json['track'], isNull);
     });
   });
+
+  group('Activity round-trip (toJson -> fromJson)', () {
+    test('track activity survives persistence serialization', () {
+      final original = Activity.fromJson(TestFixtures.trackActivityJson());
+      final roundTripped = Activity.fromJson(original.toJson());
+      expect(roundTripped.type, ActivityType.track);
+      expect(roundTripped.user.id, original.user.id);
+      expect(roundTripped.user.displayName, original.user.displayName);
+      expect(roundTripped.track!.name, original.track!.name);
+      expect(roundTripped.track!.artists, original.track!.artists);
+      expect(roundTripped.track!.album, original.track!.album);
+      expect(roundTripped.track!.albumUri, original.track!.albumUri);
+      expect(roundTripped.track!.imageUrl, original.track!.imageUrl);
+      expect(roundTripped.timestamp, original.timestamp);
+      expect(roundTripped.isCurrentlyPlaying, original.isCurrentlyPlaying);
+    });
+
+    test('playlist activity survives persistence serialization', () {
+      final original = Activity.fromJson(TestFixtures.playlistActivityJson());
+      final roundTripped = Activity.fromJson(original.toJson());
+      expect(roundTripped.type, ActivityType.playlist);
+      expect(roundTripped.user.id, original.user.id);
+      expect(roundTripped.playlist!.name, original.playlist!.name);
+      expect(roundTripped.playlist!.imageUrl, original.playlist!.imageUrl);
+      expect(roundTripped.playlist!.trackCount, original.playlist!.trackCount);
+      expect(roundTripped.playlist!.ownerId, original.playlist!.ownerId);
+      expect(roundTripped.timestamp, original.timestamp);
+    });
+  });
 }

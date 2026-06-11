@@ -45,5 +45,19 @@ void main() {
       expect(json['owner_name'], original.ownerName);
       expect(json['is_public'], original.isPublic);
     });
+
+    test('round-trip preserves all fields through persistence serialization', () {
+      final original = Playlist.fromJson(TestFixtures.playlistJson());
+      final roundTripped = Playlist.fromJson(original.toJson());
+      expect(roundTripped.id, original.id);
+      expect(roundTripped.name, original.name);
+      expect(roundTripped.description, original.description);
+      expect(roundTripped.imageUrl, original.imageUrl);
+      expect(roundTripped.trackCount, original.trackCount);
+      expect(roundTripped.uri, original.uri);
+      expect(roundTripped.ownerId, original.ownerId);
+      expect(roundTripped.ownerName, original.ownerName);
+      expect(roundTripped.isPublic, original.isPublic);
+    });
   });
 }

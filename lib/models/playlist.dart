@@ -22,18 +22,42 @@ class Playlist {
   });
 
   factory Playlist.fromJson(Map<String, dynamic> json) {
+    // Handle both persisted format (flat keys from toJson) and Spotify API format (nested).
+    String? imageUrl;
+    if (json.containsKey('image_url')) {
+      imageUrl = json['image_url'] as String?;
+    } else if (json['images'] is List && (json['images'] as List).isNotEmpty) {
+      final first = (json['images'] as List)[0];
+      imageUrl = first is Map ? first['url'] as String? : null;
+    }
+
+    final tracksRaw = json['tracks'];
+    final trackCount = json.containsKey('track_count')
+        ? json['track_count'] as int? ?? 0
+        : (tracksRaw is Map ? tracksRaw['total'] as int? ?? 0 : 0);
+
+    final ownerId = json.containsKey('owner_id')
+        ? json['owner_id'] as String? ?? ''
+        : json['owner']?['id'] as String? ?? '';
+
+    final ownerName = json.containsKey('owner_name')
+        ? json['owner_name'] as String? ?? ''
+        : json['owner']?['display_name'] as String? ?? '';
+
+    final isPublic = json.containsKey('is_public')
+        ? json['is_public'] as bool? ?? false
+        : json['public'] as bool? ?? false;
+
     return Playlist(
-      id: json['id'] ?? '',
-      name: json['name'] ?? '',
-      description: json['description'],
-      imageUrl: json['images'] != null && json['images'].isNotEmpty
-          ? json['images'][0]['url']
-          : null,
-      trackCount: json['tracks']?['total'] ?? 0,
-      uri: json['uri'] ?? '',
-      ownerId: json['owner']?['id'] ?? '',
-      ownerName: json['owner']?['display_name'] ?? '',
-      isPublic: json['public'] ?? false,
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      description: json['description'] as String?,
+      imageUrl: imageUrl,
+      trackCount: trackCount,
+      uri: json['uri'] as String? ?? '',
+      ownerId: ownerId,
+      ownerName: ownerName,
+      isPublic: isPublic,
     );
   }
 
