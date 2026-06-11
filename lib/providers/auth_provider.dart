@@ -109,6 +109,20 @@ class AuthProvider extends ChangeNotifier {
             }
 
             _addEvent('Restored: ${_currentUser!.displayName}');
+
+            // Proactively refresh the bearer token if sp_dc is available.
+            // Spotify tokens expire in ~1h; a cold start hours after the last
+            // session would use an expired token and cause all API calls to fail
+            // with 401. Refreshing here costs one network round-trip on startup
+            // but prevents the cascading failures that would otherwise require
+            // the error-recovery flow to trigger and re-fetch everything.
+            if (_spDc != null) {
+              _addEvent('Proactively refreshing token with sp_dc...');
+              final ok = await _trySilentRefresh();
+              if (!ok) {
+                _addEvent('Proactive refresh failed — proceeding with stored token');
+              }
+            }
           } else {
             // Token present but no user — try silent refresh to obtain profile.
             _addEvent('Token without user — trying silent refresh...');

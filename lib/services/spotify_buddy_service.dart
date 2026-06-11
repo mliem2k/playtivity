@@ -659,12 +659,22 @@ class SpotifyBuddyService {
           if (response.statusCode != 200) {
             throw Exception('Failed to fetch top content: ${response.statusCode} - ${response.body}');
           }
-          return json.decode(response.body) as Map<String, dynamic>;
+          final decoded = json.decode(response.body) as Map<String, dynamic>;
+          final graphqlErrors = decoded['errors'] as List?;
+          if (graphqlErrors != null && graphqlErrors.isNotEmpty) {
+            final messages = graphqlErrors.map((e) => e['message']).join(', ');
+            AppLogger.spotify('⚠️ GraphQL errors in top content: $messages');
+          }
+          return decoded;
         },
         operation: 'Get Top Content',
       );
     } catch (e) {
+      final msg = e.toString();
       AppLogger.spotify('❌ Error in getTopContent: $e');
+      if (msg.contains('Authentication error') || msg.contains('401') || msg.contains('403')) {
+        rethrow;
+      }
       return null;
     }
   }
@@ -746,7 +756,11 @@ class SpotifyBuddyService {
 
       return tracks;
     } catch (e) {
+      final msg = e.toString();
       AppLogger.spotify('❌ Error in getTopTracks: $e');
+      if (msg.contains('Authentication error') || msg.contains('401') || msg.contains('403')) {
+        rethrow;
+      }
       return [];
     }
   }
@@ -835,7 +849,11 @@ class SpotifyBuddyService {
 
       return artists;
     } catch (e) {
+      final msg = e.toString();
       AppLogger.spotify('❌ Error in getTopArtists: $e');
+      if (msg.contains('Authentication error') || msg.contains('401') || msg.contains('403')) {
+        rethrow;
+      }
       return [];
     }
   }

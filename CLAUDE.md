@@ -2,12 +2,18 @@
 
 ## Release Policy
 
-**All releases must be done locally using the scripts in `scripts/`.** Never trigger releases via GitHub CI workflows.
+**All releases must be done locally using the scripts in `scripts/`.** Never create releases any other way.
 
 - Nightly build: `node scripts/nightly.js`
 - Promote nightly to release: `node scripts/nightly-release.js [--increment patch|minor|major|none] [--version x.y.z]`
 
-Do not use `gh workflow run` or any GitHub Actions workflow to create releases. The workflows in `.github/workflows/` have been removed; releases are owned by the local scripts.
+**Forbidden release paths (never use these):**
+- `gh release create` — manual gh CLI release
+- `gh workflow run` or any GitHub Actions workflow
+- The GitHub web UI releases page
+- Hand-editing `pubspec.yaml` version and tagging manually
+
+The workflows in `.github/workflows/` have been removed; releases are owned by the local scripts. Every release must go through `nightly.js` or `nightly-release.js` so the version, tag, APK filename, and build metadata are all consistent.
 
 ---
 
