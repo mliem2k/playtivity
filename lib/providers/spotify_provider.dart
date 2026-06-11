@@ -270,6 +270,23 @@ class SpotifyProvider extends ChangeNotifier {
     await _updateWidget();
   }
 
+  /// Loads only profile-related data (currently playing, top tracks, top artists).
+  /// Does NOT fetch friend activity — home screen owns that call.
+  Future<void> refreshProfileData({bool showLoading = false}) async {
+    _batchMode = true;
+    try {
+      await Future.wait([
+        loadCurrentlyPlaying(showLoading: showLoading),
+        loadTopTracks(showLoading: showLoading),
+        loadTopArtists(showLoading: showLoading),
+      ]);
+    } finally {
+      _batchMode = false;
+    }
+    _lastUpdated = DateTime.now();
+    notifyListeners();
+  }
+
   /// Silent refresh - updates data without showing loading indicators
   Future<void> silentRefresh() async {
     _isRefreshing = true;
