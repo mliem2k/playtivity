@@ -106,24 +106,17 @@ Future<void> _updateWidgetInBackground(Map<String, dynamic>? inputData) async { 
     
     // Fetch friends' activities
     final friendsActivities = await buddyService.getFriendActivity(bearerToken);
-      if (friendsActivities.isNotEmpty) {
+    if (friendsActivities.isNotEmpty) {
       AppLogger.background('Fetched ${friendsActivities.length} activities');
-      
-      // Update widget with new data
       await WidgetService.updateWidget(
         currentUser: currentUser,
         friendsActivities: friendsActivities,
       );
-      
       AppLogger.background('Background widget update completed');
     } else {
-      AppLogger.background('No activities found');
-      
-      // Update widget with empty data
-      await WidgetService.updateWidget(
-        currentUser: currentUser,
-        friendsActivities: [],
-      );
+      // Never overwrite the widget with empty data — the last-known good snapshot
+      // stays visible until a non-empty result is available.
+      AppLogger.background('No activities found, skipping widget update to preserve existing data');
     }
       } catch (e) {
     AppLogger.error('Error in background widget update', e);
