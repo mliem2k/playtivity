@@ -18,8 +18,12 @@ class SpotifyBuddyService {
   static const String _artistDetailsCacheKey = 'artist_details_cache';
   static const String _buddyListRawKey = 'buddy_list_raw_json';
   static const String _buddyListMergedKey = 'buddy_list_merged_json';
-  // Friends older than this are evicted from the accumulated set
-  static const Duration _activityMaxAge = Duration(hours: 24);
+  // Friends older than this are evicted from the accumulated set.
+  // 7 days matches the widget's effective retention window: the home widget
+  // is only ever written with non-empty data and never actively cleared, so
+  // the in-app merge must use the same window or the app will always show
+  // fewer friends than the widget.
+  static const Duration _activityMaxAge = Duration(days: 7);
   // Timestamp threshold for "currently playing": if elapsed < 5 min since the
   // friend started this track, show as now-playing. No duration API call needed.
   static const int _currentlyPlayingThresholdMs = 5 * 60 * 1000;
@@ -154,15 +158,11 @@ class SpotifyBuddyService {
       final prefs = await SharedPreferences.getInstance();
 
       // Try merged activities first — they cover more friends than a single API call.
-      // Use a 7-day window (vs the 24h merge cutoff) so the app can show stale data
-      // on launch the same way the home widget does — widget data is never cleared, so
-      // the app and widget must use the same "last known good" approach.
       final mergedJson = prefs.getString(_buddyListMergedKey);
       if (mergedJson != null && _cachedBuddyActivities == null) {
         try {
           final list = json.decode(mergedJson) as List;
-          const displayMaxAge = Duration(days: 7);
-          final cutoff = DateTime.now().subtract(displayMaxAge);
+          final cutoff = DateTime.now().subtract(_activityMaxAge);
           final activities = list
               .map((e) => Activity.fromJson(e as Map<String, dynamic>))
               .where((a) => a.timestamp.isAfter(cutoff))
