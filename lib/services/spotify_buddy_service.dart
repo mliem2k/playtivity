@@ -50,6 +50,13 @@ class SpotifyBuddyService {
   static int lastApiBytes = 0;
   static int lastApiFriendCount = -1;
   static int lastParsedCount = -1;
+  // Per-skip reason counts from the last parse run
+  static int lastSkipNull = 0;       // friend entry was null
+  static int lastSkipNoUser = 0;     // no user field after envelope detection
+  static int lastSkipNoActivity = 0; // user present but no track/episode/playlist/context
+  static int lastSkipException = 0;  // per-entry exception
+  // First skipped entry keys (raw), to reveal structure
+  static String lastSkippedEntryKeys = '';
 
   // Adaptive cache duration:
   //   • ≥1 friend currently playing → 30s (tracks change often, stay responsive)
@@ -202,12 +209,18 @@ class SpotifyBuddyService {
       }
 
       lastApiFriendCount = friends.length;
+      lastSkipNull = 0;
+      lastSkipNoUser = 0;
+      lastSkipNoActivity = 0;
+      lastSkipException = 0;
+      lastSkippedEntryKeys = '';
       AppLogger.warning('Friend Activity: ${friends.length} friends from API');
       final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
       final activities = <Activity>[];
 
       for (final friend in friends) {
         if (friend == null) {
+          lastSkipNull++;
           AppLogger.warning('Friend Activity: skipped null entry in friends list');
           continue;
         }
@@ -224,9 +237,15 @@ class SpotifyBuddyService {
 
           final userInfo = friendData['user'];
           if (userInfo == null) {
+            lastSkipNoUser++;
+            final keys = friend is Map ? friend.keys.toList().toString() : '?';
+            final innerKeys = friendData.keys.toList().toString();
+            if (lastSkippedEntryKeys.isEmpty) {
+              lastSkippedEntryKeys = 'outer=$keys inner=$innerKeys';
+            }
             AppLogger.warning(
               'Friend Activity: skipped (no user field) — '
-              'entry keys: ${friendData.keys.toList()}',
+              'outer keys: $keys | inner keys: $innerKeys',
             );
             continue;
           }
@@ -354,20 +373,31 @@ class SpotifyBuddyService {
                 type: ActivityType.playlist,
               ));
             } else {
+              lastSkipNoActivity++;
+              final keys = friendData.keys.toList().toString();
+              if (lastSkippedEntryKeys.isEmpty) lastSkippedEntryKeys = 'noActivity keys=$keys';
               AppLogger.warning(
                 'Skipped "${user.displayName}" — no track/episode/playlist/context'
-                ' (entry keys: ${friendData.keys.toList()})',
+                ' (entry keys: $keys)',
               );
             }
           }
         } catch (e, st) {
+          lastSkipException++;
           AppLogger.error('Failed to parse friend entry: $e\n$st', e);
         }
       }
 
       lastParsedCount = activities.length;
+      final skips = <String>[];
+      if (lastSkipNull > 0) skips.add('null×$lastSkipNull');
+      if (lastSkipNoUser > 0) skips.add('noUser×$lastSkipNoUser');
+      if (lastSkipNoActivity > 0) skips.add('noActivity×$lastSkipNoActivity');
+      if (lastSkipException > 0) skips.add('exception×$lastSkipException');
       lastDiagnostic =
-          '${lastApiBytes}b | api=${friends.length} friends | parsed=${activities.length} | snippet: $lastRawSnippet';
+          '${lastApiBytes}b | api=${friends.length} | parsed=${activities.length}'
+          '${skips.isNotEmpty ? " | skip: ${skips.join(',')} | $lastSkippedEntryKeys" : ""}'
+          ' | snippet: $lastRawSnippet';
       AppLogger.warning('Friend Activity: parsed ${activities.length}/${friends.length} activities');
       activities.sort((a, b) => b.timestamp.compareTo(a.timestamp));
       return activities;

@@ -46,6 +46,8 @@ class SpotifyProvider extends ChangeNotifier {
   bool get hasAuthError => _hasAuthError;
   String? get authErrorMessage => _authErrorMessage;
   String get buddylistDiagnostic => SpotifyBuddyService.lastDiagnostic;
+  int get buddylistApiCount => SpotifyBuddyService.lastApiFriendCount;
+  int get buddylistParsedCount => SpotifyBuddyService.lastParsedCount;
 
   void setBearer(String token) {
     _bearerToken = token;

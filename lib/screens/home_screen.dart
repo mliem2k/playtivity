@@ -129,6 +129,12 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
   }
 
   Widget _buildSliverAppBar(bool showProgress) {
+    final sp = context.read<SpotifyProvider>();
+    final apiCount = sp.buddylistApiCount;
+    final parsedCount = sp.buddylistParsedCount;
+    final hasMismatch = apiCount > 0 && parsedCount >= 0 && parsedCount < apiCount;
+    final countLabel = hasMismatch ? ' ($parsedCount/$apiCount)' : '';
+
     return SliverAppBar(
       pinned: true,
       floating: false,
@@ -137,12 +143,20 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
       backgroundColor: AppTheme.background,
       surfaceTintColor: Colors.transparent,
       scrolledUnderElevation: 0,
-      title: const Text(
-        'Friend Activity',
-        style: TextStyle(
-          color: AppTheme.textPrimary,
-          fontWeight: FontWeight.w700,
-          fontSize: 18,
+      title: GestureDetector(
+        onLongPress: () {
+          Clipboard.setData(ClipboardData(text: sp.buddylistDiagnostic));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Debug info copied'), duration: Duration(seconds: 2)),
+          );
+        },
+        child: Text(
+          'Friend Activity$countLabel',
+          style: TextStyle(
+            color: hasMismatch ? Colors.orange : AppTheme.textPrimary,
+            fontWeight: FontWeight.w700,
+            fontSize: 18,
+          ),
         ),
       ),
       titleSpacing: 16,
