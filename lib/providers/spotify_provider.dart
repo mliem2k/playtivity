@@ -9,8 +9,14 @@ import '../models/artist.dart';
 import '../models/user.dart';
 
 class SpotifyProvider extends ChangeNotifier {
-  final SpotifyBuddyService _buddyService = SpotifyBuddyService();
-  final SpotifyService _spotifyService = SpotifyService();
+  final SpotifyBuddyService _buddyService;
+  final SpotifyService _spotifyService;
+
+  SpotifyProvider({
+    SpotifyBuddyService? buddyService,
+    SpotifyService? spotifyService,
+  })  : _buddyService = buddyService ?? SpotifyBuddyService(),
+        _spotifyService = spotifyService ?? SpotifyService();
 
   String? _bearerToken;
 
@@ -202,16 +208,20 @@ class SpotifyProvider extends ChangeNotifier {
 
     try {
       List<Activity> activities = [];
+      bool fetchSucceeded = false;
+      bool authFailed = false;
 
       // Get friend activities using Bearer token
       try {
         activities = await _buddyService.getFriendActivity(token);
+        fetchSucceeded = true;
       } catch (e) {
         AppLogger.error('Failed to fetch friend activities', e);
 
         // Check if this is an authentication error
         final errorMessage = e.toString();
         if (_isAuthenticationError(errorMessage)) {
+          authFailed = true;
           AppLogger.auth('Authentication error detected, may need re-authentication');
           await _handleAuthenticationError(errorMessage);
         } else {
@@ -219,13 +229,28 @@ class SpotifyProvider extends ChangeNotifier {
         }
       }
 
-      _friendsActivities = activities;
-
-      // Only update lastUpdated when we actually fetch new data
-      if (activities.isNotEmpty) _lastUpdated = DateTime.now();
+      if (fetchSucceeded) {
+        // Honor the result even when empty — the buddy service already merges
+        // and ages out friends, so an empty success means there is genuinely
+        // nothing to show.
+        _friendsActivities = activities;
+        if (activities.isNotEmpty) _lastUpdated = DateTime.now();
+      } else if (!authFailed) {
+        // Transient (non-auth) failure: never drop to zero cards. Keep the
+        // friends already on screen, and recover from the buddy service's
+        // accumulated cache — the same data the home widget keeps rendering —
+        // when we currently have nothing.
+        if (_friendsActivities.isEmpty) {
+          final cached = _buddyService.cachedActivities;
+          if (cached != null && cached.isNotEmpty) {
+            _friendsActivities = cached;
+          }
+        }
+      }
     } catch (e) {
       _error = e.toString();
-      _friendsActivities = [];
+      // Preserve any friends already loaded; an unexpected error must not wipe
+      // a list the widget is still showing.
     }
 
     if (showLoading) _isLoading = false;

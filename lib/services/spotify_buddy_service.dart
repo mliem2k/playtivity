@@ -41,6 +41,15 @@ class SpotifyBuddyService {
   // Public factory constructor that returns the singleton
   factory SpotifyBuddyService() => instance;
 
+  /// Bypasses the singleton so tests can subclass and stub network methods.
+  /// Initializes only the fields needed to keep the instance usable; subclasses
+  /// are expected to override any method that touches the network or storage.
+  @visibleForTesting
+  SpotifyBuddyService.forTesting() {
+    _artistDetailsCache = LRUCache<String, Map<String, dynamic>>(1);
+    _persistenceReady = Future<void>.value();
+  }
+
   late final LRUCache<String, Map<String, dynamic>> _artistDetailsCache;
   late final Future<void> _persistenceReady;
 

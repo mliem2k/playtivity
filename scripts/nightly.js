@@ -461,6 +461,8 @@ After installation, authenticate with: gh auth login
 
         return `Nightly development build — unstable, not for production use.
 
+**Version**: \`${version.fullVersion}\`
+**Base Version**: \`${baseVersion}\`
 **Commit**: \`${git.commitShort}\` — ${git.commitMessage}
 **Branch**: \`${git.branch}\`
 **Flutter**: ${environment.flutterVersion} / Dart ${environment.dartVersion}

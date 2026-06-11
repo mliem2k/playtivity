@@ -73,13 +73,15 @@ class _UpdateCheckerWrapperState extends State<UpdateCheckerWrapper> {
     if (filePath != null && mounted) {
       final installed = await showInstallDialog(context, filePath);
       if (installed) {
-        // Installation started — clear everything.
         setState(() {
           _updateInfo = null;
           _downloadedFilePath = null;
         });
+      } else {
+        // Install dialog dismissed — clear the cached APK so the next tap
+        // always re-downloads a fresh copy.
+        setState(() => _downloadedFilePath = null);
       }
-      // If cancelled, banner stays and cached file is kept for next tap.
     }
   }
 

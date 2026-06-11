@@ -236,7 +236,12 @@ class UpdateService {
       Map<String, dynamic>? latestReleaseJson;
       for (final releaseJson in releasesJson) {
         final tagName = releaseJson['tag_name'] as String? ?? '';
-        if (!tagName.startsWith('nightly-')) {
+        // Accept only semver-style tags (v1.2.3 or 1.2.3), excluding nightly
+        // variants and the rolling `latest-nightly` pointer tag which is
+        // recreated on every nightly build and pollutes the list.
+        final isStableTag = (tagName.startsWith('v') || RegExp(r'^\d+\.\d+').hasMatch(tagName)) &&
+            !tagName.contains('nightly');
+        if (isStableTag) {
           latestReleaseJson = releaseJson as Map<String, dynamic>;
           break;
         }
