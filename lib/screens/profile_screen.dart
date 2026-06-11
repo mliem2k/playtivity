@@ -50,7 +50,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
     if (!authProvider.isAuthenticated) return;
     if (spotifyProvider.topTracks.isNotEmpty || spotifyProvider.topArtists.isNotEmpty) return;
-    await spotifyProvider.refreshData(showLoading: true);
+    await spotifyProvider.refreshProfileData(showLoading: true);
   }
 
   @override
