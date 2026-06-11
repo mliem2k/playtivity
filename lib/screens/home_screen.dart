@@ -180,20 +180,19 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
 
   Widget _buildContent(bool isLoading, List<Activity> activities, String? error) {
     if (isLoading && activities.isEmpty) return const _SkeletonList();
-    if (error != null) return _buildFullHeightScrollable(_buildError(error));
-    if (activities.isEmpty) return _buildFullHeightScrollable(_buildEmpty());
+    if (error != null) return _buildSingleScreenScroll(_buildError(error));
+    if (activities.isEmpty) return _buildSingleScreenScroll(_buildEmpty());
     return _buildActivityList(activities);
   }
 
-  // Wraps a single widget in a full-height ListView so RefreshIndicator always triggers.
-  Widget _buildFullHeightScrollable(Widget child) {
-    return LayoutBuilder(
-      builder: (context, constraints) => ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        children: [
-          SizedBox(height: constraints.maxHeight, child: child),
-        ],
-      ),
+  // Wraps a widget in a CustomScrollView so it fills the viewport and
+  // RefreshIndicator can always trigger via AlwaysScrollableScrollPhysics.
+  Widget _buildSingleScreenScroll(Widget child) {
+    return CustomScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      slivers: [
+        SliverFillRemaining(hasScrollBody: false, child: child),
+      ],
     );
   }
 
