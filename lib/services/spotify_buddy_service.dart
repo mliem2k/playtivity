@@ -185,7 +185,10 @@ class SpotifyBuddyService {
       // Fallback: raw JSON from the last API response.
       final raw = prefs.getString(_buddyListRawKey);
       if (raw != null && _cachedBuddyActivities == null) {
-        final activities = parseFriendsJson(raw);
+        // updateDiagnostics: false — persistence loads must not set lastApiBytes = 0
+        // and lastRawSnippet = '' into the diagnostic; those fields belong to the
+        // live-HTTP path and haven't been populated yet in this session.
+        final activities = parseFriendsJson(raw, updateDiagnostics: false);
         if (activities.isNotEmpty) {
           _cachedBuddyActivities = activities;
           _lastBuddyListFetch = DateTime.now().subtract(const Duration(seconds: 25));
@@ -350,30 +353,38 @@ class SpotifyBuddyService {
   /// non-String type rather than throwing a TypeError.
   static String? _str(dynamic v) => v is String ? v : null;
 
-  static List<Activity> parseFriendsJson(String responseBody, {int? nowMs}) {
+  static List<Activity> parseFriendsJson(
+    String responseBody, {
+    int? nowMs,
+    bool updateDiagnostics = true,
+  }) {
     try {
       final data = json.decode(responseBody);
       final friends = data['friends'] as List?;
       if (friends == null) {
-        lastApiFriendCount = 0;
-        lastParsedCount = 0;
-        lastDiagnostic = '${lastApiBytes}b — no "friends" key — snippet: $lastRawSnippet';
+        if (updateDiagnostics) {
+          lastApiFriendCount = 0;
+          lastParsedCount = 0;
+          lastDiagnostic = '${lastApiBytes}b — no "friends" key — snippet: $lastRawSnippet';
+        }
         return [];
       }
 
-      lastApiFriendCount = friends.length;
-      lastSkipNull = 0;
-      lastSkipNoUser = 0;
-      lastSkipNoActivity = 0;
-      lastSkipException = 0;
-      lastSkippedEntryKeys = '';
+      if (updateDiagnostics) lastApiFriendCount = friends.length;
+      if (updateDiagnostics) {
+        lastSkipNull = 0;
+        lastSkipNoUser = 0;
+        lastSkipNoActivity = 0;
+        lastSkipException = 0;
+        lastSkippedEntryKeys = '';
+      }
       AppLogger.warning('Friend Activity: ${friends.length} friends from API');
       final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
       final activities = <Activity>[];
 
       for (final friend in friends) {
         if (friend == null) {
-          lastSkipNull++;
+          if (updateDiagnostics) lastSkipNull++;
           AppLogger.warning('Friend Activity: skipped null entry in friends list');
           continue;
         }
@@ -390,11 +401,13 @@ class SpotifyBuddyService {
 
           final userInfo = friendData['user'];
           if (userInfo == null) {
-            lastSkipNoUser++;
             final keys = friend is Map ? friend.keys.toList().toString() : '?';
             final innerKeys = friendData.keys.toList().toString();
-            if (lastSkippedEntryKeys.isEmpty) {
-              lastSkippedEntryKeys = 'outer=$keys inner=$innerKeys';
+            if (updateDiagnostics) {
+              lastSkipNoUser++;
+              if (lastSkippedEntryKeys.isEmpty) {
+                lastSkippedEntryKeys = 'outer=$keys inner=$innerKeys';
+              }
             }
             AppLogger.warning(
               'Friend Activity: skipped (no user field) — '
@@ -526,9 +539,11 @@ class SpotifyBuddyService {
                 type: ActivityType.playlist,
               ));
             } else {
-              lastSkipNoActivity++;
               final keys = friendData.keys.toList().toString();
-              if (lastSkippedEntryKeys.isEmpty) lastSkippedEntryKeys = 'noActivity keys=$keys';
+              if (updateDiagnostics) {
+                lastSkipNoActivity++;
+                if (lastSkippedEntryKeys.isEmpty) lastSkippedEntryKeys = 'noActivity keys=$keys';
+              }
               AppLogger.warning(
                 'Skipped "${user.displayName}" — no track/episode/playlist/context'
                 ' (entry keys: $keys)',
@@ -536,26 +551,30 @@ class SpotifyBuddyService {
             }
           }
         } catch (e, st) {
-          lastSkipException++;
+          if (updateDiagnostics) lastSkipException++;
           AppLogger.error('Failed to parse friend entry: $e\n$st', e);
         }
       }
 
-      lastParsedCount = activities.length;
-      final skips = <String>[];
-      if (lastSkipNull > 0) skips.add('null×$lastSkipNull');
-      if (lastSkipNoUser > 0) skips.add('noUser×$lastSkipNoUser');
-      if (lastSkipNoActivity > 0) skips.add('noActivity×$lastSkipNoActivity');
-      if (lastSkipException > 0) skips.add('exception×$lastSkipException');
-      lastDiagnostic =
-          '${lastApiBytes}b | api=${friends.length} | parsed=${activities.length}'
-          '${skips.isNotEmpty ? " | skip: ${skips.join(',')} | $lastSkippedEntryKeys" : ""}'
-          ' | snippet: $lastRawSnippet';
+      if (updateDiagnostics) {
+        lastParsedCount = activities.length;
+        final skips = <String>[];
+        if (lastSkipNull > 0) skips.add('null×$lastSkipNull');
+        if (lastSkipNoUser > 0) skips.add('noUser×$lastSkipNoUser');
+        if (lastSkipNoActivity > 0) skips.add('noActivity×$lastSkipNoActivity');
+        if (lastSkipException > 0) skips.add('exception×$lastSkipException');
+        lastDiagnostic =
+            '${lastApiBytes}b | api=${friends.length} | parsed=${activities.length}'
+            '${skips.isNotEmpty ? " | skip: ${skips.join(',')} | $lastSkippedEntryKeys" : ""}'
+            ' | snippet: $lastRawSnippet';
+      }
       AppLogger.warning('Friend Activity: parsed ${activities.length}/${friends.length} activities');
       activities.sort((a, b) => b.timestamp.compareTo(a.timestamp));
       return activities;
     } catch (e) {
-      lastDiagnostic = '${lastApiBytes}b | parse error: $e | snippet: $lastRawSnippet';
+      if (updateDiagnostics) {
+        lastDiagnostic = '${lastApiBytes}b | parse error: $e | snippet: $lastRawSnippet';
+      }
       AppLogger.error('parseFriendsJson: failed to decode response', e);
       return [];
     }
