@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/spotify_provider.dart';
@@ -188,11 +189,8 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
   }
 
   Widget _buildEmpty() {
-    return const _CenteredState(
-      icon: Icons.people_outline,
-      title: 'No friend activity',
-      subtitle: 'Your friends haven\'t listened recently',
-    );
+    final diag = context.read<SpotifyProvider>().buddylistDiagnostic;
+    return _DiagnosticEmpty(diagnostic: diag);
   }
 
   Widget _buildError(String error) {
@@ -267,6 +265,55 @@ class _SkeletonListState extends State<_SkeletonList>
           return ActivitySkeleton(animation: _animation);
         },
         childCount: 7,
+      ),
+    );
+  }
+}
+
+class _DiagnosticEmpty extends StatelessWidget {
+  final String diagnostic;
+  const _DiagnosticEmpty({required this.diagnostic});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppConstants.largePadding),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.people_outline, size: 48, color: AppTheme.textSubdued),
+            const SizedBox(height: 16),
+            const Text(
+              'No friend activity',
+              style: TextStyle(
+                color: AppTheme.textPrimary,
+                fontWeight: FontWeight.w600,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 8),
+            GestureDetector(
+              onLongPress: () {
+                Clipboard.setData(ClipboardData(text: diagnostic));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Debug info copied'), duration: Duration(seconds: 2)),
+                );
+              },
+              child: Text(
+                diagnostic,
+                textAlign: TextAlign.left,
+                maxLines: 8,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppTheme.textSubdued,
+                  fontSize: 10,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
