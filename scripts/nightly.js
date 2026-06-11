@@ -11,6 +11,8 @@ class NightlyBuilder {
         this.pubspecPath = path.join(this.projectRoot, 'pubspec.yaml');
         this.outputDir = path.join(this.projectRoot, 'nightly');
         this.apkPath = path.join(this.projectRoot, 'build', 'app', 'outputs', 'flutter-apk', 'app-release.apk');
+        this.keystorePath = path.join(this.projectRoot, 'release-key.jks');
+        this.keystoreBase64Path = path.join(this.projectRoot, 'keystore.base64.txt');
         this.githubRepo = this.detectGitHubRepo();
         this.buildInfo = {};
     }
@@ -235,8 +237,38 @@ After installation, authenticate with: gh auth login
         }
     }
 
+    setupSigningForBuild() {
+        // Ensure the release keystore exists (decode from base64 if needed).
+        if (!fs.existsSync(this.keystorePath)) {
+            if (fs.existsSync(this.keystoreBase64Path)) {
+                try {
+                    const base64Content = fs.readFileSync(this.keystoreBase64Path, 'utf8').trim();
+                    fs.writeFileSync(this.keystorePath, Buffer.from(base64Content, 'base64'));
+                    this.log('Keystore decoded from base64', 'success');
+                } catch (error) {
+                    throw new Error(`Failed to decode keystore: ${error.message}`);
+                }
+            } else {
+                throw new Error('No keystore found. Ensure release-key.jks or keystore.base64.txt exists.');
+            }
+        }
+
+        // Inject env vars so build.gradle.kts picks up the release signing config
+        // instead of falling back to the debug key.
+        process.env.ANDROID_KEYSTORE_PATH     = this.keystorePath;
+        process.env.ANDROID_KEYSTORE_PASSWORD = process.env.ANDROID_KEYSTORE_PASSWORD || 'playtivity123';
+        process.env.ANDROID_KEY_ALIAS         = process.env.ANDROID_KEY_ALIAS         || 'playtivity-key';
+        process.env.ANDROID_KEY_PASSWORD      = process.env.ANDROID_KEY_PASSWORD      || 'playtivity123';
+
+        this.log('Release signing configured', 'success');
+    }
+
     buildNightlyAPK() {
         this.log('Starting nightly APK build', 'build');
+
+        // Must set signing env vars before gradle runs, otherwise the APK
+        // falls back to the debug key and conflicts with release-signed installs.
+        this.setupSigningForBuild();
 
         let flutterCommand = 'flutter';
         try {
