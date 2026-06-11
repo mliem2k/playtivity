@@ -199,9 +199,13 @@ class SpotifyBuddyService {
         try {
           // Support both flat {"user":...,"track":...} and envelope-wrapped
           // {"friend":{"user":...,"track":...}} formats from the spclient API.
-          final Map friendData = friend is Map && friend['friend'] is Map
-              ? friend['friend'] as Map
-              : (friend is Map ? friend as Map : <dynamic, dynamic>{});
+          // Only treat friend['friend'] as the envelope when it actually carries
+          // a user field — an empty {} placeholder must not shadow top-level data.
+          final envelopeCandidate = friend is Map ? friend['friend'] : null;
+          final Map friendData =
+              envelopeCandidate is Map && envelopeCandidate['user'] != null
+                  ? envelopeCandidate as Map
+                  : (friend is Map ? friend as Map : <dynamic, dynamic>{});
 
           final userInfo = friendData['user'];
           if (userInfo == null) {
