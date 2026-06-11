@@ -109,7 +109,9 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
               onRefresh: _refreshData,
               color: AppTheme.primary,
               child: CustomScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
+                physics: const BouncingScrollPhysics(
+                  parent: AlwaysScrollableScrollPhysics(),
+                ),
                 slivers: [
                   _buildSliverAppBar(isLoading && activities.isNotEmpty),
                   if (isLoading && activities.isEmpty)

@@ -163,7 +163,15 @@ class SpotifyBuddyService {
         final url = '$_baseUrl/presence-view/v1/buddylist';
         final response = await HttpInterceptor.get(
           Uri.parse(url),
-          headers: {'Authorization': 'Bearer $bearerToken'},
+          headers: {
+            'Authorization': 'Bearer $bearerToken',
+            'App-Platform': 'WebPlayer',
+            'accept': 'application/json',
+            'accept-language': 'en',
+            'origin': 'https://open.spotify.com',
+            'referer': 'https://open.spotify.com/',
+            'User-Agent': SpotifyTokenService.userAgent,
+          },
         );
 
         if (response.statusCode == 401 || response.statusCode == 403) {
