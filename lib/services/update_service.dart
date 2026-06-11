@@ -311,7 +311,7 @@ class UpdateService {
       _latestNightlyInfo = nightlyInfo;
 
       // For nightlies, we compare build dates or if current version doesn't contain nightly
-      final hasUpdate = _shouldUpdateToNightly(currentVersion.version, nightlyInfo);
+      final hasUpdate = _shouldUpdateToNightly(currentVersion, nightlyInfo);
       
       AppLogger.info('Nightly check: Latest=${nightlyInfo.version}, hasUpdate=$hasUpdate');
       
@@ -378,33 +378,46 @@ class UpdateService {
   }
 
   // Helper method to determine if we should update to a nightly build
-  static bool _shouldUpdateToNightly(String currentVersion, UpdateInfo nightlyInfo) {
+  static bool _shouldUpdateToNightly(AppVersionInfo currentVersion, UpdateInfo nightlyInfo) {
     AppLogger.info('Checking if should update to nightly:');
-    AppLogger.info('  Current version: $currentVersion');
-    AppLogger.info('  New nightly version: ${nightlyInfo.version}');
+    AppLogger.info('  Current version: ${currentVersion.version}+${currentVersion.buildNumber}');
+    AppLogger.info('  New nightly version: ${nightlyInfo.version}+${nightlyInfo.buildNumber}');
 
-    if (!currentVersion.contains('nightly')) {
+    if (!currentVersion.version.contains('nightly')) {
       // Stable user: only offer nightly if its base version is >= the current stable version.
       // Without this check a stable `0.0.2` user would be prompted to "update" to a nightly
       // built against `0.0.1`, which would be a downgrade.
-      final currentBase = VersionUtils.extractBaseVersion(currentVersion);
+      final currentBase = VersionUtils.extractBaseVersion(currentVersion.version);
       final nightlyBase = VersionUtils.extractBaseVersion(nightlyInfo.version);
       final nightlyIsAtLeastSameBase = VersionUtils.isNewerVersion(
             currentVersion: currentBase,
             newVersion: nightlyBase,
           ) ||
           currentBase == nightlyBase;
-      AppLogger.info('Stable→nightly: currentBase=$currentBase nightlyBase=$nightlyBase offer=$nightlyIsAtLeastSameBase');
+      AppLogger.info('Stable->nightly: currentBase=$currentBase nightlyBase=$nightlyBase offer=$nightlyIsAtLeastSameBase');
       return nightlyIsAtLeastSameBase;
     }
 
-    // Both nightly: compare build timestamps
+    // Both nightly. Build numbers are the primary comparison: they are strictly
+    // monotonically increasing integers (Unix epoch seconds at build time) that
+    // are embedded in the APK at build time and reported by PackageInfo. This is
+    // simpler and more reliable than parsing YYYYMMDD-HHMMSS from the version
+    // string with a threshold, which can silently fail when two nightlies are
+    // built within the threshold window.
+    final currentBuild = int.tryParse(currentVersion.buildNumber);
+    final newBuild = int.tryParse(nightlyInfo.buildNumber);
+    if (currentBuild != null && newBuild != null && newBuild != currentBuild) {
+      final shouldUpdate = newBuild > currentBuild;
+      AppLogger.info('Nightly build-number comparison: current=$currentBuild new=$newBuild shouldUpdate=$shouldUpdate');
+      return shouldUpdate;
+    }
+
+    // Fallback: compare embedded timestamps when build numbers are unavailable.
     final shouldUpdate = VersionUtils.isNewerNightly(
-      currentVersion: currentVersion,
+      currentVersion: currentVersion.version,
       newVersion: nightlyInfo.version,
     );
-
-    AppLogger.info('Should update to nightly: $shouldUpdate');
+    AppLogger.info('Nightly timestamp fallback: shouldUpdate=$shouldUpdate');
     return shouldUpdate;
   }
   

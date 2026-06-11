@@ -32,7 +32,12 @@ class _UpdateCheckerWrapperState extends State<UpdateCheckerWrapper> {
       _hasCheckedForUpdates = true;
 
       final autoDownload = await UpdateService.getAutoDownloadPreference();
-      final updateResult = await UpdateService.checkForUpdates();
+      // Use forceCheck for nightly users: the 24-hour default throttle is too
+      // long — a new nightly could land within hours and the banner would never
+      // appear until the user manually checks. Stable users keep the throttle so
+      // we don't hit the GitHub API on every launch.
+      final isNightly = await UpdateService.getNightlyBuildPreference();
+      final updateResult = await UpdateService.checkForUpdates(forceCheck: isNightly);
 
       if (updateResult.hasUpdate && updateResult.updateInfo != null) {
         AppLogger.info('Update available: ${updateResult.updateInfo?.version}');
