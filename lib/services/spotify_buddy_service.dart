@@ -17,6 +17,9 @@ class SpotifyBuddyService {
   static const String _baseUrl = 'https://guc-spclient.spotify.com';
   static const String _artistDetailsCacheKey = 'artist_details_cache';
   static const String _buddyListRawKey = 'buddy_list_raw_json';
+  static const String _buddyListMergedKey = 'buddy_list_merged_json';
+  // Friends older than this are evicted from the accumulated set
+  static const Duration _activityMaxAge = Duration(hours: 24);
   // Timestamp threshold for "currently playing": if elapsed < 5 min since the
   // friend started this track, show as now-playing. No duration API call needed.
   static const int _currentlyPlayingThresholdMs = 5 * 60 * 1000;
@@ -59,6 +62,7 @@ class SpotifyBuddyService {
   static int lastApiBytes = 0;
   static int lastApiFriendCount = -1;
   static int lastParsedCount = -1;
+  static int lastMergedCount = -1;
   // Per-skip reason counts from the last parse run
   static int lastSkipNull = 0;       // friend entry was null
   static int lastSkipNoUser = 0;     // no user field after envelope detection
@@ -91,19 +95,85 @@ class SpotifyBuddyService {
     AppLogger.spotify('🗑️ Cleared buddy list cache - next request will fetch fresh data');
   }
 
-  /// Loads the last-known buddy list JSON from SharedPreferences so we can
-  /// show stale data instantly on next launch before the network call finishes.
+  /// Marks the cache as expired so the next call fetches fresh data, but keeps
+  /// existing activities in memory so they can be merged with the fresh response.
+  void forceRefresh() {
+    _lastBuddyListFetch = null;
+  }
+
+  /// Merges [fresh] activities with the existing cache, keeping the most recent
+  /// activity per user and discarding entries older than [_activityMaxAge].
+  List<Activity> _mergeWithExisting(List<Activity> fresh) {
+    final existing = _cachedBuddyActivities;
+    if (existing == null || existing.isEmpty) return fresh;
+
+    final cutoff = DateTime.now().subtract(_activityMaxAge);
+    final merged = <String, Activity>{};
+
+    for (final a in existing) {
+      if (a.timestamp.isAfter(cutoff)) merged[a.user.id] = a;
+    }
+    // Fresh data always overrides stale entries for the same user
+    for (final a in fresh) {
+      merged[a.user.id] = a;
+    }
+
+    final result = merged.values.toList()
+      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+
+    final carried = result.length - fresh.length;
+    if (carried > 0) {
+      AppLogger.spotify('🔀 Carried over $carried friends from cache; total=${result.length}');
+    }
+    return result;
+  }
+
+  /// Persists the merged activities list so cross-session accumulation survives restarts.
+  void _saveMergedActivities(List<Activity> activities) {
+    try {
+      final encoded = json.encode(activities.map((a) => a.toJson()).toList());
+      SharedPreferences.getInstance().then((prefs) {
+        prefs.setString(_buddyListMergedKey, encoded);
+      }).catchError((_) {});
+    } catch (_) {}
+  }
+
+  /// Loads the last-known buddy list from SharedPreferences.
+  /// Prefers the merged activities (accumulated across sessions) over the raw API snapshot.
   Future<void> _loadPersistedBuddyList() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+
+      // Try merged activities first — they cover more friends than a single API call.
+      final mergedJson = prefs.getString(_buddyListMergedKey);
+      if (mergedJson != null && _cachedBuddyActivities == null) {
+        try {
+          final list = json.decode(mergedJson) as List;
+          final cutoff = DateTime.now().subtract(_activityMaxAge);
+          final activities = list
+              .map((e) => Activity.fromJson(e as Map<String, dynamic>))
+              .where((a) => a.timestamp.isAfter(cutoff))
+              .toList()
+            ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+          if (activities.isNotEmpty) {
+            _cachedBuddyActivities = activities;
+            _lastBuddyListFetch = DateTime.now().subtract(const Duration(seconds: 25));
+            AppLogger.spotify('📦 Loaded ${activities.length} merged buddy activities');
+            return;
+          }
+        } catch (e) {
+          AppLogger.spotify('⚠️ Could not load merged activities: $e');
+        }
+      }
+
+      // Fallback: raw JSON from the last API response.
       final raw = prefs.getString(_buddyListRawKey);
       if (raw != null && _cachedBuddyActivities == null) {
         final activities = parseFriendsJson(raw);
         if (activities.isNotEmpty) {
           _cachedBuddyActivities = activities;
-          // Mark as nearly-expired so a live fetch runs promptly after display
           _lastBuddyListFetch = DateTime.now().subtract(const Duration(seconds: 25));
-          AppLogger.spotify('📦 Loaded ${activities.length} persisted buddy activities');
+          AppLogger.spotify('📦 Loaded ${activities.length} persisted buddy activities (raw)');
         }
       }
     } catch (e) {
@@ -221,11 +291,17 @@ class SpotifyBuddyService {
         lastRawSnippet = response.body.substring(0, response.body.length.clamp(0, 300));
         AppLogger.warning('Buddylist raw (${response.body.length}b): '
             '${response.body.substring(0, response.body.length.clamp(0, 1200))}');
-        final activities = parseFriendsJson(response.body);
-        _cachedBuddyActivities = activities;
+        final fresh = parseFriendsJson(response.body);
+        final merged = _mergeWithExisting(fresh);
+        lastMergedCount = merged.length;
+        if (merged.length > fresh.length) {
+          lastDiagnostic += ' | merged=${merged.length}';
+        }
+        _cachedBuddyActivities = merged;
         _lastBuddyListFetch = DateTime.now();
         _saveBuddyListRaw(response.body);
-        return activities;
+        _saveMergedActivities(merged);
+        return merged;
       },
       operation: 'Get Friend Activity',
     );
