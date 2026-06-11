@@ -47,7 +47,12 @@ class SpotifyProvider extends ChangeNotifier {
   String? get authErrorMessage => _authErrorMessage;
   String get buddylistDiagnostic => SpotifyBuddyService.lastDiagnostic;
   int get buddylistApiCount => SpotifyBuddyService.lastApiFriendCount;
-  int get buddylistParsedCount => SpotifyBuddyService.lastParsedCount;
+  // Show the merged count when accumulation added extra friends
+  int get buddylistParsedCount {
+    final merged = SpotifyBuddyService.lastMergedCount;
+    final parsed = SpotifyBuddyService.lastParsedCount;
+    return merged > parsed ? merged : parsed;
+  }
 
   void setBearer(String token) {
     _bearerToken = token;
@@ -313,8 +318,9 @@ class SpotifyProvider extends ChangeNotifier {
         notifyListeners();
       }
 
-      // Force a live fetch regardless of in-memory cache age
-      _buddyService.clearBuddyListCache();
+      // Force a live fetch without clearing existing activities — they'll be merged
+      // with the fresh response so we accumulate friends across refreshes.
+      _buddyService.forceRefresh();
       await loadFriendsActivities(showSkeleton: _friendsActivities.isEmpty);
 
       _lastUpdated = DateTime.now();
