@@ -85,4 +85,21 @@ void main() {
       expect(json['uri'], 'spotify:track:abc');
     });
   });
+
+  group('Track round-trip (toJson -> fromJson)', () {
+    test('preserves all fields through persistence serialization', () {
+      final original = Track.fromJson(TestFixtures.trackJson());
+      final roundTripped = Track.fromJson(original.toJson());
+      expect(roundTripped.id, original.id);
+      expect(roundTripped.name, original.name);
+      expect(roundTripped.artists, original.artists);
+      expect(roundTripped.artistUris, original.artistUris);
+      expect(roundTripped.album, original.album);
+      expect(roundTripped.albumUri, original.albumUri);
+      expect(roundTripped.imageUrl, original.imageUrl);
+      expect(roundTripped.durationMs, original.durationMs);
+      expect(roundTripped.previewUrl, original.previewUrl);
+      expect(roundTripped.uri, original.uri);
+    });
+  });
 }

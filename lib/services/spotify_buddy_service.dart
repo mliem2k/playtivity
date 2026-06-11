@@ -166,11 +166,16 @@ class SpotifyBuddyService {
         try {
           final list = json.decode(mergedJson) as List;
           final cutoff = DateTime.now().subtract(_persistenceMaxAge);
-          final activities = list
-              .map((e) => Activity.fromJson(e as Map<String, dynamic>))
-              .where((a) => a.timestamp.isAfter(cutoff))
-              .toList()
-            ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+          final activities = <Activity>[];
+          for (final e in list) {
+            try {
+              final a = Activity.fromJson(e as Map<String, dynamic>);
+              if (a.timestamp.isAfter(cutoff)) activities.add(a);
+            } catch (err) {
+              AppLogger.spotify('⚠️ Skipped corrupted activity entry during load: $err');
+            }
+          }
+          activities.sort((a, b) => b.timestamp.compareTo(a.timestamp));
           if (activities.isNotEmpty) {
             _cachedBuddyActivities = activities;
             _lastBuddyListFetch = DateTime.now().subtract(const Duration(seconds: 25));
