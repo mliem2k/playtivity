@@ -24,13 +24,25 @@ class Activity {
 
   factory Activity.fromJson(Map<String, dynamic> json) {
     final type = json['type'] == 'playlist' ? ActivityType.playlist : ActivityType.track;
-    
+    final timestamp = DateTime.parse(json['timestamp']);
+
+    // Recompute from current time rather than trusting the stored flag — persisted
+    // activities can be hours/days old, so a stale true would show "Listening now"
+    // indefinitely after a friend stopped playing.
+    final bool isCurrentlyPlaying;
+    if (type == ActivityType.playlist) {
+      isCurrentlyPlaying = false;
+    } else {
+      final elapsedMs = DateTime.now().millisecondsSinceEpoch - timestamp.millisecondsSinceEpoch;
+      isCurrentlyPlaying = elapsedMs >= 0 && elapsedMs < (5 * 60 * 1000);
+    }
+
     return Activity(
       user: User.fromJson(json['user']),
       track: type == ActivityType.track ? Track.fromJson(json['track']) : null,
       playlist: type == ActivityType.playlist ? Playlist.fromJson(json['playlist']) : null,
-      timestamp: DateTime.parse(json['timestamp']),
-      isCurrentlyPlaying: json['is_currently_playing'] ?? false,
+      timestamp: timestamp,
+      isCurrentlyPlaying: isCurrentlyPlaying,
       type: type,
     );
   }
