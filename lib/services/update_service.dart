@@ -35,10 +35,15 @@ class UpdateService {
     );
   }
 
-  // Check if user has opted in for nightly builds
+  // Check if user has opted in for nightly builds.
+  // Defaults to true when the installed version is nightly and the user
+  // has never explicitly toggled the preference.
   static Future<bool> getNightlyBuildPreference() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_prefEnableNightly) ?? false;
+    final stored = prefs.getBool(_prefEnableNightly);
+    if (stored != null) return stored;
+    final version = await getCurrentAppVersion();
+    return isCurrentVersionNightly(version.version);
   }
   
   // Set the nightly build preference
