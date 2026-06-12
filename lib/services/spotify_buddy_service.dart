@@ -480,6 +480,7 @@ class SpotifyBuddyService {
               id: _str(trackInfo['uri']) ?? '',
               name: _str(trackInfo['name']) ?? 'Unknown Track',
               artists: [_str(artistInfo['name']) ?? 'Unknown Artist'],
+              artistUris: _str(artistInfo['uri']) != null ? [artistInfo['uri'] as String] : const [],
               album: _str(albumInfo['name']) ?? 'Unknown Album',
               albumUri: _str(albumInfo['uri']),
               imageUrl: _str(trackInfo['imageUrl']) ?? _str(albumInfo['imageUrl']),
