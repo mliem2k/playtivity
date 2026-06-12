@@ -8,6 +8,7 @@ import '../widgets/update/update_dialogs.dart';
 import '../utils/version_utils.dart';
 import '../services/app_logger.dart';
 import '../utils/theme.dart';
+import '../services/url_launcher_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -113,6 +114,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       subtitle: 'Version $version',
                     );
                   },
+                ),
+                _divider(),
+                _tile(
+                  icon: Icons.open_in_browser,
+                  title: 'GitHub Releases',
+                  subtitle: 'View all releases and download APKs',
+                  onTap: () => UrlLauncherService.launchWebUrl(
+                    'https://github.com/mliem2k/playtivity/releases',
+                  ),
                 ),
                 _divider(),
                 _tile(
