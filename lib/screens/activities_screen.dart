@@ -118,9 +118,7 @@ class _ActivitiesScreenState extends State<ActivitiesScreen>
                 parent: AlwaysScrollableScrollPhysics(),
               ),
               slivers: [
-                SliverToBoxAdapter(
-                  child: _Header(showProgress: isLoading && activities.isNotEmpty),
-                ),
+                _HeaderSliver(showProgress: isLoading && activities.isNotEmpty),
                 _ContentSlivers(
                   isLoading: isLoading,
                   activities: activities,
@@ -164,10 +162,10 @@ class _NoBounceScrollable extends StatelessWidget {
   }
 }
 
-class _Header extends StatelessWidget {
+class _HeaderSliver extends StatelessWidget {
   final bool showProgress;
 
-  const _Header({required this.showProgress});
+  const _HeaderSliver({required this.showProgress});
 
   @override
   Widget build(BuildContext context) {
@@ -177,55 +175,53 @@ class _Header extends StatelessWidget {
     final hasMismatch = apiCount > 0 && parsedCount >= 0 && parsedCount < apiCount;
     final countLabel = hasMismatch ? ' ($parsedCount/$apiCount)' : '';
 
-    return Material(
-      color: AppTheme.background,
-      child: SafeArea(
-        bottom: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SizedBox(
-              height: 52,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: GestureDetector(
-                    onLongPress: () => _copyDiagnostic(context, spotifyProvider),
-                    child: Text(
-                      'Friend Activity$countLabel',
-                      style: TextStyle(
-                        color: hasMismatch ? Colors.orange : AppTheme.textPrimary,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 18,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            if (showProgress)
-              const LinearProgressIndicator(
+    return SliverAppBar(
+      pinned: true,
+      floating: false,
+      snap: false,
+      primary: true,
+      automaticallyImplyLeading: false,
+      backgroundColor: AppTheme.background,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: Colors.transparent,
+      scrolledUnderElevation: 0,
+      elevation: 0,
+      toolbarHeight: 52,
+      titleSpacing: 16,
+      centerTitle: false,
+      title: GestureDetector(
+        onLongPress: () => _copyDiagnostic(context, spotifyProvider),
+        child: Text(
+          'Friend Activity$countLabel',
+          style: TextStyle(
+            color: hasMismatch ? Colors.orange : AppTheme.textPrimary,
+            fontWeight: FontWeight.w700,
+            fontSize: 18,
+          ),
+        ),
+      ),
+      bottom: showProgress
+          ? const PreferredSize(
+              preferredSize: Size.fromHeight(2),
+              child: LinearProgressIndicator(
                 color: AppTheme.primary,
                 backgroundColor: Colors.transparent,
                 minHeight: 2,
               ),
-          ],
-        ),
-      ),
+            )
+          : null,
     );
   }
+}
 
-  void _copyDiagnostic(BuildContext context, SpotifyProvider provider) {
-    Clipboard.setData(ClipboardData(text: provider.buddylistDiagnostic));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Debug info copied'),
-        duration: Duration(seconds: 2),
-      ),
-    );
-  }
+void _copyDiagnostic(BuildContext context, SpotifyProvider provider) {
+  Clipboard.setData(ClipboardData(text: provider.buddylistDiagnostic));
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(
+      content: Text('Debug info copied'),
+      duration: Duration(seconds: 2),
+    ),
+  );
 }
 
 class _ContentSlivers extends StatelessWidget {
