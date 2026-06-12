@@ -239,8 +239,17 @@ class SpotifyProvider extends ChangeNotifier {
         }
       }
 
+      // The home widget renders from the buddy service's accumulated cache,
+      // so the in-app list must never show fewer friends than that cache.
+      // Prefer the live result when it is at least as large; otherwise keep
+      // the accumulated cache (or the list already on screen if it is larger).
+      final cached = _buddyService.cachedActivities;
+      final accumulated = cached != null && cached.isNotEmpty ? cached : _friendsActivities;
+
       if (fetchSucceeded && activities.isNotEmpty) {
-        _friendsActivities = activities;
+        _friendsActivities = activities.length >= accumulated.length
+            ? activities
+            : accumulated;
         _lastUpdated = DateTime.now();
       } else if (!authFailed) {
         // Empty success or transient (non-auth) failure: never drop to zero
@@ -248,14 +257,9 @@ class SpotifyProvider extends ChangeNotifier {
         // when friends are active, so an empty result is not reliably "nothing
         // to show". Keep the friends already on screen — the home widget never
         // blanks on an empty refresh (its update is guarded by isNotEmpty), and
-        // the in-app list must stay consistent with it. When we currently have
-        // nothing, recover from the buddy service's accumulated cache, the same
-        // data the widget renders from.
-        if (_friendsActivities.isEmpty) {
-          final cached = _buddyService.cachedActivities;
-          if (cached != null && cached.isNotEmpty) {
-            _friendsActivities = cached;
-          }
+        // the in-app list must stay consistent with it.
+        if (accumulated.isNotEmpty) {
+          _friendsActivities = accumulated;
         }
       }
     } catch (e) {

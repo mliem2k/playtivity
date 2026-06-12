@@ -102,5 +102,32 @@ void main() {
       expect(provider.friendsActivities, hasLength(2),
           reason: 'should fall back to the widget cache instead of showing 0');
     });
+
+    test('a live result shorter than the accumulated cache keeps the cache',
+        () async {
+      // The home widget renders from the accumulated cache. If a live fetch
+      // somehow returns fewer friends than the cache, the app must not drop
+      // the accumulated friends and end up showing less than the widget.
+      fake.cache = [_activity('a'), _activity('b'), _activity('c')];
+      fake.result = [_activity('d')];
+
+      await provider.loadFriendsActivities();
+
+      expect(provider.friendsActivities, hasLength(3),
+          reason: 'should keep accumulated cache when live result is shorter');
+    });
+
+    test('a live result longer than the accumulated cache uses the live result',
+        () async {
+      // When the live fetch accumulates more friends than the in-memory cache,
+      // the app should show the larger merged result.
+      fake.cache = [_activity('a')];
+      fake.result = [_activity('a'), _activity('b'), _activity('c')];
+
+      await provider.loadFriendsActivities();
+
+      expect(provider.friendsActivities, hasLength(3),
+          reason: 'should use live result when it is larger than cache');
+    });
   });
 }
