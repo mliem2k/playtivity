@@ -186,10 +186,14 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
   }
 
   // Wraps a widget in a CustomScrollView so it fills the viewport and
-  // RefreshIndicator can always trigger via AlwaysScrollableScrollPhysics.
+  // RefreshIndicator can always trigger, even when the list is shorter than
+  // the viewport. BouncingScrollPhysics provides the overscroll behavior
+  // needed for pull-to-refresh on Android while keeping the list scrollable.
   Widget _buildSingleScreenScroll(Widget child) {
     return CustomScrollView(
-      physics: const AlwaysScrollableScrollPhysics(),
+      physics: const BouncingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
+      ),
       slivers: [
         SliverFillRemaining(hasScrollBody: false, child: child),
       ],
@@ -198,7 +202,9 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
 
   Widget _buildActivityList(List<Activity> activities) {
     return ListView.separated(
-      physics: const AlwaysScrollableScrollPhysics(),
+      physics: const BouncingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
+      ),
       padding: const EdgeInsets.only(bottom: 8),
       itemCount: activities.length,
       separatorBuilder: (context, index) => const Divider(height: 1, color: AppTheme.dividerColor),
