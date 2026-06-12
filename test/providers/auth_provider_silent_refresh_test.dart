@@ -301,6 +301,9 @@ void main() {
       });
       final prefs = await SharedPreferences.getInstance();
       final provider = AuthProvider(prefs);
+      // Prevent real network call: tokenFetchOverride resolves as a microtask,
+      // so _initializeAuth completes before _waitForInit's 20ms timer fires.
+      provider.tokenFetchOverride = (_) async => null;
 
       await _waitForInit(provider);
 

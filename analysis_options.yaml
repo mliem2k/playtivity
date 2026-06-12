@@ -26,6 +26,7 @@ linter:
     use_decorated_box: true
     prefer_const_constructors: true
     prefer_const_literals_to_create_immutables: true
+    avoid_print: true
 
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options
