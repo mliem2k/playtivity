@@ -91,15 +91,19 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
           return RefreshIndicator(
             onRefresh: _refreshData,
             color: AppTheme.primary,
+            backgroundColor: AppTheme.surfaceRaised,
             child: CustomScrollView(
-              physics: const BouncingScrollPhysics(
+              // ClampingScrollPhysics keeps the friend list inside the viewport
+              // bounds while AlwaysScrollableScrollPhysics keeps pull-to-refresh
+              // usable even when the list is shorter than the screen.
+              physics: const ClampingScrollPhysics(
                 parent: AlwaysScrollableScrollPhysics(),
               ),
               slivers: [
                 SliverToBoxAdapter(
                   child: _buildHeader(isLoading && activities.isNotEmpty),
                 ),
-                _buildContentSlivers(isLoading, activities, error),
+                _buildBodySlivers(isLoading, activities, error),
               ],
             ),
           );
@@ -163,16 +167,13 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
     );
   }
 
-  Widget _buildContentSlivers(
+  Widget _buildBodySlivers(
     bool isLoading,
     List<Activity> activities,
     String? error,
   ) {
     if (isLoading && activities.isEmpty) {
-      return const SliverFillRemaining(
-        hasScrollBody: false,
-        child: _SkeletonList(),
-      );
+      return const _SkeletonSliverList(count: 6);
     }
     if (error != null) {
       return SliverFillRemaining(
@@ -189,13 +190,11 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
     return _buildActivitySlivers(activities);
   }
 
-  // Wraps a widget in a CustomScrollView so it fills the viewport and
-  // RefreshIndicator can always trigger, even when the list is shorter than
-  // the viewport. BouncingScrollPhysics provides the overscroll behavior
-  // needed for pull-to-refresh on Android while keeping the list scrollable.
+  /// Wraps a widget in a scrollable that fills the viewport without bouncing
+  /// past its bounds.
   Widget _buildSingleScreenScroll(Widget child) {
     return CustomScrollView(
-      physics: const BouncingScrollPhysics(
+      physics: const ClampingScrollPhysics(
         parent: AlwaysScrollableScrollPhysics(),
       ),
       slivers: [
@@ -249,9 +248,10 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
                 final ok = await AuthUtils.handleReAuthentication(context);
                 if (ok && mounted) {
                   debouncedRefresh(
-                      DebounceKeys.homeRefresh,
-                      const Duration(milliseconds: 500),
-                      _loadData);
+                    DebounceKeys.homeRefresh,
+                    const Duration(milliseconds: 500),
+                    _loadData,
+                  );
                 }
               },
               child: const Text('Login Again',
@@ -260,8 +260,11 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
           : TextButton(
               onPressed: () {
                 context.read<SpotifyProvider>().clearError();
-                debouncedRefresh(DebounceKeys.homeRefresh,
-                    const Duration(milliseconds: 300), _refreshData);
+                debouncedRefresh(
+                  DebounceKeys.homeRefresh,
+                  const Duration(milliseconds: 300),
+                  _refreshData,
+                );
               },
               child: const Text('Try again',
                   style: TextStyle(color: AppTheme.primary)),
@@ -270,14 +273,16 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
   }
 }
 
-class _SkeletonList extends StatefulWidget {
-  const _SkeletonList();
+class _SkeletonSliverList extends StatefulWidget {
+  final int count;
+
+  const _SkeletonSliverList({required this.count});
 
   @override
-  State<_SkeletonList> createState() => _SkeletonListState();
+  State<_SkeletonSliverList> createState() => _SkeletonSliverListState();
 }
 
-class _SkeletonListState extends State<_SkeletonList>
+class _SkeletonSliverListState extends State<_SkeletonSliverList>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _animation;
@@ -302,11 +307,13 @@ class _SkeletonListState extends State<_SkeletonList>
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: List.generate(
-        6,
-        (index) => ActivitySkeleton(animation: _animation),
+    return SliverPadding(
+      padding: const EdgeInsets.only(bottom: 8),
+      sliver: SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (context, index) => ActivitySkeleton(animation: _animation),
+          childCount: widget.count,
+        ),
       ),
     );
   }
