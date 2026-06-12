@@ -151,7 +151,9 @@ class SpotifyBuddyService {
       final encoded = json.encode(activities.map((a) => a.toJson()).toList());
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_buddyListMergedKey, encoded);
-    } catch (_) {}
+    } catch (e) {
+      AppLogger.spotify('⚠️ Failed to save merged activities: $e');
+    }
   }
 
   /// Loads the last-known buddy list from SharedPreferences.
@@ -209,7 +211,9 @@ class SpotifyBuddyService {
   void _saveBuddyListRaw(String raw) {
     SharedPreferences.getInstance().then((prefs) {
       prefs.setString(_buddyListRawKey, raw);
-    }).catchError((_) {});
+    }).catchError((Object e) {
+      AppLogger.spotify('⚠️ Failed to save raw buddy list: $e');
+    });
   }
 
   void clearActivityCache() {
@@ -705,11 +709,7 @@ class SpotifyBuddyService {
         operation: 'Get Top Content',
       );
     } catch (e) {
-      final msg = e.toString();
       AppLogger.spotify('❌ Error in getTopContent: $e');
-      if (msg.contains('Authentication error') || msg.contains('401') || msg.contains('403')) {
-        rethrow;
-      }
       return null;
     }
   }
@@ -791,11 +791,7 @@ class SpotifyBuddyService {
 
       return tracks;
     } catch (e) {
-      final msg = e.toString();
       AppLogger.spotify('❌ Error in getTopTracks: $e');
-      if (msg.contains('Authentication error') || msg.contains('401') || msg.contains('403')) {
-        rethrow;
-      }
       return [];
     }
   }
@@ -884,11 +880,7 @@ class SpotifyBuddyService {
 
       return artists;
     } catch (e) {
-      final msg = e.toString();
       AppLogger.spotify('❌ Error in getTopArtists: $e');
-      if (msg.contains('Authentication error') || msg.contains('401') || msg.contains('403')) {
-        rethrow;
-      }
       return [];
     }
   }

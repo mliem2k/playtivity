@@ -35,7 +35,7 @@ class Track {
     final String? imageUrl;
 
     if (albumRaw is Map) {
-      final albumMap = Map<String, dynamic>.from(albumRaw as Map);
+      final albumMap = Map<String, dynamic>.from(albumRaw);
       albumName = albumMap['name'] as String? ?? '';
       albumUri = albumMap['uri'] as String?;
       imageUrl = json['image_url'] as String?
@@ -57,8 +57,8 @@ class Track {
       if (a is String) {
         if (a.isNotEmpty) artistNames.add(a);
       } else if (a is Map) {
-        final name = (a as Map)['name'] as String? ?? '';
-        final uri = (a as Map)['uri'] as String? ?? '';
+        final name = a['name'] as String? ?? '';
+        final uri = a['uri'] as String? ?? '';
         if (name.isNotEmpty) artistNames.add(name);
         if (uri.isNotEmpty) urisFromList.add(uri);
       }
