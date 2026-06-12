@@ -197,14 +197,9 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
   }
 
   Widget _buildActivityList(List<Activity> activities) {
-    // viewPadding.bottom is the raw system inset (home indicator, gesture bar).
-    // The BottomNavigationBar renders kBottomNavigationBarHeight tall plus that
-    // same inset internally, so this sum always equals the bar's actual height.
-    final bottomPadding =
-        MediaQuery.of(context).viewPadding.bottom + kBottomNavigationBarHeight;
     return ListView.separated(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: EdgeInsets.only(bottom: bottomPadding),
+      padding: const EdgeInsets.only(bottom: 8),
       itemCount: activities.length,
       separatorBuilder: (context, index) => const Divider(height: 1, color: AppTheme.dividerColor),
       itemBuilder: (_, i) => RepaintBoundary(child: ActivityCard(activity: activities[i])),

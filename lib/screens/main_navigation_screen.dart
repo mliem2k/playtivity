@@ -114,7 +114,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
 
   Widget _buildScaffold() {
     return Scaffold(
-      extendBody: true,
       body: PageView(
         controller: _pageController,
         physics: const NeverScrollableScrollPhysics(),
