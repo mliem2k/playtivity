@@ -5,7 +5,7 @@ import '../providers/spotify_provider.dart';
 import '../services/background_service.dart';
 import '../services/app_logger.dart';
 import '../utils/auth_utils.dart';
-import 'home_screen.dart';
+import 'activities_screen.dart';
 import 'profile_screen.dart';
 
 class MainNavigationScreen extends StatefulWidget {
@@ -26,7 +26,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     super.initState();
     _pageController = PageController();
     _screens = const [
-      _KeepAlive(child: HomeScreen()),
+      _KeepAlive(child: ActivitiesScreen()),
       _KeepAlive(child: ProfileScreen()),
     ];
     AppLogger.info('🏠 MainNavigationScreen initialized');

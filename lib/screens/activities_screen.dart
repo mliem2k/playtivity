@@ -1,27 +1,39 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+
+import '../constants/app_constants.dart';
+import '../models/activity.dart';
 import '../providers/auth_provider.dart';
 import '../providers/spotify_provider.dart';
-import '../models/activity.dart';
-import '../widgets/activity_card.dart';
-import '../widgets/activity_skeleton.dart';
-import '../widgets/performance_selectors.dart';
+import '../services/app_logger.dart';
 import '../services/debounced_refresh_service.dart';
 import '../utils/auth_utils.dart';
 import '../utils/theme.dart';
-import '../services/app_logger.dart';
-import '../constants/app_constants.dart';
+import '../widgets/activity_card.dart';
+import '../widgets/activity_skeleton.dart';
+import '../widgets/performance_selectors.dart';
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+/// The Activities page shows the authenticated user's Spotify friend activity.
+///
+/// This screen is intentionally self-contained: it owns its own data loading,
+/// pull-to-refresh, automatic background refresh, and all of its empty/error
+/// states. The scrollable uses [ClampingScrollPhysics] so the list never
+/// overscrolls past its bounds, while [AlwaysScrollableScrollPhysics] keeps
+/// pull-to-refresh usable even when the list is shorter than the screen.
+class ActivitiesScreen extends StatefulWidget {
+  const ActivitiesScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<ActivitiesScreen> createState() => _ActivitiesScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
+class _ActivitiesScreenState extends State<ActivitiesScreen>
+    with DebouncedRefreshMixin {
+  static const _autoRefreshInterval = Duration(seconds: 30);
+
   Timer? _refreshTimer;
 
   @override
@@ -34,15 +46,15 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
   @override
   void dispose() {
     _refreshTimer?.cancel();
-    DebouncedRefreshService.cancel(DebounceKeys.homeRefresh);
+    DebouncedRefreshService.cancel(DebounceKeys.activitiesRefresh);
     super.dispose();
   }
 
   void _startAutoRefresh() {
-    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+    _refreshTimer = Timer.periodic(_autoRefreshInterval, (_) {
       if (mounted) {
         DebouncedRefreshService.throttle(
-          DebounceKeys.homeRefresh,
+          DebounceKeys.activitiesRefresh,
           const Duration(seconds: 5),
           _refreshData,
         );
@@ -53,57 +65,68 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
   Future<void> _loadData() async {
     final authProvider = context.read<AuthProvider>();
     final spotifyProvider = context.read<SpotifyProvider>();
+
     if (!authProvider.isInitialized) {
-      AppLogger.warning('Authentication not yet initialized, skipping data load');
+      AppLogger.warning(
+          'Authentication not yet initialized, skipping data load');
       return;
     }
+
     if (authProvider.isAuthenticated) {
       await spotifyProvider.fastInitialLoad();
       await spotifyProvider.updateWidget(currentUser: authProvider.currentUser);
     } else {
-      AppLogger.warning('No authentication available - cannot load friend activities');
+      AppLogger.warning(
+          'No authentication available - cannot load friend activities');
     }
   }
 
   Future<void> _refreshData() async {
     final authProvider = context.read<AuthProvider>();
     final spotifyProvider = context.read<SpotifyProvider>();
+
     if (!authProvider.isInitialized) {
-      AppLogger.warning('Authentication not yet initialized, skipping data refresh');
+      AppLogger.warning(
+          'Authentication not yet initialized, skipping data refresh');
       return;
     }
+
     if (authProvider.isAuthenticated) {
       await spotifyProvider.silentRefresh();
       await spotifyProvider.updateWidget(currentUser: authProvider.currentUser);
     } else {
-      AppLogger.warning('No authentication available - cannot refresh friend activities');
+      AppLogger.warning(
+          'No authentication available - cannot refresh friend activities');
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: HomeScreenDataSelector(
+      body: ActivitiesScreenDataSelector(
         builder: (context, isAuthenticated, isLoading, activities, error) {
           if (!isAuthenticated) {
-            return _buildSingleScreenScroll(_buildUnauthenticated());
+            return _NoBounceScrollable(child: _UnauthenticatedState());
           }
+
           return RefreshIndicator(
             onRefresh: _refreshData,
             color: AppTheme.primary,
             backgroundColor: AppTheme.surfaceRaised,
             child: CustomScrollView(
-              // ClampingScrollPhysics keeps the friend list inside the viewport
-              // bounds while AlwaysScrollableScrollPhysics keeps pull-to-refresh
-              // usable even when the list is shorter than the screen.
               physics: const ClampingScrollPhysics(
                 parent: AlwaysScrollableScrollPhysics(),
               ),
               slivers: [
                 SliverToBoxAdapter(
-                  child: _buildHeader(isLoading && activities.isNotEmpty),
+                  child: _Header(showProgress: isLoading && activities.isNotEmpty),
                 ),
-                _buildBodySlivers(isLoading, activities, error),
+                _ContentSlivers(
+                  isLoading: isLoading,
+                  activities: activities,
+                  error: error,
+                  onRetry: _onRetry,
+                ),
               ],
             ),
           );
@@ -112,10 +135,45 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
     );
   }
 
-  Widget _buildHeader(bool showProgress) {
-    final sp = context.read<SpotifyProvider>();
-    final apiCount = sp.buddylistApiCount;
-    final parsedCount = sp.buddylistParsedCount;
+  void _onRetry() {
+    debouncedRefresh(
+      DebounceKeys.activitiesRefresh,
+      const Duration(milliseconds: 300),
+      _refreshData,
+    );
+  }
+}
+
+/// Scrollable wrapper for single-screen states that prevents any overscroll
+/// past the viewport bounds.
+class _NoBounceScrollable extends StatelessWidget {
+  final Widget child;
+
+  const _NoBounceScrollable({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomScrollView(
+      physics: const ClampingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
+      ),
+      slivers: [
+        SliverFillRemaining(hasScrollBody: false, child: child),
+      ],
+    );
+  }
+}
+
+class _Header extends StatelessWidget {
+  final bool showProgress;
+
+  const _Header({required this.showProgress});
+
+  @override
+  Widget build(BuildContext context) {
+    final spotifyProvider = context.read<SpotifyProvider>();
+    final apiCount = spotifyProvider.buddylistApiCount;
+    final parsedCount = spotifyProvider.buddylistParsedCount;
     final hasMismatch = apiCount > 0 && parsedCount >= 0 && parsedCount < apiCount;
     final countLabel = hasMismatch ? ' ($parsedCount/$apiCount)' : '';
 
@@ -134,15 +192,7 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: GestureDetector(
-                    onLongPress: () {
-                      Clipboard.setData(ClipboardData(text: sp.buddylistDiagnostic));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Debug info copied'),
-                          duration: Duration(seconds: 2),
-                        ),
-                      );
-                    },
+                    onLongPress: () => _copyDiagnostic(context, spotifyProvider),
                     child: Text(
                       'Friend Activity$countLabel',
                       style: TextStyle(
@@ -167,108 +217,77 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
     );
   }
 
-  Widget _buildBodySlivers(
-    bool isLoading,
-    List<Activity> activities,
-    String? error,
-  ) {
+  void _copyDiagnostic(BuildContext context, SpotifyProvider provider) {
+    Clipboard.setData(ClipboardData(text: provider.buddylistDiagnostic));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Debug info copied'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+}
+
+class _ContentSlivers extends StatelessWidget {
+  final bool isLoading;
+  final List<Activity> activities;
+  final String? error;
+  final VoidCallback onRetry;
+
+  const _ContentSlivers({
+    required this.isLoading,
+    required this.activities,
+    required this.error,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     if (isLoading && activities.isEmpty) {
       return const _SkeletonSliverList(count: 6);
     }
+
     if (error != null) {
       return SliverFillRemaining(
         hasScrollBody: false,
-        child: _buildError(error),
+        child: _ErrorState(error: error!, onRetry: onRetry),
       );
     }
+
     if (activities.isEmpty) {
       return SliverFillRemaining(
         hasScrollBody: false,
-        child: _buildEmpty(),
+        child: _EmptyState(),
       );
     }
-    return _buildActivitySlivers(activities);
-  }
 
-  /// Wraps a widget in a scrollable that fills the viewport without bouncing
-  /// past its bounds.
-  Widget _buildSingleScreenScroll(Widget child) {
-    return CustomScrollView(
-      physics: const ClampingScrollPhysics(
-        parent: AlwaysScrollableScrollPhysics(),
-      ),
-      slivers: [
-        SliverFillRemaining(hasScrollBody: false, child: child),
-      ],
-    );
+    return _ActivityList(activities: activities);
   }
+}
 
-  Widget _buildActivitySlivers(List<Activity> activities) {
+class _ActivityList extends StatelessWidget {
+  final List<Activity> activities;
+
+  const _ActivityList({required this.activities});
+
+  @override
+  Widget build(BuildContext context) {
     return SliverPadding(
       padding: const EdgeInsets.only(bottom: 8),
       sliver: SliverList(
         delegate: SliverChildBuilderDelegate(
-          (context, i) {
-            if (i.isOdd) {
+          (context, index) {
+            if (index.isOdd) {
               return const Divider(height: 1, color: AppTheme.dividerColor);
             }
-            final index = i ~/ 2;
+            final activityIndex = index ~/ 2;
             return RepaintBoundary(
-              child: ActivityCard(activity: activities[index]),
+              child: ActivityCard(activity: activities[activityIndex]),
             );
           },
           childCount: activities.length * 2 - 1,
         ),
       ),
-    );
-  }
-
-  Widget _buildUnauthenticated() {
-    return const _CenteredState(
-      icon: Icons.lock_outline,
-      title: 'Authentication Required',
-      subtitle: 'Please log in to view friends\' activities',
-    );
-  }
-
-  Widget _buildEmpty() {
-    final diag = context.read<SpotifyProvider>().buddylistDiagnostic;
-    return _DiagnosticEmpty(diagnostic: diag);
-  }
-
-  Widget _buildError(String error) {
-    final isAuthError = error.contains('Authentication expired');
-    return _CenteredState(
-      icon: isAuthError ? Icons.lock_outline : Icons.wifi_off,
-      title: isAuthError ? 'Authentication Required' : 'Could not load',
-      subtitle: error,
-      action: isAuthError
-          ? TextButton(
-              onPressed: () async {
-                final ok = await AuthUtils.handleReAuthentication(context);
-                if (ok && mounted) {
-                  debouncedRefresh(
-                    DebounceKeys.homeRefresh,
-                    const Duration(milliseconds: 500),
-                    _loadData,
-                  );
-                }
-              },
-              child: const Text('Login Again',
-                  style: TextStyle(color: AppTheme.primary)),
-            )
-          : TextButton(
-              onPressed: () {
-                context.read<SpotifyProvider>().clearError();
-                debouncedRefresh(
-                  DebounceKeys.homeRefresh,
-                  const Duration(milliseconds: 300),
-                  _refreshData,
-                );
-              },
-              child: const Text('Try again',
-                  style: TextStyle(color: AppTheme.primary)),
-            ),
     );
   }
 }
@@ -319,8 +338,76 @@ class _SkeletonSliverListState extends State<_SkeletonSliverList>
   }
 }
 
+class _UnauthenticatedState extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return const _CenteredState(
+      icon: Icons.lock_outline,
+      title: 'Authentication Required',
+      subtitle: 'Please log in to view friends\' activities',
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final diagnostic = context.read<SpotifyProvider>().buddylistDiagnostic;
+    return _DiagnosticEmpty(diagnostic: diagnostic);
+  }
+}
+
+class _ErrorState extends StatelessWidget {
+  final String error;
+  final VoidCallback onRetry;
+
+  const _ErrorState({required this.error, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    final isAuthError = error.contains('Authentication expired');
+
+    return _CenteredState(
+      icon: isAuthError ? Icons.lock_outline : Icons.wifi_off,
+      title: isAuthError ? 'Authentication Required' : 'Could not load',
+      subtitle: error,
+      action: isAuthError
+          ? TextButton(
+              onPressed: () => _handleReAuth(context),
+              child: const Text(
+                'Login Again',
+                style: TextStyle(color: AppTheme.primary),
+              ),
+            )
+          : TextButton(
+              onPressed: () {
+                context.read<SpotifyProvider>().clearError();
+                onRetry();
+              },
+              child: const Text(
+                'Try again',
+                style: TextStyle(color: AppTheme.primary),
+              ),
+            ),
+    );
+  }
+
+  Future<void> _handleReAuth(BuildContext context) async {
+    final ok = await AuthUtils.handleReAuthentication(context);
+    if (ok && context.mounted) {
+      final state = context.findAncestorStateOfType<_ActivitiesScreenState>();
+      state?.debouncedRefresh(
+        DebounceKeys.activitiesRefresh,
+        const Duration(milliseconds: 500),
+        state._loadData,
+      );
+    }
+  }
+}
+
 class _DiagnosticEmpty extends StatelessWidget {
   final String diagnostic;
+
   const _DiagnosticEmpty({required this.diagnostic});
 
   @override
@@ -331,7 +418,11 @@ class _DiagnosticEmpty extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.people_outline, size: 48, color: AppTheme.textSubdued),
+            const Icon(
+              Icons.people_outline,
+              size: 48,
+              color: AppTheme.textSubdued,
+            ),
             const SizedBox(height: 16),
             const Text(
               'No friend activity',
@@ -411,7 +502,10 @@ class _CenteredState extends StatelessWidget {
                 fontSize: 13,
               ),
             ),
-            if (action != null) ...[const SizedBox(height: 16), action!],
+            if (action != null) ...[
+              const SizedBox(height: 16),
+              action!,
+            ],
           ],
         ),
       ),

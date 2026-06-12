@@ -142,7 +142,7 @@ mixin DebouncedRefreshMixin<T extends StatefulWidget> on State<T> {
 
 /// Common debounce keys for consistency
 class DebounceKeys {
-  static const String homeRefresh = 'home_refresh';
+  static const String activitiesRefresh = 'activities_refresh';
   static const String profileRefresh = 'profile_refresh';
   static const String manualRefresh = 'manual_refresh';
   static const String searchQuery = 'search_query';

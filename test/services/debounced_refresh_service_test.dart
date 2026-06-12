@@ -272,7 +272,7 @@ void main() {
   group('DebounceKeys constants', () {
     test('all keys are non-empty strings', () {
       final keys = [
-        DebounceKeys.homeRefresh,
+        DebounceKeys.activitiesRefresh,
         DebounceKeys.profileRefresh,
         DebounceKeys.manualRefresh,
         DebounceKeys.searchQuery,
@@ -289,7 +289,7 @@ void main() {
 
     test('all keys are unique', () {
       final keys = [
-        DebounceKeys.homeRefresh,
+        DebounceKeys.activitiesRefresh,
         DebounceKeys.profileRefresh,
         DebounceKeys.manualRefresh,
         DebounceKeys.searchQuery,
