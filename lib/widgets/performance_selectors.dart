@@ -134,7 +134,7 @@ class LastUpdatedSelector extends StatelessWidget {
 }
 
 /// Composite selector for common combinations to reduce nesting
-class HomeScreenDataSelector extends StatelessWidget {
+class ActivitiesScreenDataSelector extends StatelessWidget {
   final Widget Function(
     BuildContext context, 
     bool isAuthenticated,
@@ -143,15 +143,15 @@ class HomeScreenDataSelector extends StatelessWidget {
     String? error,
   ) builder;
   
-  const HomeScreenDataSelector({
+  const ActivitiesScreenDataSelector({
     super.key,
     required this.builder,
   });
   
   @override
   Widget build(BuildContext context) {
-    return Selector2<AuthProvider, SpotifyProvider, _HomeScreenData>(
-      selector: (context, authProvider, spotifyProvider) => _HomeScreenData(
+    return Selector2<AuthProvider, SpotifyProvider, _ActivitiesScreenData>(
+      selector: (context, authProvider, spotifyProvider) => _ActivitiesScreenData(
         isAuthenticated: authProvider.isAuthenticated,
         isLoading: authProvider.isLoading || spotifyProvider.isLoading || spotifyProvider.isSkeletonLoading,
         activities: spotifyProvider.friendsActivities,
@@ -187,13 +187,13 @@ class HomeScreenDataSelector extends StatelessWidget {
   }
 }
 
-class _HomeScreenData {
+class _ActivitiesScreenData {
   final bool isAuthenticated;
   final bool isLoading;
   final List<Activity> activities;
   final String? error;
   
-  const _HomeScreenData({
+  const _ActivitiesScreenData({
     required this.isAuthenticated,
     required this.isLoading,
     required this.activities,

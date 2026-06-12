@@ -41,7 +41,7 @@ Activity _makeActivity({
   });
 }
 
-// Mirror the shouldRebuild logic from HomeScreenDataSelector
+// Mirror the shouldRebuild logic from ActivitiesScreenDataSelector
 bool _shouldRebuild(List<Activity> previous, List<Activity> next) {
   if (previous.length != next.length) return true;
   for (int i = 0; i < previous.length; i++) {
@@ -55,7 +55,7 @@ bool _shouldRebuild(List<Activity> previous, List<Activity> next) {
 }
 
 void main() {
-  group('HomeScreenDataSelector shouldRebuild logic', () {
+  group('ActivitiesScreenDataSelector shouldRebuild logic', () {
     test('returns false when lists are identical', () {
       final a = _makeActivity(userId: 'u1', isCurrentlyPlaying: false);
       expect(_shouldRebuild([a], [a]), isFalse);
