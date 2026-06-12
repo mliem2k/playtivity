@@ -20,37 +20,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   int _currentIndex = 0;
   late final PageController _pageController;
   late final List<Widget> _screens;
-  bool _navigating = false;
-
-  void _navigateToActivities() {
-    if (_navigating) return;
-    _navigating = true;
-    setState(() => _currentIndex = 0);
-    _pageController
-        .animateToPage(0,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOut)
-        .then((_) => _navigating = false);
-  }
-
-  void _navigateToProfile() {
-    if (_navigating) return;
-    _navigating = true;
-    setState(() => _currentIndex = 1);
-    _pageController
-        .animateToPage(1,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOut)
-        .then((_) => _navigating = false);
-  }
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController();
-    _screens = [
-      _KeepAlive(child: HomeScreen(onSwipeToProfile: _navigateToProfile)),
-      _KeepAlive(child: ProfileScreen(onSwipeBack: _navigateToActivities)),
+    _screens = const [
+      _KeepAlive(child: HomeScreen()),
+      _KeepAlive(child: ProfileScreen()),
     ];
     AppLogger.info('🏠 MainNavigationScreen initialized');
     WidgetsBinding.instance.addObserver(this);
@@ -116,7 +93,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     return Scaffold(
       body: PageView(
         controller: _pageController,
-        physics: const NeverScrollableScrollPhysics(),
         onPageChanged: (index) => setState(() => _currentIndex = index),
         children: _screens,
       ),

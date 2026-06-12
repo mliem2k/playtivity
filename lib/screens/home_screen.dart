@@ -15,8 +15,7 @@ import '../services/app_logger.dart';
 import '../constants/app_constants.dart';
 
 class HomeScreen extends StatefulWidget {
-  final VoidCallback? onSwipeToProfile;
-  const HomeScreen({super.key, this.onSwipeToProfile});
+  const HomeScreen({super.key});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -24,8 +23,6 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
   Timer? _refreshTimer;
-  Offset _dragStart = Offset.zero;
-  bool _didSwipeToProfile = false;
 
   @override
   void initState() {
@@ -86,39 +83,27 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Listener(
-        behavior: HitTestBehavior.translucent,
-        onPointerDown: (e) {
-          _dragStart = e.position;
-          _didSwipeToProfile = false;
-        },
-        onPointerMove: (e) {
-          if (_didSwipeToProfile || widget.onSwipeToProfile == null) return;
-          final dx = e.position.dx - _dragStart.dx;
-          final dy = (e.position.dy - _dragStart.dy).abs();
-          if (dx < -80 && -dx > dy * 1.5) {
-            _didSwipeToProfile = true;
-            widget.onSwipeToProfile!();
+      body: HomeScreenDataSelector(
+        builder: (context, isAuthenticated, isLoading, activities, error) {
+          if (!isAuthenticated) {
+            return _buildSingleScreenScroll(_buildUnauthenticated());
           }
-        },
-        child: HomeScreenDataSelector(
-          builder: (context, isAuthenticated, isLoading, activities, error) {
-            if (!isAuthenticated) return _buildUnauthenticated();
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildHeader(isLoading && activities.isNotEmpty),
-                Expanded(
-                  child: RefreshIndicator(
-                    onRefresh: _refreshData,
-                    color: AppTheme.primary,
-                    child: _buildContent(isLoading, activities, error),
-                  ),
+          return RefreshIndicator(
+            onRefresh: _refreshData,
+            color: AppTheme.primary,
+            child: CustomScrollView(
+              physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics(),
+              ),
+              slivers: [
+                SliverToBoxAdapter(
+                  child: _buildHeader(isLoading && activities.isNotEmpty),
                 ),
+                _buildContentSlivers(isLoading, activities, error),
               ],
-            );
-          },
-        ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -178,11 +163,30 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
     );
   }
 
-  Widget _buildContent(bool isLoading, List<Activity> activities, String? error) {
-    if (isLoading && activities.isEmpty) return const _SkeletonList();
-    if (error != null) return _buildSingleScreenScroll(_buildError(error));
-    if (activities.isEmpty) return _buildSingleScreenScroll(_buildEmpty());
-    return _buildActivityList(activities);
+  Widget _buildContentSlivers(
+    bool isLoading,
+    List<Activity> activities,
+    String? error,
+  ) {
+    if (isLoading && activities.isEmpty) {
+      return const SliverFillRemaining(
+        hasScrollBody: false,
+        child: _SkeletonList(),
+      );
+    }
+    if (error != null) {
+      return SliverFillRemaining(
+        hasScrollBody: false,
+        child: _buildError(error),
+      );
+    }
+    if (activities.isEmpty) {
+      return SliverFillRemaining(
+        hasScrollBody: false,
+        child: _buildEmpty(),
+      );
+    }
+    return _buildActivitySlivers(activities);
   }
 
   // Wraps a widget in a CustomScrollView so it fills the viewport and
@@ -200,15 +204,23 @@ class _HomeScreenState extends State<HomeScreen> with DebouncedRefreshMixin {
     );
   }
 
-  Widget _buildActivityList(List<Activity> activities) {
-    return ListView.separated(
-      physics: const BouncingScrollPhysics(
-        parent: AlwaysScrollableScrollPhysics(),
-      ),
+  Widget _buildActivitySlivers(List<Activity> activities) {
+    return SliverPadding(
       padding: const EdgeInsets.only(bottom: 8),
-      itemCount: activities.length,
-      separatorBuilder: (context, index) => const Divider(height: 1, color: AppTheme.dividerColor),
-      itemBuilder: (_, i) => RepaintBoundary(child: ActivityCard(activity: activities[i])),
+      sliver: SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (context, i) {
+            if (i.isOdd) {
+              return const Divider(height: 1, color: AppTheme.dividerColor);
+            }
+            final index = i ~/ 2;
+            return RepaintBoundary(
+              child: ActivityCard(activity: activities[index]),
+            );
+          },
+          childCount: activities.length * 2 - 1,
+        ),
+      ),
     );
   }
 
@@ -290,10 +302,12 @@ class _SkeletonListState extends State<_SkeletonList>
 
   @override
   Widget build(BuildContext context) {
-    return ListView.builder(
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: 6,
-      itemBuilder: (context, index) => ActivitySkeleton(animation: _animation),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(
+        6,
+        (index) => ActivitySkeleton(animation: _animation),
+      ),
     );
   }
 }

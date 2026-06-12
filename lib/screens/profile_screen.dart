@@ -15,8 +15,7 @@ import '../services/app_logger.dart';
 import 'settings_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
-  final VoidCallback? onSwipeBack;
-  const ProfileScreen({super.key, this.onSwipeBack});
+  const ProfileScreen({super.key});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -25,8 +24,6 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen>
     with TickerProviderStateMixin {
   late TabController _tabController;
-  Offset _dragStart = Offset.zero;
-  bool _didSwipeBack = false;
 
   @override
   void initState() {
@@ -57,23 +54,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       extendBodyBehindAppBar: true,
-      body: Listener(
-        behavior: HitTestBehavior.translucent,
-        onPointerDown: (e) {
-          _dragStart = e.position;
-          _didSwipeBack = false;
-        },
-        onPointerMove: (e) {
-          if (_didSwipeBack || widget.onSwipeBack == null) return;
-          if (_tabController.index != 0) return;
-          final dx = e.position.dx - _dragStart.dx;
-          final dy = (e.position.dy - _dragStart.dy).abs();
-          if (dx > 80 && dx > dy * 1.5) {
-            _didSwipeBack = true;
-            widget.onSwipeBack!();
-          }
-        },
-        child: NestedScrollView(
+      body: NestedScrollView(
         headerSliverBuilder: (sliverContext, innerBoxIsScrolled) => [
           SliverToBoxAdapter(
             child: Selector2<AuthProvider, SpotifyProvider,
@@ -112,13 +93,13 @@ class _ProfileScreenState extends State<ProfileScreen>
               prev.isLoading != next.isLoading,
           builder: (ctx, data, _) => TabBarView(
             controller: _tabController,
+            physics: const NeverScrollableScrollPhysics(),
             children: [
               _buildTopSongs(ctx, data.topTracks, data.isLoading),
               _buildTopArtists(ctx, data.topArtists, data.isLoading),
             ],
           ),
         ),
-      ),
       ),
     );
   }
@@ -236,13 +217,10 @@ class _ProfileScreenState extends State<ProfileScreen>
       );
     }
     return ListView.separated(
-      physics: const BouncingScrollPhysics(
+      physics: const ClampingScrollPhysics(
         parent: AlwaysScrollableScrollPhysics(),
       ),
-      padding: EdgeInsets.only(
-        top: 8,
-        bottom: MediaQuery.of(context).padding.bottom + 16,
-      ),
+      padding: const EdgeInsets.only(top: 8, bottom: 16),
       itemCount: topTracks.length,
       addAutomaticKeepAlives: false,
       addRepaintBoundaries: false,
@@ -274,13 +252,10 @@ class _ProfileScreenState extends State<ProfileScreen>
       );
     }
     return ListView.separated(
-      physics: const BouncingScrollPhysics(
+      physics: const ClampingScrollPhysics(
         parent: AlwaysScrollableScrollPhysics(),
       ),
-      padding: EdgeInsets.only(
-        top: 8,
-        bottom: MediaQuery.of(context).padding.bottom + 16,
-      ),
+      padding: const EdgeInsets.only(top: 8, bottom: 16),
       itemCount: topArtists.length,
       addAutomaticKeepAlives: false,
       addRepaintBoundaries: false,
