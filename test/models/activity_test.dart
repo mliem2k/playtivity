@@ -10,7 +10,7 @@ void main() {
       expect(activity.type, ActivityType.track);
       expect(activity.track, isNotNull);
       expect(activity.playlist, isNull);
-      expect(activity.isCurrentlyPlaying, isTrue);
+      expect(activity.isCurrentlyPlaying, isFalse); // timestamp is days old
       expect(activity.user.id, 'user_123');
       expect(activity.track!.name, 'Test Song');
     });
@@ -60,7 +60,7 @@ void main() {
       final activity = Activity.fromJson(TestFixtures.trackActivityJson());
       final json = activity.toJson();
       expect(json['type'], 'track');
-      expect(json['is_currently_playing'], isTrue);
+      expect(json['is_currently_playing'], isFalse); // timestamp is days old
       expect(json['track'], isNotNull);
       expect(json['playlist'], isNull);
       expect(json['timestamp'], '2026-06-08T10:00:00.000Z');

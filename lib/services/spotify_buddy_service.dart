@@ -113,6 +113,26 @@ class SpotifyBuddyService {
     _lastBuddyListFetch = null;
   }
 
+  /// Recomputes [isCurrentlyPlaying] for [a] against the current clock.
+  /// Activities carried over from the cache may have a stale true from when they
+  /// were first parsed; recomputing here ensures friends who stopped playing flip
+  /// to false once their timestamp exceeds the 5-minute threshold.
+  Activity _recomputeStatus(Activity a) {
+    if (a.type == ActivityType.playlist) {
+      return a.isCurrentlyPlaying ? Activity(
+        user: a.user, track: a.track, playlist: a.playlist,
+        timestamp: a.timestamp, isCurrentlyPlaying: false, type: a.type,
+      ) : a;
+    }
+    final elapsedMs = DateTime.now().millisecondsSinceEpoch - a.timestamp.millisecondsSinceEpoch;
+    final computed = elapsedMs >= 0 && elapsedMs < _currentlyPlayingThresholdMs;
+    if (computed == a.isCurrentlyPlaying) return a;
+    return Activity(
+      user: a.user, track: a.track, playlist: a.playlist,
+      timestamp: a.timestamp, isCurrentlyPlaying: computed, type: a.type,
+    );
+  }
+
   /// Merges [fresh] activities with the existing cache, keeping the most recent
   /// activity per user. No time-based eviction is applied here — the caller
   /// (_loadPersistedBuddyList) handles cleanup of ancient entries on startup.
@@ -133,7 +153,10 @@ class SpotifyBuddyService {
       merged[a.user.id] = a;
     }
 
-    final result = merged.values.toList()
+    // Recompute isCurrentlyPlaying for every entry so friends who stopped
+    // playing (and are no longer in the API response) flip from true to false
+    // once 5 minutes have elapsed, instead of staying "Listening now" forever.
+    final result = merged.values.map(_recomputeStatus).toList()
       ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
     final carried = result.length - fresh.length;

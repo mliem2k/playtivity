@@ -1,11 +1,17 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:playtivity/models/activity.dart';
 
+// isCurrentlyPlaying is recomputed from the timestamp in Activity.fromJson, so
+// control the result through the timestamp rather than the stored flag.
 Activity _makeActivity({
   required String userId,
-  required bool isCurrentlyPlaying,
-  String timestamp = '2026-06-10T10:00:00.000Z',
+  bool isCurrentlyPlaying = false,
+  String? timestamp,
 }) {
+  final ts = timestamp ??
+      (isCurrentlyPlaying
+          ? DateTime.now().subtract(const Duration(seconds: 30)).toIso8601String()
+          : '2026-01-01T10:00:00.000Z');
   return Activity.fromJson({
     'user': {
       'id': userId,
@@ -29,7 +35,7 @@ Activity _makeActivity({
       'uri': 'spotify:track:1',
     },
     'playlist': null,
-    'timestamp': timestamp,
+    'timestamp': ts,
     'is_currently_playing': isCurrentlyPlaying,
     'type': 'track',
   });
@@ -67,8 +73,11 @@ void main() {
     });
 
     test('returns false when same number of activities with same content', () {
-      final a = _makeActivity(userId: 'u1', isCurrentlyPlaying: true);
-      final b = _makeActivity(userId: 'u1', isCurrentlyPlaying: true);
+      // Share a fixed recent timestamp so both activities have identical fields.
+      final recentTs =
+          DateTime.now().subtract(const Duration(seconds: 30)).toIso8601String();
+      final a = _makeActivity(userId: 'u1', isCurrentlyPlaying: true, timestamp: recentTs);
+      final b = _makeActivity(userId: 'u1', isCurrentlyPlaying: true, timestamp: recentTs);
       expect(_shouldRebuild([a], [b]), isFalse);
     });
 

@@ -4,6 +4,11 @@ import 'package:playtivity/models/activity.dart';
 import 'package:playtivity/widgets/activity_card.dart';
 
 Activity _makeActivity({bool isPlaying = false}) {
+  // isCurrentlyPlaying is recomputed from the timestamp in fromJson, so use a
+  // recent timestamp for "playing" and an old one for "not playing".
+  final timestamp = isPlaying
+      ? DateTime.now().subtract(const Duration(seconds: 30)).toIso8601String()
+      : '2026-01-01T10:00:00.000Z';
   return Activity.fromJson({
     'user': {
       'id': 'u1',
@@ -29,7 +34,7 @@ Activity _makeActivity({bool isPlaying = false}) {
       'uri': 'spotify:track:abc',
     },
     'playlist': null,
-    'timestamp': '2026-06-10T10:00:00.000Z',
+    'timestamp': timestamp,
     'is_currently_playing': isPlaying,
     'type': 'track',
   });
