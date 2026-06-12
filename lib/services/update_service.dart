@@ -223,6 +223,17 @@ class UpdateService {
     }
   }
   
+  /// Parses a GitHub release's `published_at` field, returning null if missing or invalid.
+  static DateTime? _parsePublishedAt(Map<String, dynamic> releaseJson) {
+    final publishedAt = releaseJson['published_at'];
+    if (publishedAt is! String || publishedAt.isEmpty) return null;
+    try {
+      return DateTime.parse(publishedAt);
+    } catch (_) {
+      return null;
+    }
+  }
+
   // Fetch the releases list from GitHub (single HTTP call shared by both checkers)
   static Future<List<dynamic>> _fetchGithubReleases() async {
     final response = await http.get(Uri.parse(_githubReleasesApi));
@@ -238,7 +249,12 @@ class UpdateService {
     AppVersionInfo currentVersion,
   ) {
     try {
+      // GitHub returns releases sorted by creation time, not tag/version date.
+      // Pick the stable release with the most recent publish date so a newer
+      // release isn't hidden behind an older one that happened to be created later.
       Map<String, dynamic>? latestReleaseJson;
+      DateTime? latestPublishedAt;
+
       for (final releaseJson in releasesJson) {
         final tagName = releaseJson['tag_name'] as String? ?? '';
         // Accept only semver-style tags (v1.2.3 or 1.2.3), excluding nightly
@@ -246,9 +262,13 @@ class UpdateService {
         // recreated on every nightly build and pollutes the list.
         final isStableTag = (tagName.startsWith('v') || RegExp(r'^\d+\.\d+').hasMatch(tagName)) &&
             !tagName.contains('nightly');
-        if (isStableTag) {
+        if (!isStableTag) continue;
+
+        final publishedAt = _parsePublishedAt(releaseJson);
+        if (publishedAt != null &&
+            (latestPublishedAt == null || publishedAt.isAfter(latestPublishedAt))) {
+          latestPublishedAt = publishedAt;
           latestReleaseJson = releaseJson as Map<String, dynamic>;
-          break;
         }
       }
 
@@ -293,16 +313,24 @@ class UpdateService {
     AppVersionInfo currentVersion,
   ) {
     try {
-      // Find the latest nightly release (tagged with 'nightly-' prefix)
+      // GitHub returns releases sorted by creation time, not by the nightly
+      // timestamp embedded in the tag. Scan all nightly- releases and pick the
+      // one with the most recent publish date.
       Map<String, dynamic>? latestNightlyJson;
+      DateTime? latestPublishedAt;
+
       for (final releaseJson in releasesJson) {
         final tagName = releaseJson['tag_name'] as String? ?? '';
-        if (tagName.startsWith('nightly-')) {
+        if (!tagName.startsWith('nightly-')) continue;
+
+        final publishedAt = _parsePublishedAt(releaseJson);
+        if (publishedAt != null &&
+            (latestPublishedAt == null || publishedAt.isAfter(latestPublishedAt))) {
+          latestPublishedAt = publishedAt;
           latestNightlyJson = releaseJson as Map<String, dynamic>;
-          break; // First one is the latest since releases are sorted by date
         }
       }
-      
+
       if (latestNightlyJson == null) {
         return UpdateCheckResult(
           hasUpdate: false,
