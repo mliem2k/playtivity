@@ -920,6 +920,7 @@ class SpotifyBuddyService {
     }
 
     var updatedArtists = List<Artist>.from(artists);
+    var notified = false;
 
     for (final artistId in missingIds) {
       try {
@@ -946,20 +947,19 @@ class SpotifyBuddyService {
               monthlyListeners: monthlyListeners,
               uri: old.uri,
             );
-            if (onUpdate != null) onUpdate(List<Artist>.from(updatedArtists));
+            if (onUpdate != null) {
+              onUpdate(List<Artist>.from(updatedArtists));
+              notified = true;
+            }
           }
         }
       } catch (e) {
         AppLogger.spotify('⚠️ Failed to fetch details for artist $artistId: $e');
-        _artistDetailsCache.put(artistId, {
-          'followers': 0,
-          'monthly_listeners': 0,
-          'cached_at': DateTime.now().millisecondsSinceEpoch,
-          'failed': true,
-        });
-        _artistCacheModified = true;
       }
     }
+
+    // Ensure at least one notification fires even if all fetches failed
+    if (!notified && onUpdate != null) onUpdate(List<Artist>.from(updatedArtists));
 
     // Save updated cache
     if (_artistCacheModified) {
@@ -1032,11 +1032,10 @@ class SpotifyBuddyService {
             final cachedAt = details['cached_at'] as int?;
             final now = DateTime.now().millisecondsSinceEpoch;
 
+            final failed = details['failed'] as bool? ?? false;
             // Cache expires after 7 days for artist details (they don't change often)
-            if (cachedAt != null && (now - cachedAt) < (7 * 24 * 60 * 60 * 1000)) {
+            if (!failed && cachedAt != null && (now - cachedAt) < (7 * 24 * 60 * 60 * 1000)) {
               _artistDetailsCache.put(artistId, Map<String, dynamic>.from(details));
-            } else {
-
             }
           }
         });
