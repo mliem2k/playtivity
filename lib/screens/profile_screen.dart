@@ -236,6 +236,9 @@ class _ProfileScreenState extends State<ProfileScreen>
       );
     }
     return ListView.separated(
+      physics: const BouncingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
+      ),
       padding: EdgeInsets.only(
         top: 8,
         bottom: MediaQuery.of(context).padding.bottom + 16,
@@ -271,6 +274,9 @@ class _ProfileScreenState extends State<ProfileScreen>
       );
     }
     return ListView.separated(
+      physics: const BouncingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
+      ),
       padding: EdgeInsets.only(
         top: 8,
         bottom: MediaQuery.of(context).padding.bottom + 16,

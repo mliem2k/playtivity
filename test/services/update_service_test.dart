@@ -1,12 +1,22 @@
 // test/services/update_service_test.dart
 import 'package:flutter_test/flutter_test.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:playtivity/services/update_service.dart';
 import 'package:playtivity/utils/version_utils.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+    PackageInfo.setMockInitialValues(
+      appName: 'playtivity',
+      packageName: 'com.mliem.playtivity',
+      version: '1.0.0',
+      buildNumber: '1',
+      buildSignature: '',
+    );
   });
 
   group('UpdateService.isCurrentVersionNightly', () {
