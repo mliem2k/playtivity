@@ -228,7 +228,7 @@ class UpdateService {
     final publishedAt = releaseJson['published_at'];
     if (publishedAt is! String || publishedAt.isEmpty) return null;
     try {
-      return DateTime.parse(publishedAt);
+      return DateTime.parse(publishedAt).toLocal();
     } catch (_) {
       return null;
     }
@@ -634,7 +634,7 @@ class UpdateInfo {
     // Parse release date
     DateTime buildDate;
     try {
-      buildDate = DateTime.parse(json['published_at'] as String);
+      buildDate = DateTime.parse(json['published_at'] as String).toLocal();
     } catch (_) {
       buildDate = DateTime.now();
     }
