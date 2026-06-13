@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/spotify_provider.dart';
@@ -19,15 +20,19 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     with WidgetsBindingObserver {
   int _currentIndex = 0;
   late final PageController _pageController;
+  late final ScrollController _activitiesScrollController;
+  late final ScrollController _profileScrollController;
   late final List<Widget> _screens;
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController();
-    _screens = const [
-      _KeepAlive(child: ActivitiesScreen()),
-      _KeepAlive(child: ProfileScreen()),
+    _activitiesScrollController = ScrollController();
+    _profileScrollController = ScrollController();
+    _screens = [
+      _KeepAlive(child: ActivitiesScreen(scrollController: _activitiesScrollController)),
+      _KeepAlive(child: ProfileScreen(scrollController: _profileScrollController)),
     ];
     AppLogger.info('🏠 MainNavigationScreen initialized');
     WidgetsBinding.instance.addObserver(this);
@@ -39,6 +44,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   @override
   void dispose() {
     _pageController.dispose();
+    _activitiesScrollController.dispose();
+    _profileScrollController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -104,6 +111,20 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (index) {
+          HapticFeedback.selectionClick();
+          if (index == _currentIndex) {
+            final controller = index == 0
+                ? _activitiesScrollController
+                : _profileScrollController;
+            if (controller.hasClients) {
+              controller.animateTo(
+                0,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOut,
+              );
+            }
+            return;
+          }
           setState(() => _currentIndex = index);
           _pageController.animateToPage(
             index,
