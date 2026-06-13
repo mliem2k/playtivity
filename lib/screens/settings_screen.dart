@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/auth_provider.dart';
 import '../providers/spotify_provider.dart';
 import '../services/update_service.dart';
@@ -9,6 +10,8 @@ import '../utils/version_utils.dart';
 import '../services/app_logger.dart';
 import '../utils/theme.dart';
 import '../services/url_launcher_service.dart';
+import '../models/user.dart';
+import '../utils/spotify_launcher.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -54,53 +57,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: SafeArea(
         child: Consumer<AuthProvider>(
           builder: (context, authProvider, child) {
+            final user = authProvider.currentUser;
             return ListView(
               children: [
-                // Account Section
+                _buildAccountHeader(user),
                 _sectionHeader('ACCOUNT'),
-                if (authProvider.currentUser != null) ...[
-                  _tile(
-                    icon: Icons.person,
-                    title: 'Display Name',
-                    subtitle: authProvider.currentUser!.displayName,
-                  ),
-                  _divider(),
-                  _tile(
-                    icon: Icons.email,
-                    title: 'Email',
-                    subtitle: authProvider.currentUser!.email,
-                  ),
-                  _divider(),
-                  _tile(
-                    icon: Icons.public,
-                    title: 'Country',
-                    subtitle: authProvider.currentUser!.country,
-                  ),
-                  _divider(),
-                ],
-                ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  title: const Text(
-                    'Log Out',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: AppTheme.errorRed,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                    ),
-                  ),
-                  onTap: () => _showLogoutDialog(context),
+                _settingsTile(
+                  icon: Icons.public,
+                  title: 'Country',
+                  subtitle: user?.country,
                 ),
-                const SizedBox(height: 8),
-
-                // Updates Section
-                _sectionHeader('UPDATES'),
-                _buildUpdatePreferencesTile(context),
                 _divider(),
-                _buildCheckForUpdatesTile(context),
-                const SizedBox(height: 8),
-
-                // About Section
+                _sectionHeader('UPDATES'),
+                _buildNightlyTile(context),
+                _divider(),
+                _settingsTile(
+                  icon: Icons.system_update,
+                  title: 'Check for Updates',
+                  subtitle: 'Look for new versions of the app',
+                  onTap: () => _checkForUpdates(context),
+                ),
                 _sectionHeader('ABOUT'),
                 FutureBuilder<PackageInfo>(
                   future: PackageInfo.fromPlatform(),
@@ -108,7 +84,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     final version = snapshot.hasData
                         ? VersionUtils.formatVersion(snapshot.data!.version)
                         : 'Loading...';
-                    return _tile(
+                    return _settingsTile(
                       icon: Icons.info_outline,
                       title: 'Playtivity',
                       subtitle: 'Version $version',
@@ -116,7 +92,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   },
                 ),
                 _divider(),
-                _tile(
+                _settingsTile(
                   icon: Icons.open_in_browser,
                   title: 'GitHub Releases',
                   subtitle: 'View all releases and download APKs',
@@ -125,11 +101,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
                 _divider(),
-                _tile(
+                _settingsTile(
                   icon: Icons.music_note,
                   title: 'About',
-                  subtitle: 'See what your friends are listening to on Spotify',
+                  subtitle:
+                      'See what your friends are listening to on Spotify',
                 ),
+                const SizedBox(height: 32),
+                _settingsTile(
+                  icon: Icons.logout,
+                  title: 'Log Out',
+                  isDanger: true,
+                  onTap: () => _showLogoutDialog(context),
+                ),
+                const SizedBox(height: 16),
               ],
             );
           },
@@ -153,83 +138,160 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _tile({
+  Widget _settingsTile({
     required IconData icon,
     required String title,
-    required String subtitle,
+    String? subtitle,
     VoidCallback? onTap,
+    Widget? trailingWidget,
+    Color? iconColor,
+    bool isDanger = false,
   }) {
+    final effectiveIconColor =
+        isDanger ? AppTheme.errorRed : (iconColor ?? AppTheme.textSecondary);
+    final Widget? trailing = trailingWidget ??
+        (onTap != null && !isDanger
+            ? const Icon(Icons.chevron_right,
+                color: AppTheme.textSubdued, size: 20)
+            : null);
+
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: Icon(icon, color: AppTheme.textSecondary, size: 22),
+      leading: Icon(icon, color: effectiveIconColor, size: 22),
       title: Text(
         title,
-        style: const TextStyle(
-          color: AppTheme.textPrimary,
-          fontWeight: FontWeight.w500,
+        style: TextStyle(
+          color: isDanger ? AppTheme.errorRed : AppTheme.textPrimary,
+          fontWeight: isDanger ? FontWeight.w700 : FontWeight.w500,
           fontSize: 14,
         ),
       ),
-      subtitle: Text(
-        subtitle,
-        style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
-      ),
+      subtitle: subtitle != null
+          ? Text(
+              subtitle,
+              style:
+                  const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+            )
+          : null,
+      trailing: trailing,
       onTap: onTap,
     );
   }
 
   Widget _divider() =>
-      const Divider(height: 1, color: AppTheme.dividerColor, indent: 16);
+      const Divider(height: 1, color: AppTheme.dividerColor, indent: 56);
 
-  // Build widget for update preferences
-  Widget _buildUpdatePreferencesTile(BuildContext context) {
-    // Show loading if preference not loaded yet
+  Widget _buildAccountHeader(User? user) {
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [AppTheme.primary, AppTheme.background],
+          stops: [0.0, 0.7],
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 40,
+              backgroundColor: AppTheme.surfaceElevated,
+              backgroundImage: user?.imageUrl != null
+                  ? CachedNetworkImageProvider(
+                      user!.imageUrl!,
+                      maxWidth: 240,
+                      maxHeight: 240,
+                    )
+                  : null,
+              child: user?.imageUrl == null
+                  ? Text(
+                      user?.displayName.isNotEmpty == true
+                          ? user!.displayName[0].toUpperCase()
+                          : '?',
+                      style: const TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                        color: AppTheme.textPrimary,
+                      ),
+                    )
+                  : null,
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    user?.displayName ?? 'Unknown User',
+                    style: const TextStyle(
+                      color: AppTheme.textPrimary,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 20,
+                    ),
+                  ),
+                  if (user?.email.isNotEmpty == true) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      user!.email,
+                      style: const TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (user != null)
+              IconButton(
+                icon: const Icon(
+                  Icons.open_in_new,
+                  color: AppTheme.textSecondary,
+                  size: 20,
+                ),
+                tooltip: 'Open Spotify profile',
+                onPressed: () => SpotifyLauncher.launchSpotifyUri(
+                  'spotify:user:${user.id}',
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNightlyTile(BuildContext context) {
     if (_isNightlyEnabled == null) {
-      return const ListTile(
-        leading: Icon(Icons.update),
-        title: Text('Nightly Builds'),
-        subtitle: Text('Get early access to new features (may be unstable)'),
-        trailing: CircularProgressIndicator(),
+      return _settingsTile(
+        icon: Icons.update,
+        title: 'Nightly Builds',
+        subtitle: 'Get early access to new features (may be unstable)',
+        trailingWidget: const SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
       );
     }
-
-    return ListTile(
-      leading: Icon(
-        _isNightlyEnabled! ? Icons.science : Icons.update,
-        color: _isNightlyEnabled! ? Colors.orange : null,
-      ),
-      title: const Text('Nightly Builds'),
-      subtitle: const Text(
-        'Get early access to new features (may be unstable)'
-      ),
-      trailing: Switch(
+    return _settingsTile(
+      icon: _isNightlyEnabled! ? Icons.science : Icons.update,
+      title: 'Nightly Builds',
+      subtitle: 'Get early access to new features (may be unstable)',
+      iconColor: _isNightlyEnabled! ? Colors.orange : null,
+      trailingWidget: Switch(
         value: _isNightlyEnabled!,
         activeThumbColor: Colors.orange,
+        activeTrackColor: Colors.orange.withValues(alpha: 0.4),
         onChanged: (value) async {
-          // Update local state immediately for instant UI feedback
-          setState(() {
-            _isNightlyEnabled = value;
-          });
-          
-          // Save to preferences
+          setState(() => _isNightlyEnabled = value);
           await UpdateService.setNightlyBuildPreference(value);
-          
-          // Show modal dialog instead of toast if nightly enabled
           if (value && context.mounted) {
             _showNightlyEnabledDialog(context);
           }
         },
       ),
-    );
-  }
-  
-  // Build widget for checking updates
-  Widget _buildCheckForUpdatesTile(BuildContext context) {
-    return ListTile(
-      leading: const Icon(Icons.system_update),
-      title: const Text('Check for Updates'),
-      subtitle: const Text('Look for new versions of the app'),
-      onTap: () => _checkForUpdates(context),
     );
   }
 
