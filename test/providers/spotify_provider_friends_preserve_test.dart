@@ -36,6 +36,54 @@ Activity _activity(String userId) {
 }
 
 void main() {
+  group('SpotifyProvider constructor primes from persisted cache', () {
+    test('primes friendsActivities from cache without auth', () async {
+      final fake = _FakeBuddyService()
+        ..cache = [_activity('a'), _activity('b')];
+      final provider = SpotifyProvider(buddyService: fake);
+      addTearDown(provider.dispose);
+
+      // persistenceReady is Future.value() in forTesting(), so it resolves on
+      // the next microtask. Drain the microtask queue.
+      await Future.microtask(() {});
+
+      expect(provider.friendsActivities, hasLength(2),
+          reason: 'stale friends should appear before any auth or network call');
+    });
+
+    test('does not notify when cache is empty', () async {
+      final fake = _FakeBuddyService(); // cache = null
+      final provider = SpotifyProvider(buddyService: fake);
+      addTearDown(provider.dispose);
+
+      int notifyCount = 0;
+      provider.addListener(() => notifyCount++);
+      await Future.microtask(() {});
+
+      expect(notifyCount, 0,
+          reason: 'no notify should fire when there is nothing to prime with');
+    });
+
+    test('does not overwrite existing friendsActivities', () async {
+      final fake = _FakeBuddyService()
+        ..result = [_activity('live')]
+        ..cache = [_activity('stale-a'), _activity('stale-b')];
+      final provider = SpotifyProvider(buddyService: fake);
+      provider.setBearer('dummy-token');
+      addTearDown(provider.dispose);
+
+      // Simulate a live fetch populating the list first.
+      await provider.loadFriendsActivities();
+      final afterLive = provider.friendsActivities.length;
+
+      // Drain the priming microtask — it must not clobber the live result.
+      await Future.microtask(() {});
+
+      expect(provider.friendsActivities, hasLength(afterLive),
+          reason: 'constructor priming must not overwrite data already loaded');
+    });
+  });
+
   group('SpotifyProvider preserves friends on failed/empty refresh', () {
     late _FakeBuddyService fake;
     late SpotifyProvider provider;
