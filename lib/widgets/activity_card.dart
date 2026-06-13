@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/activity.dart';
 import '../models/playlist.dart';
 import '../utils/theme.dart';
@@ -19,8 +20,10 @@ class ActivityCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: () async =>
-          SpotifyLauncher.launchSpotifyUriAndPlay(activity.contentUri),
+      onTap: () async {
+        HapticFeedback.lightImpact();
+        await SpotifyLauncher.launchSpotifyUriAndPlay(activity.contentUri);
+      },
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
@@ -71,10 +74,13 @@ class _Avatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: () async => FriendProfileLauncher.openFriendProfile(
-        activity.user.id,
-        friendName: activity.user.displayName,
-      ),
+      onTap: () async {
+        HapticFeedback.lightImpact();
+        await FriendProfileLauncher.openFriendProfile(
+          activity.user.id,
+          friendName: activity.user.displayName,
+        );
+      },
       customBorder: const CircleBorder(),
       child: AvatarWidget(
         imageUrl: activity.user.imageUrl,

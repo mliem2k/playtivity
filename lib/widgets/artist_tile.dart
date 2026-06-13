@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/artist.dart';
 import '../utils/theme.dart';
@@ -13,7 +14,10 @@ class ArtistTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: () async => SpotifyLauncher.launchSpotifyUri(artist.uri),
+      onTap: () async {
+        HapticFeedback.lightImpact();
+        await SpotifyLauncher.launchSpotifyUri(artist.uri);
+      },
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         child: Row(
