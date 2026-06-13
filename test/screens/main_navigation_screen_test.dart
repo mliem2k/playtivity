@@ -42,5 +42,14 @@ void main() {
       expect(find.text('Activities'), findsOneWidget);
       expect(find.text('Profile'), findsOneWidget);
     });
+
+    testWidgets('tapping active tab does not crash', (tester) async {
+      await tester.pumpWidget(buildSubject());
+      await tester.pump();
+      // Tap Activities tab (already active at index 0)
+      await tester.tap(find.text('Activities'));
+      await tester.pump();
+      expect(find.byType(BottomNavigationBar), findsOneWidget);
+    });
   });
 }
