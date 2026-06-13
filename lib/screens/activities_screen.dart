@@ -23,6 +23,9 @@ import '../widgets/performance_selectors.dart';
 /// states. The body scrollable uses [ClampingScrollPhysics] so the list never
 /// overscrolls past its bounds, while [AlwaysScrollableScrollPhysics] keeps
 /// pull-to-refresh usable even when the list is shorter than the screen.
+/// A custom [_ClampBottomWhenShortPhysics] prevents the content from scrolling
+/// down when it already fits on screen, so a short friend list stays pinned at
+/// the top instead of drifting.
 /// The "Friend Activity" header lives in [Scaffold.appBar] so it stays fixed
 /// and does not move during pull-to-refresh or overscroll.
 class ActivitiesScreen extends StatefulWidget {
@@ -119,8 +122,10 @@ class _ActivitiesScreenState extends State<ActivitiesScreen>
             color: AppTheme.primary,
             backgroundColor: AppTheme.surfaceRaised,
             child: CustomScrollView(
-              physics: const ClampingScrollPhysics(
-                parent: AlwaysScrollableScrollPhysics(),
+              physics: const _ClampBottomWhenShortPhysics(
+                parent: ClampingScrollPhysics(
+                  parent: AlwaysScrollableScrollPhysics(),
+                ),
               ),
               slivers: [
                 _ContentSlivers(
@@ -163,6 +168,33 @@ class _NoBounceScrollable extends StatelessWidget {
         SliverFillRemaining(hasScrollBody: false, child: child),
       ],
     );
+  }
+}
+
+/// Scroll physics that clamps the bottom edge when the content fits on screen.
+///
+/// This keeps [AlwaysScrollableScrollPhysics] enabled for pull-to-refresh, but
+/// prevents the list from scrolling down (showing empty space below the cards)
+/// when there are not enough items to fill the viewport.
+class _ClampBottomWhenShortPhysics extends ScrollPhysics {
+  const _ClampBottomWhenShortPhysics({super.parent});
+
+  @override
+  _ClampBottomWhenShortPhysics applyTo(ScrollPhysics? ancestor) {
+    return _ClampBottomWhenShortPhysics(parent: buildParent(ancestor));
+  }
+
+  @override
+  double applyBoundaryConditions(ScrollMetrics position, double value) {
+    // When the content is shorter than the viewport, maxScrollExtent equals
+    // minScrollExtent. In that state, reject any scroll that would move the
+    // content down (positive pixels). Pull-to-refresh still works because
+    // negative overscroll (value < pixels) is allowed through to the parent.
+    if (position.maxScrollExtent <= position.minScrollExtent &&
+        value > position.pixels) {
+      return value - position.pixels;
+    }
+    return super.applyBoundaryConditions(position, value);
   }
 }
 
