@@ -86,7 +86,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   void _retryLoad() {
     setState(() { _hasError = false; _errorMessage = ''; });
-    _loadData();
+    _onRefresh();
   }
 
   @override
@@ -96,6 +96,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       body: RefreshIndicator(
         onRefresh: _onRefresh,
         color: AppTheme.primary,
+        notificationPredicate: (notification) => notification.depth == 0,
         child: NestedScrollView(
           controller: _scrollController,
           headerSliverBuilder: (sliverContext, innerBoxIsScrolled) => [
