@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/images/playtivity_logo_large_display.png" alt="Playtivity Logo" width="200"/>
+  <img src="assets/images/playtivity_logo_large_display.webp" alt="Playtivity Logo" width="200"/>
 
   # Playtivity - Spotify Friends Activity App
 
@@ -26,27 +26,27 @@
   <table>
     <tr>
       <td align="center">
-        <img src="screenshots/login.png" alt="Login Screen" width="250"/>
+        <img src="screenshots/login.webp" alt="Login Screen" width="250"/>
         <br><em>Login Screen</em>
       </td>
       <td align="center">
-        <img src="screenshots/home.png" alt="Home Screen" width="250"/>
+        <img src="screenshots/home.webp" alt="Home Screen" width="250"/>
         <br><em>Home Screen</em>
       </td>
     </tr>
     <tr>
       <td align="center">
-        <img src="screenshots/profile_top_artists.png" alt="Profile Top Artists" width="250"/>
+        <img src="screenshots/profile_top_artists.webp" alt="Profile Top Artists" width="250"/>
         <br><em>Profile - Top Artists</em>
       </td>
       <td align="center">
-        <img src="screenshots/profile_top_songs.png" alt="Profile Top Songs" width="250"/>
+        <img src="screenshots/profile_top_songs.webp" alt="Profile Top Songs" width="250"/>
         <br><em>Profile - Top Songs</em>
       </td>
     </tr>
     <tr>
       <td align="center">
-        <img src="screenshots/settings.png" alt="Settings Screen" width="250"/>
+        <img src="screenshots/settings.webp" alt="Settings Screen" width="250"/>
         <br><em>Settings Screen</em>
       </td>
     </tr>
