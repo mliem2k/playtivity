@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../constants/app_constants.dart';
+import '../../utils/theme.dart';
 
 enum StateType { 
   loading, 
@@ -110,48 +111,54 @@ class StateDisplayWidget extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (customContent != null) 
+            if (customContent != null)
               customContent!
             else if (icon != null)
               Icon(
                 icon,
-                size: 64,
-                color: Colors.grey,
+                size: 48,
+                color: AppTheme.textSubdued,
               ),
-            
             if (icon != null || customContent != null)
-              const SizedBox(height: AppConstants.defaultPadding),
-            
+              const SizedBox(height: 16),
             Text(
               title,
-              style: Theme.of(context).textTheme.headlineSmall,
               textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: AppTheme.textPrimary,
+                fontWeight: FontWeight.w600,
+                fontSize: 16,
+              ),
             ),
-            
             if (subtitle != null) ...[
-              const SizedBox(height: AppConstants.smallPadding),
+              const SizedBox(height: 8),
               Text(
                 subtitle!,
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey,
+                style: const TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 13,
                 ),
               ),
             ],
-            
             if (buttonText != null && onAction != null) ...[
-              const SizedBox(height: AppConstants.defaultPadding),
-              ElevatedButton(
+              const SizedBox(height: 16),
+              TextButton(
                 onPressed: onAction,
-                child: Text(buttonText!),
+                child: Text(
+                  buttonText!,
+                  style: const TextStyle(color: AppTheme.primary),
+                ),
               ),
             ],
-            
             if (secondaryButtonText != null && onSecondaryAction != null) ...[
-              const SizedBox(height: AppConstants.smallPadding),
+              const SizedBox(height: 8),
               TextButton(
                 onPressed: onSecondaryAction,
-                child: Text(secondaryButtonText!),
+                child: Text(
+                  secondaryButtonText!,
+                  style: const TextStyle(color: AppTheme.textSecondary),
+                ),
               ),
             ],
           ],
