@@ -14,6 +14,7 @@ import '../utils/auth_utils.dart';
 import '../utils/theme.dart';
 import '../widgets/activity_card.dart';
 import '../widgets/activity_skeleton.dart';
+import '../widgets/common/state_display_widget.dart';
 import '../widgets/performance_selectors.dart';
 
 /// The Activities page shows the authenticated user's Spotify friend activity.
@@ -29,7 +30,8 @@ import '../widgets/performance_selectors.dart';
 /// The "Friend Activity" header lives in [Scaffold.appBar] so it stays fixed
 /// and does not move during pull-to-refresh or overscroll.
 class ActivitiesScreen extends StatefulWidget {
-  const ActivitiesScreen({super.key});
+  final ScrollController? scrollController;
+  const ActivitiesScreen({super.key, this.scrollController});
 
   @override
   State<ActivitiesScreen> createState() => _ActivitiesScreenState();
@@ -40,10 +42,18 @@ class _ActivitiesScreenState extends State<ActivitiesScreen>
   static const _autoRefreshInterval = Duration(seconds: 30);
 
   Timer? _refreshTimer;
+  late final ScrollController _scrollController;
+  bool _ownScrollController = false;
 
   @override
   void initState() {
     super.initState();
+    if (widget.scrollController != null) {
+      _scrollController = widget.scrollController!;
+    } else {
+      _scrollController = ScrollController();
+      _ownScrollController = true;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadData());
     _startAutoRefresh();
   }
@@ -52,6 +62,7 @@ class _ActivitiesScreenState extends State<ActivitiesScreen>
   void dispose() {
     _refreshTimer?.cancel();
     DebouncedRefreshService.cancel(DebounceKeys.activitiesRefresh);
+    if (_ownScrollController) _scrollController.dispose();
     super.dispose();
   }
 
@@ -105,13 +116,30 @@ class _ActivitiesScreenState extends State<ActivitiesScreen>
     }
   }
 
+  Future<void> _handleReAuth(BuildContext context) async {
+    HapticFeedback.lightImpact();
+    final ok = await AuthUtils.handleReAuthentication(context);
+    if (ok && mounted) {
+      debouncedRefresh(
+        DebounceKeys.activitiesRefresh,
+        const Duration(milliseconds: 500),
+        _loadData,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return ActivitiesScreenDataSelector(
       builder: (context, isAuthenticated, isLoading, activities, error) {
         if (!isAuthenticated) {
           return Scaffold(
-            body: _NoBounceScrollable(child: _UnauthenticatedState()),
+            body: _NoBounceScrollable(
+              child: StateDisplayWidget.authRequired(
+                title: 'Authentication Required',
+                subtitle: 'Please log in to view friends\' activities',
+              ),
+            ),
           );
         }
 
@@ -122,6 +150,7 @@ class _ActivitiesScreenState extends State<ActivitiesScreen>
             color: AppTheme.primary,
             backgroundColor: AppTheme.surfaceRaised,
             child: CustomScrollView(
+              controller: _scrollController,
               physics: const _ClampBottomWhenShortPhysics(
                 parent: ClampingScrollPhysics(
                   parent: AlwaysScrollableScrollPhysics(),
@@ -133,6 +162,7 @@ class _ActivitiesScreenState extends State<ActivitiesScreen>
                   activities: activities,
                   error: error,
                   onRetry: _onRetry,
+                  onReAuth: _handleReAuth,
                 ),
               ],
             ),
@@ -264,12 +294,14 @@ class _ContentSlivers extends StatelessWidget {
   final List<Activity> activities;
   final String? error;
   final VoidCallback onRetry;
+  final Future<void> Function(BuildContext) onReAuth;
 
   const _ContentSlivers({
     required this.isLoading,
     required this.activities,
     required this.error,
     required this.onRetry,
+    required this.onReAuth,
   });
 
   @override
@@ -279,9 +311,32 @@ class _ContentSlivers extends StatelessWidget {
     }
 
     if (error != null) {
+      final isAuthError = error!.contains('Authentication expired');
       return SliverFillRemaining(
         hasScrollBody: false,
-        child: _ErrorState(error: error!, onRetry: onRetry),
+        child: isAuthError
+            ? StateDisplayWidget.authRequired(
+                title: 'Authentication Required',
+                subtitle: error,
+                buttonText: 'Login Again',
+                onAction: () => onReAuth(context),
+                secondaryButtonText: 'Retry',
+                onSecondaryAction: () {
+                  HapticFeedback.lightImpact();
+                  context.read<SpotifyProvider>().clearError();
+                  onRetry();
+                },
+              )
+            : StateDisplayWidget.error(
+                title: 'Could not load',
+                error: error!,
+                buttonText: 'Try again',
+                onAction: () {
+                  HapticFeedback.lightImpact();
+                  context.read<SpotifyProvider>().clearError();
+                  onRetry();
+                },
+              ),
       );
     }
 
@@ -369,70 +424,11 @@ class _SkeletonSliverListState extends State<_SkeletonSliverList>
   }
 }
 
-class _UnauthenticatedState extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return const _CenteredState(
-      icon: Icons.lock_outline,
-      title: 'Authentication Required',
-      subtitle: 'Please log in to view friends\' activities',
-    );
-  }
-}
-
 class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final diagnostic = context.read<SpotifyProvider>().buddylistDiagnostic;
     return _DiagnosticEmpty(diagnostic: diagnostic);
-  }
-}
-
-class _ErrorState extends StatelessWidget {
-  final String error;
-  final VoidCallback onRetry;
-
-  const _ErrorState({required this.error, required this.onRetry});
-
-  @override
-  Widget build(BuildContext context) {
-    final isAuthError = error.contains('Authentication expired');
-
-    return _CenteredState(
-      icon: isAuthError ? Icons.lock_outline : Icons.wifi_off,
-      title: isAuthError ? 'Authentication Required' : 'Could not load',
-      subtitle: error,
-      action: isAuthError
-          ? TextButton(
-              onPressed: () => _handleReAuth(context),
-              child: const Text(
-                'Login Again',
-                style: TextStyle(color: AppTheme.primary),
-              ),
-            )
-          : TextButton(
-              onPressed: () {
-                context.read<SpotifyProvider>().clearError();
-                onRetry();
-              },
-              child: const Text(
-                'Try again',
-                style: TextStyle(color: AppTheme.primary),
-              ),
-            ),
-    );
-  }
-
-  Future<void> _handleReAuth(BuildContext context) async {
-    final ok = await AuthUtils.handleReAuthentication(context);
-    if (ok && context.mounted) {
-      final state = context.findAncestorStateOfType<_ActivitiesScreenState>();
-      state?.debouncedRefresh(
-        DebounceKeys.activitiesRefresh,
-        const Duration(milliseconds: 500),
-        state._loadData,
-      );
-    }
   }
 }
 
@@ -486,57 +482,6 @@ class _DiagnosticEmpty extends StatelessWidget {
                 ),
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _CenteredState extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final Widget? action;
-
-  const _CenteredState({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    this.action,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(AppConstants.largePadding),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 48, color: AppTheme.textSubdued),
-            const SizedBox(height: 16),
-            Text(
-              title,
-              style: const TextStyle(
-                color: AppTheme.textPrimary,
-                fontWeight: FontWeight.w600,
-                fontSize: 16,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              subtitle,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: AppTheme.textSecondary,
-                fontSize: 13,
-              ),
-            ),
-            if (action != null) ...[
-              const SizedBox(height: 16),
-              action!,
-            ],
           ],
         ),
       ),
