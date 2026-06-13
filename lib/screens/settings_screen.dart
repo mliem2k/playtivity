@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -174,7 +175,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             )
           : null,
       trailing: trailing,
-      onTap: onTap,
+      onTap: onTap == null
+          ? null
+          : () {
+              HapticFeedback.selectionClick();
+              onTap!();
+            },
     );
   }
 
@@ -285,6 +291,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         activeThumbColor: Colors.orange,
         activeTrackColor: Colors.orange.withValues(alpha: 0.4),
         onChanged: (value) async {
+          HapticFeedback.lightImpact();
           setState(() => _isNightlyEnabled = value);
           await UpdateService.setNightlyBuildPreference(value);
           if (value && context.mounted) {
@@ -674,13 +681,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             TextButton(
               onPressed: () {
-                // Store context before async gap
+                HapticFeedback.lightImpact();
                 final settingsContext = context;
-                
-                // Close the confirmation dialog first
                 Navigator.of(dialogContext).pop();
-                
-                // Perform logout with the stored context
                 _performLogout(settingsContext);
               },
               style: TextButton.styleFrom(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/track.dart';
 import '../utils/theme.dart';
 import '../utils/spotify_launcher.dart';
@@ -14,7 +15,10 @@ class TrackTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final tt = Theme.of(context).textTheme;
     return InkWell(
-      onTap: () async => SpotifyLauncher.launchSpotifyUriAndPlay(track.uri),
+      onTap: () async {
+        HapticFeedback.lightImpact();
+        await SpotifyLauncher.launchSpotifyUriAndPlay(track.uri);
+      },
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         child: Row(
