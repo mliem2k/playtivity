@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../services/update_service.dart';
 import '../../services/app_logger.dart';
+import '../../utils/navigator_key.dart';
 import 'update_dialogs.dart';
 
 class UpdateCheckerWrapper extends StatefulWidget {
@@ -57,6 +58,13 @@ class _UpdateCheckerWrapperState extends State<UpdateCheckerWrapper> {
   Future<void> _handleUpdateDownload() async {
     if (_updateInfo == null || !mounted) return;
 
+    // showDialog needs a context that is a descendant of the Navigator.
+    // UpdateCheckerWrapper sits above the Navigator in MaterialApp.builder,
+    // so `context` has no Navigator ancestor. Use navigatorKey.currentContext
+    // which resolves to the Navigator widget itself and is accepted by showDialog.
+    final dialogContext = navigatorKey.currentContext;
+    if (dialogContext == null) return;
+
     // Reuse a previously-downloaded file if it still exists on disk.
     String? filePath = _downloadedFilePath;
     if (filePath != null && !await File(filePath).exists()) {
@@ -67,7 +75,7 @@ class _UpdateCheckerWrapperState extends State<UpdateCheckerWrapper> {
 
     if (filePath == null) {
       if (!mounted) return;
-      filePath = await showDownloadDialog(context, _updateInfo!);
+      filePath = await showDownloadDialog(dialogContext, _updateInfo!);
       if (filePath != null) {
         setState(() => _downloadedFilePath = filePath);
       }
@@ -76,7 +84,7 @@ class _UpdateCheckerWrapperState extends State<UpdateCheckerWrapper> {
     }
 
     if (filePath != null && mounted) {
-      final installed = await showInstallDialog(context, filePath);
+      final installed = await showInstallDialog(dialogContext, filePath);
       if (installed) {
         setState(() {
           _updateInfo = null;
