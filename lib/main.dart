@@ -4,9 +4,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'providers/auth_provider.dart';
 import 'providers/spotify_provider.dart';
 import 'screens/login_screen.dart';
-import 'screens/activities_screen.dart';
-import 'screens/profile_screen.dart';
-import 'screens/settings_screen.dart';
 import 'services/widget_service.dart';
 import 'services/background_service.dart';
 import 'services/update_service.dart';
@@ -68,18 +65,6 @@ class MyApp extends StatelessWidget {
           '/login': (context) {
             AppLogger.info('🔗 Navigating to LoginScreen via route');
             return const LoginScreen();
-          },
-          '/activities': (context) {
-            AppLogger.info('🔗 Navigating to ActivitiesScreen via route');
-            return const ActivitiesScreen();
-          },
-          '/profile': (context) {
-            AppLogger.info('🔗 Navigating to ProfileScreen via route');
-            return const ProfileScreen();
-          },
-          '/settings': (context) {
-            AppLogger.info('🔗 Navigating to SettingsScreen via route');
-            return const SettingsScreen();
           },
         },
       ),
