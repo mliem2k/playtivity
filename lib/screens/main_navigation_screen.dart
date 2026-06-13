@@ -8,7 +8,6 @@ import '../services/app_logger.dart';
 import '../utils/auth_utils.dart';
 import 'activities_screen.dart';
 import 'profile_screen.dart';
-import 'top_artists_screen.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -19,14 +18,11 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen>
     with WidgetsBindingObserver {
-  int _pageIndex = 0;
+  int _currentIndex = 0;
   late final PageController _pageController;
   late final ScrollController _activitiesScrollController;
   late final ScrollController _profileScrollController;
-  late final ScrollController _topArtistsScrollController;
   late final List<Widget> _screens;
-
-  int get _navIndex => _pageIndex == 0 ? 0 : 1;
 
   @override
   void initState() {
@@ -34,11 +30,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     _pageController = PageController();
     _activitiesScrollController = ScrollController();
     _profileScrollController = ScrollController();
-    _topArtistsScrollController = ScrollController();
     _screens = [
       _KeepAlive(child: ActivitiesScreen(scrollController: _activitiesScrollController)),
-      _KeepAlive(child: TopSongsScreen(scrollController: _profileScrollController)),
-      _KeepAlive(child: TopArtistsScreen(scrollController: _topArtistsScrollController)),
+      _KeepAlive(child: ProfileScreen(
+        scrollController: _profileScrollController,
+        outerPageController: _pageController,
+      )),
     ];
     AppLogger.info('🏠 MainNavigationScreen initialized');
     WidgetsBinding.instance.addObserver(this);
@@ -52,7 +49,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     _pageController.dispose();
     _activitiesScrollController.dispose();
     _profileScrollController.dispose();
-    _topArtistsScrollController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -68,14 +64,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
         final spotifyProvider = Provider.of<SpotifyProvider>(context, listen: false);
         if (authProvider.authState == AuthState.authenticated) {
           await authProvider.refreshIfNeeded();
-          // Propagate any refreshed token before hitting the API.
           final bearer = authProvider.bearerToken;
           if (bearer != null) spotifyProvider.setBearer(bearer);
-          // Reload widget-accumulated history from disk (shows merged
-          // historical data immediately), then fetch live friend activity.
-          // reloadFriendsFromPersistedCache also calls forceRefresh so the
-          // following loadFriendsActivities always bypasses the buddy-list
-          // cache instead of serving stale quiet-mode data for up to 5 min.
           await spotifyProvider.reloadFriendsFromPersistedCache();
           await spotifyProvider.loadFriendsActivities();
         }
@@ -118,19 +108,17 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     return Scaffold(
       body: PageView(
         controller: _pageController,
-        onPageChanged: (index) => setState(() => _pageIndex = index),
+        onPageChanged: (index) => setState(() => _currentIndex = index),
         children: _screens,
       ),
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _navIndex,
+        currentIndex: _currentIndex,
         onTap: (index) {
           HapticFeedback.selectionClick();
-          if (index == _navIndex) {
-            final controller = switch (_pageIndex) {
-              0 => _activitiesScrollController,
-              1 => _profileScrollController,
-              _ => _topArtistsScrollController,
-            };
+          if (index == _currentIndex) {
+            final controller = index == 0
+                ? _activitiesScrollController
+                : _profileScrollController;
             if (controller.hasClients) {
               controller.animateTo(
                 0,
@@ -140,11 +128,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
             }
             return;
           }
-          // Profile tab always navigates to Top Songs (page 1)
-          final targetPage = index == 0 ? 0 : 1;
-          setState(() => _pageIndex = targetPage);
+          setState(() => _currentIndex = index);
           _pageController.animateToPage(
-            targetPage,
+            index,
             duration: const Duration(milliseconds: 300),
             curve: Curves.easeInOut,
           );
