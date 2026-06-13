@@ -51,8 +51,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (!mounted) return;
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        final spotifyProvider = Provider.of<SpotifyProvider>(context, listen: false);
         if (authProvider.authState == AuthState.authenticated) {
           await authProvider.refreshIfNeeded();
+          // The widget may have accumulated fresh historical data in the
+          // background; reload it so the in-app list matches the widget on
+          // resume instead of showing the stale in-memory snapshot.
+          await spotifyProvider.reloadFriendsFromPersistedCache();
         }
       });
     }

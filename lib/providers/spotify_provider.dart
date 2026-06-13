@@ -342,11 +342,35 @@ class SpotifyProvider extends ChangeNotifier {
     }
   }
 
+  /// Reloads the in-app friend list from the persisted widget cache.
+  ///
+  /// This keeps the app list in sync with the home-screen widget, which writes
+  /// merged historical activities to SharedPreferences during background
+  /// updates. The provider state is updated without showing loading indicators.
+  Future<void> reloadFriendsFromPersistedCache() async {
+    try {
+      await _buddyService.reloadPersistedCache();
+      final cached = _buddyService.cachedActivities;
+      if (cached != null && cached.isNotEmpty) {
+        _friendsActivities = cached;
+        _lastUpdated = DateTime.now();
+        _notify();
+      }
+    } catch (e) {
+      AppLogger.error('Error reloading friends from persisted cache', e);
+    }
+  }
+
   /// Fast initial load — shows persisted stale data instantly, then fetches fresh.
   Future<void> fastInitialLoad() async {
     try {
       // Wait for SharedPreferences persistence load (typically <30ms)
       await _buddyService.persistenceReady;
+
+      // Pull in any merged historical data the widget saved while we were
+      // backgrounded, so the first frame matches the widget instead of an
+      // older in-memory snapshot.
+      await reloadFriendsFromPersistedCache();
 
       final stale = _buddyService.cachedActivities;
       if (stale != null && stale.isNotEmpty) {

@@ -68,6 +68,17 @@ class SpotifyBuddyService {
   /// Returns in-memory cached activities (may be stale persisted data on first launch).
   List<Activity>? get cachedActivities => _cachedBuddyActivities;
 
+  /// Re-reads the persisted buddy list from disk into memory.
+  ///
+  /// The home-screen widget writes merged historical friend data to
+  /// SharedPreferences during background updates, but the in-app provider keeps
+  /// its own in-memory copy. Calling this before reading [cachedActivities]
+  /// ensures the app list starts from the same accumulated history the widget
+  /// is showing, instead of a stale snapshot loaded at app start.
+  Future<void> reloadPersistedCache() async {
+    await _loadPersistedBuddyList(force: true);
+  }
+
   // Diagnostic fields — populated on each fetch so the UI can surface them
   static String lastDiagnostic = 'No fetch yet';
   static String lastRawSnippet = '';
@@ -181,13 +192,17 @@ class SpotifyBuddyService {
 
   /// Loads the last-known buddy list from SharedPreferences.
   /// Prefers the merged activities (accumulated across sessions) over the raw API snapshot.
-  Future<void> _loadPersistedBuddyList() async {
+  ///
+  /// When [force] is true, the in-memory cache is overwritten even if it was
+  /// already populated. Use this after background widget updates may have
+  /// written newer merged data to disk while the app was in the background.
+  Future<void> _loadPersistedBuddyList({bool force = false}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
 
       // Try merged activities first — they cover more friends than a single API call.
       final mergedJson = prefs.getString(_buddyListMergedKey);
-      if (mergedJson != null && _cachedBuddyActivities == null) {
+      if (mergedJson != null && (_cachedBuddyActivities == null || force)) {
         try {
           final list = json.decode(mergedJson) as List;
           final cutoff = DateTime.now().subtract(_persistenceMaxAge);
@@ -214,7 +229,7 @@ class SpotifyBuddyService {
 
       // Fallback: raw JSON from the last API response.
       final raw = prefs.getString(_buddyListRawKey);
-      if (raw != null && _cachedBuddyActivities == null) {
+      if (raw != null && (_cachedBuddyActivities == null || force)) {
         // updateDiagnostics: false — persistence loads must not set lastApiBytes = 0
         // and lastRawSnippet = '' into the diagnostic; those fields belong to the
         // live-HTTP path and haven't been populated yet in this session.
