@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/auth_provider.dart';
@@ -11,11 +12,14 @@ import '../utils/spotify_launcher.dart';
 import '../widgets/track_tile.dart';
 import '../widgets/artist_tile.dart';
 import '../widgets/currently_playing_card.dart';
+import '../widgets/common/state_display_widget.dart';
+import '../widgets/common/profile_skeleton.dart';
 import '../services/app_logger.dart';
 import 'settings_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  final ScrollController? scrollController;
+  const ProfileScreen({super.key, this.scrollController});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -24,16 +28,27 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen>
     with TickerProviderStateMixin {
   late TabController _tabController;
+  late final ScrollController _scrollController;
+  bool _ownScrollController = false;
+  bool _hasError = false;
+  String _errorMessage = '';
 
   @override
   void initState() {
     super.initState();
+    if (widget.scrollController != null) {
+      _scrollController = widget.scrollController!;
+    } else {
+      _scrollController = ScrollController();
+      _ownScrollController = true;
+    }
     _tabController = TabController(length: 2, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadData());
   }
 
   @override
   void dispose() {
+    if (_ownScrollController) _scrollController.dispose();
     _tabController.dispose();
     super.dispose();
   }
@@ -47,56 +62,85 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
     if (!authProvider.isAuthenticated) return;
     if (spotifyProvider.topTracks.isNotEmpty || spotifyProvider.topArtists.isNotEmpty) return;
-    await spotifyProvider.refreshProfileData(showLoading: true);
+    try {
+      await spotifyProvider.refreshProfileData(showLoading: true);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _errorMessage = e.toString();
+        });
+      }
+    }
+  }
+
+  Future<void> _onRefresh() async {
+    final spotifyProvider = context.read<SpotifyProvider>();
+    try {
+      await spotifyProvider.refreshProfileData(showLoading: false);
+      if (mounted) setState(() { _hasError = false; _errorMessage = ''; });
+    } catch (e) {
+      if (mounted) setState(() { _hasError = true; _errorMessage = e.toString(); });
+    }
+  }
+
+  void _retryLoad() {
+    setState(() { _hasError = false; _errorMessage = ''; });
+    _loadData();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       extendBodyBehindAppBar: true,
-      body: NestedScrollView(
-        headerSliverBuilder: (sliverContext, innerBoxIsScrolled) => [
-          SliverToBoxAdapter(
-            child: Selector2<AuthProvider, SpotifyProvider,
-                ({User? user, Track? currentlyPlaying})>(
-              selector: (_, auth, sp) => (
-                user: auth.currentUser,
-                currentlyPlaying: sp.currentlyPlaying,
+      body: RefreshIndicator(
+        onRefresh: _onRefresh,
+        color: AppTheme.primary,
+        child: NestedScrollView(
+          controller: _scrollController,
+          headerSliverBuilder: (sliverContext, innerBoxIsScrolled) => [
+            SliverToBoxAdapter(
+              child: Selector2<AuthProvider, SpotifyProvider,
+                  ({User? user, Track? currentlyPlaying})>(
+                selector: (_, auth, sp) => (
+                  user: auth.currentUser,
+                  currentlyPlaying: sp.currentlyPlaying,
+                ),
+                shouldRebuild: (prev, next) =>
+                    !identical(prev.user, next.user) ||
+                    prev.currentlyPlaying?.uri != next.currentlyPlaying?.uri,
+                builder: (ctx, data, _) =>
+                    _buildHeader(data.user, data.currentlyPlaying),
               ),
-              shouldRebuild: (prev, next) =>
-                  !identical(prev.user, next.user) ||
-                  prev.currentlyPlaying?.uri != next.currentlyPlaying?.uri,
-              builder: (ctx, data, _) =>
-                  _buildHeader(data.user, data.currentlyPlaying),
             ),
-          ),
-          SliverPersistentHeader(
-            pinned: true,
-            delegate: _TabBarDelegate(
-              TabBar(controller: _tabController, tabs: const [
-                Tab(text: 'Top Songs'),
-                Tab(text: 'Top Artists'),
-              ]),
+            SliverPersistentHeader(
+              pinned: true,
+              delegate: _TabBarDelegate(
+                TabBar(controller: _tabController, tabs: const [
+                  Tab(text: 'Top Songs'),
+                  Tab(text: 'Top Artists'),
+                ]),
+              ),
             ),
-          ),
-        ],
-        body: Selector<SpotifyProvider,
-            ({List<Track> topTracks, List<Artist> topArtists, bool isLoading})>(
-          selector: (_, sp) => (
-            topTracks: sp.topTracks,
-            topArtists: sp.topArtists,
-            isLoading: sp.isLoading,
-          ),
-          shouldRebuild: (prev, next) =>
-              !identical(prev.topTracks, next.topTracks) ||
-              !identical(prev.topArtists, next.topArtists) ||
-              prev.isLoading != next.isLoading,
-          builder: (ctx, data, _) => TabBarView(
-            controller: _tabController,
-            children: [
-              _buildTopSongs(ctx, data.topTracks, data.isLoading),
-              _buildTopArtists(ctx, data.topArtists, data.isLoading),
-            ],
+          ],
+          body: Selector<SpotifyProvider,
+              ({List<Track> topTracks, List<Artist> topArtists, bool isLoading})>(
+            selector: (_, sp) => (
+              topTracks: sp.topTracks,
+              topArtists: sp.topArtists,
+              isLoading: sp.isLoading,
+            ),
+            shouldRebuild: (prev, next) =>
+                !identical(prev.topTracks, next.topTracks) ||
+                !identical(prev.topArtists, next.topArtists) ||
+                prev.isLoading != next.isLoading,
+            builder: (ctx, data, _) => TabBarView(
+              controller: _tabController,
+              children: [
+                _buildTopSongs(ctx, data.topTracks, data.isLoading),
+                _buildTopArtists(ctx, data.topArtists, data.isLoading),
+              ],
+            ),
           ),
         ),
       ),
@@ -121,10 +165,13 @@ class _ProfileScreenState extends State<ProfileScreen>
               alignment: Alignment.centerRight,
               child: IconButton(
                 icon: const Icon(Icons.settings, color: AppTheme.textPrimary),
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                ),
+                onPressed: () {
+                  HapticFeedback.mediumImpact();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                  );
+                },
               ),
             ),
             GestureDetector(
@@ -197,22 +244,21 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildTopSongs(BuildContext context, List<Track> topTracks, bool isLoading) {
-    if (isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppTheme.primary),
+    if (_hasError) {
+      return StateDisplayWidget.error(
+        title: 'Could not load',
+        error: _errorMessage,
+        buttonText: 'Retry',
+        onAction: _retryLoad,
       );
     }
+    if (isLoading) {
+      return ProfileSkeleton(count: 10);
+    }
     if (topTracks.isEmpty) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.music_note_outlined, size: 48, color: AppTheme.textSubdued),
-            SizedBox(height: 16),
-            Text('No top tracks found',
-                style: TextStyle(color: AppTheme.textSecondary)),
-          ],
-        ),
+      return StateDisplayWidget.empty(
+        title: 'No top tracks found',
+        icon: Icons.music_note_outlined,
       );
     }
     return ListView.separated(
@@ -223,7 +269,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       itemCount: topTracks.length,
       addAutomaticKeepAlives: false,
       addRepaintBoundaries: false,
-      separatorBuilder: (_, _) =>
+      separatorBuilder: (_, __) =>
           const Divider(height: 1, color: AppTheme.dividerColor),
       itemBuilder: (_, i) => RepaintBoundary(
         child: TrackTile(track: topTracks[i], rank: i + 1),
@@ -232,22 +278,21 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildTopArtists(BuildContext context, List<Artist> topArtists, bool isLoading) {
-    if (isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppTheme.primary),
+    if (_hasError) {
+      return StateDisplayWidget.error(
+        title: 'Could not load',
+        error: _errorMessage,
+        buttonText: 'Retry',
+        onAction: _retryLoad,
       );
     }
+    if (isLoading) {
+      return ProfileSkeleton(count: 10);
+    }
     if (topArtists.isEmpty) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.person_outline, size: 48, color: AppTheme.textSubdued),
-            SizedBox(height: 16),
-            Text('No top artists found',
-                style: TextStyle(color: AppTheme.textSecondary)),
-          ],
-        ),
+      return StateDisplayWidget.empty(
+        title: 'No top artists found',
+        icon: Icons.person_outline,
       );
     }
     return ListView.separated(
@@ -258,7 +303,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       itemCount: topArtists.length,
       addAutomaticKeepAlives: false,
       addRepaintBoundaries: false,
-      separatorBuilder: (_, _) =>
+      separatorBuilder: (_, __) =>
           const Divider(height: 1, color: AppTheme.dividerColor),
       itemBuilder: (_, i) => RepaintBoundary(
         child: ArtistTile(artist: topArtists[i], rank: i + 1),
