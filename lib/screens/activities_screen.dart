@@ -20,9 +20,11 @@ import '../widgets/performance_selectors.dart';
 ///
 /// This screen is intentionally self-contained: it owns its own data loading,
 /// pull-to-refresh, automatic background refresh, and all of its empty/error
-/// states. The scrollable uses [ClampingScrollPhysics] so the list never
+/// states. The body scrollable uses [ClampingScrollPhysics] so the list never
 /// overscrolls past its bounds, while [AlwaysScrollableScrollPhysics] keeps
 /// pull-to-refresh usable even when the list is shorter than the screen.
+/// The "Friend Activity" header lives in [Scaffold.appBar] so it stays fixed
+/// and does not move during pull-to-refresh or overscroll.
 class ActivitiesScreen extends StatefulWidget {
   const ActivitiesScreen({super.key});
 
@@ -102,14 +104,17 @@ class _ActivitiesScreenState extends State<ActivitiesScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: ActivitiesScreenDataSelector(
-        builder: (context, isAuthenticated, isLoading, activities, error) {
-          if (!isAuthenticated) {
-            return _NoBounceScrollable(child: _UnauthenticatedState());
-          }
+    return ActivitiesScreenDataSelector(
+      builder: (context, isAuthenticated, isLoading, activities, error) {
+        if (!isAuthenticated) {
+          return Scaffold(
+            body: _NoBounceScrollable(child: _UnauthenticatedState()),
+          );
+        }
 
-          return RefreshIndicator(
+        return Scaffold(
+          appBar: _HeaderAppBar(showProgress: isLoading && activities.isNotEmpty),
+          body: RefreshIndicator(
             onRefresh: _refreshData,
             color: AppTheme.primary,
             backgroundColor: AppTheme.surfaceRaised,
@@ -118,7 +123,6 @@ class _ActivitiesScreenState extends State<ActivitiesScreen>
                 parent: AlwaysScrollableScrollPhysics(),
               ),
               slivers: [
-                _HeaderSliver(showProgress: isLoading && activities.isNotEmpty),
                 _ContentSlivers(
                   isLoading: isLoading,
                   activities: activities,
@@ -127,9 +131,9 @@ class _ActivitiesScreenState extends State<ActivitiesScreen>
                 ),
               ],
             ),
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -162,10 +166,34 @@ class _NoBounceScrollable extends StatelessWidget {
   }
 }
 
-class _HeaderSliver extends StatelessWidget {
-  final bool showProgress;
+class _HeaderAppBar extends AppBar {
+  _HeaderAppBar({required bool showProgress})
+      : super(
+          automaticallyImplyLeading: false,
+          backgroundColor: AppTheme.background,
+          surfaceTintColor: Colors.transparent,
+          shadowColor: Colors.transparent,
+          scrolledUnderElevation: 0,
+          elevation: 0,
+          toolbarHeight: 52,
+          titleSpacing: 16,
+          centerTitle: false,
+          title: const _HeaderTitle(),
+          bottom: showProgress
+              ? const PreferredSize(
+                  preferredSize: Size.fromHeight(2),
+                  child: LinearProgressIndicator(
+                    color: AppTheme.primary,
+                    backgroundColor: Colors.transparent,
+                    minHeight: 2,
+                  ),
+                )
+              : null,
+        );
+}
 
-  const _HeaderSliver({required this.showProgress});
+class _HeaderTitle extends StatelessWidget {
+  const _HeaderTitle();
 
   @override
   Widget build(BuildContext context) {
@@ -175,41 +203,16 @@ class _HeaderSliver extends StatelessWidget {
     final hasMismatch = apiCount > 0 && parsedCount >= 0 && parsedCount < apiCount;
     final countLabel = hasMismatch ? ' ($parsedCount/$apiCount)' : '';
 
-    return SliverAppBar(
-      pinned: true,
-      floating: false,
-      snap: false,
-      primary: true,
-      automaticallyImplyLeading: false,
-      backgroundColor: AppTheme.background,
-      surfaceTintColor: Colors.transparent,
-      shadowColor: Colors.transparent,
-      scrolledUnderElevation: 0,
-      elevation: 0,
-      toolbarHeight: 52,
-      titleSpacing: 16,
-      centerTitle: false,
-      title: GestureDetector(
-        onLongPress: () => _copyDiagnostic(context, spotifyProvider),
-        child: Text(
-          'Friend Activity$countLabel',
-          style: TextStyle(
-            color: hasMismatch ? Colors.orange : AppTheme.textPrimary,
-            fontWeight: FontWeight.w700,
-            fontSize: 18,
-          ),
+    return GestureDetector(
+      onLongPress: () => _copyDiagnostic(context, spotifyProvider),
+      child: Text(
+        'Friend Activity$countLabel',
+        style: TextStyle(
+          color: hasMismatch ? Colors.orange : AppTheme.textPrimary,
+          fontWeight: FontWeight.w700,
+          fontSize: 18,
         ),
       ),
-      bottom: showProgress
-          ? const PreferredSize(
-              preferredSize: Size.fromHeight(2),
-              child: LinearProgressIndicator(
-                color: AppTheme.primary,
-                backgroundColor: Colors.transparent,
-                minHeight: 2,
-              ),
-            )
-          : null,
     );
   }
 }
