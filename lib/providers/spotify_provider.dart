@@ -16,7 +16,20 @@ class SpotifyProvider extends ChangeNotifier {
     SpotifyBuddyService? buddyService,
     SpotifyService? spotifyService,
   })  : _buddyService = buddyService ?? SpotifyBuddyService(),
-        _spotifyService = spotifyService ?? SpotifyService();
+        _spotifyService = spotifyService ?? SpotifyService() {
+    // Prime the friend list from persisted cache without waiting for auth.
+    // SpotifyBuddyService loads SharedPreferences at construction time; by the
+    // time the Activities tab first renders this is usually already complete.
+    // This makes stale friend data visible on the very first frame so the app
+    // matches the home-screen widget instead of showing a skeleton during login.
+    _buddyService.persistenceReady.then((_) {
+      final cached = _buddyService.cachedActivities;
+      if (cached != null && cached.isNotEmpty && _friendsActivities.isEmpty) {
+        _friendsActivities = cached;
+        _notify();
+      }
+    });
+  }
 
   String? _bearerToken;
 
@@ -364,28 +377,30 @@ class SpotifyProvider extends ChangeNotifier {
   /// Fast initial load — shows persisted stale data instantly, then fetches fresh.
   Future<void> fastInitialLoad() async {
     try {
-      // Wait for SharedPreferences persistence load (typically <30ms)
+      // Ensure persistence load is complete. In the common case it already
+      // finished in the constructor callback, so this await is a no-op.
       await _buddyService.persistenceReady;
 
-      // Pull in any merged historical data the widget saved while we were
-      // backgrounded, so the first frame matches the widget instead of an
-      // older in-memory snapshot.
+      // Sync with any merged historical data the widget wrote while we were
+      // backgrounded — ensures app list matches widget on resume.
       await reloadFriendsFromPersistedCache();
 
-      final stale = _buddyService.cachedActivities;
-      if (stale != null && stale.isNotEmpty) {
-        // Show stale data immediately — no skeleton needed
-        _friendsActivities = stale;
-        notifyListeners();
-      } else {
-        _isSkeletonLoading = true;
-        notifyListeners();
+      // If the constructor already primed the list, skip to the live fetch.
+      // Otherwise show stale data now, or the skeleton if nothing is cached.
+      if (_friendsActivities.isEmpty) {
+        final stale = _buddyService.cachedActivities;
+        if (stale != null && stale.isNotEmpty) {
+          _friendsActivities = stale;
+          notifyListeners();
+        } else {
+          _isSkeletonLoading = true;
+          notifyListeners();
+        }
       }
 
-      // Force a live fetch without clearing existing activities — they'll be merged
-      // with the fresh response so we accumulate friends across refreshes.
+      // Force a live fetch; merge result with whatever is already on screen.
       _buddyService.forceRefresh();
-      await loadFriendsActivities(showSkeleton: _friendsActivities.isEmpty);
+      await loadFriendsActivities(showSkeleton: false);
 
       _lastUpdated = DateTime.now();
       notifyListeners();
