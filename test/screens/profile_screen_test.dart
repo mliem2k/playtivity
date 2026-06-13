@@ -51,5 +51,26 @@ void main() {
       // Even with empty list, structure should be valid
       expect(find.byType(ProfileScreen), findsOneWidget);
     });
+
+    testWidgets('has RefreshIndicator for pull-to-refresh', (tester) async {
+      await tester.pumpWidget(buildSubject());
+      await tester.pump();
+      expect(find.byType(RefreshIndicator), findsOneWidget);
+    });
+
+    testWidgets('accepts optional scrollController without crashing', (tester) async {
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      final widget = MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
+          ChangeNotifierProvider<SpotifyProvider>.value(value: spotifyProvider),
+        ],
+        child: MaterialApp(home: ProfileScreen(scrollController: controller)),
+      );
+      await tester.pumpWidget(widget);
+      await tester.pump();
+      expect(find.byType(ProfileScreen), findsOneWidget);
+    });
   });
 }
