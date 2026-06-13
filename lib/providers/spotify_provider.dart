@@ -363,6 +363,11 @@ class SpotifyProvider extends ChangeNotifier {
   Future<void> reloadFriendsFromPersistedCache() async {
     try {
       await _buddyService.reloadPersistedCache();
+      // Reset the cache timer so the next loadFriendsActivities always hits
+      // the API instead of returning the just-loaded stale disk data. Without
+      // this, the quiet-mode cache (5 min) makes fresh disk data appear
+      // "recently fetched" for up to 4.5 minutes after a resume.
+      _buddyService.forceRefresh();
       final cached = _buddyService.cachedActivities;
       if (cached != null && cached.isNotEmpty) {
         _friendsActivities = cached;
