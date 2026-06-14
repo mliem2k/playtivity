@@ -16,10 +16,12 @@ import '../widgets/common/state_display_widget.dart';
 import '../widgets/common/profile_skeleton.dart';
 import '../services/app_logger.dart';
 import 'settings_screen.dart';
+import '../widgets/tab_boundary_passthrough_physics.dart';
 
 class ProfileScreen extends StatefulWidget {
   final ScrollController? scrollController;
-  const ProfileScreen({super.key, this.scrollController});
+  final VoidCallback? onSwipeBack;
+  const ProfileScreen({super.key, this.scrollController, this.onSwipeBack});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -28,6 +30,7 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _hasError = false;
   String _errorMessage = '';
+  bool _swipeBackTriggered = false;
 
   @override
   void initState() {
@@ -112,11 +115,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
               ],
-              body: TabBarView(
-                children: [
-                  _buildSongsTab(data.topTracks, data.isLoading),
-                  _buildArtistsTab(data.topArtists, data.isLoading),
-                ],
+              body: NotificationListener<ScrollNotification>(
+                onNotification: (notification) {
+                  if (notification is OverscrollNotification &&
+                      notification.overscroll < 0 &&
+                      !_swipeBackTriggered) {
+                    _swipeBackTriggered = true;
+                    widget.onSwipeBack?.call();
+                  }
+                  if (notification is ScrollEndNotification) {
+                    _swipeBackTriggered = false;
+                  }
+                  return false;
+                },
+                child: TabBarView(
+                  physics: const TabBoundaryPassthroughPhysics(),
+                  children: [
+                    _buildSongsTab(data.topTracks, data.isLoading),
+                    _buildArtistsTab(data.topArtists, data.isLoading),
+                  ],
+                ),
               ),
             ),
           ),
