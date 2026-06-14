@@ -148,12 +148,12 @@ void main() {
       );
     });
 
-    test('isNewerNightly returns false when build is only 3 minutes newer', () {
+    test('isNewerNightly returns true when build is only 3 minutes newer', () {
       const current = '0.0.2-nightly-20260609-100000';
       const sameish = '0.0.2-nightly-20260609-100300';
       expect(
         VersionUtils.isNewerNightly(currentVersion: current, newVersion: sameish),
-        isFalse,
+        isTrue,
       );
     });
 

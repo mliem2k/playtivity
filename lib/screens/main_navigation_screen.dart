@@ -8,7 +8,6 @@ import '../services/app_logger.dart';
 import '../utils/auth_utils.dart';
 import 'activities_screen.dart';
 import 'profile_screen.dart';
-import 'top_artists_screen.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -23,11 +22,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   late final PageController _pageController;
   late final ScrollController _activitiesScrollController;
   late final ScrollController _profileScrollController;
-  late final ScrollController _topArtistsScrollController;
   late final List<Widget> _screens;
-
-  // Pages 1 and 2 are both profile-related; both map to nav index 1.
-  int get _navIndex => _pageIndex == 0 ? 0 : 1;
 
   @override
   void initState() {
@@ -35,17 +30,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     _pageController = PageController();
     _activitiesScrollController = ScrollController();
     _profileScrollController = ScrollController();
-    _topArtistsScrollController = ScrollController();
     _screens = [
       _KeepAlive(child: ActivitiesScreen(scrollController: _activitiesScrollController)),
-      _KeepAlive(child: TopSongsScreen(
-        scrollController: _profileScrollController,
-        outerPageController: _pageController,
-      )),
-      _KeepAlive(child: TopArtistsScreen(
-        scrollController: _topArtistsScrollController,
-        outerPageController: _pageController,
-      )),
+      _KeepAlive(child: ProfileScreen(scrollController: _profileScrollController)),
     ];
     AppLogger.info('🏠 MainNavigationScreen initialized');
     WidgetsBinding.instance.addObserver(this);
@@ -59,7 +46,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     _pageController.dispose();
     _activitiesScrollController.dispose();
     _profileScrollController.dispose();
-    _topArtistsScrollController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -123,16 +109,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
         children: _screens,
       ),
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _navIndex,
+        currentIndex: _pageIndex,
         onTap: (index) {
           HapticFeedback.selectionClick();
-          if (index == _navIndex) {
-            // Tapping the active nav item scrolls the current page to top.
-            final controller = switch (_pageIndex) {
-              0 => _activitiesScrollController,
-              1 => _profileScrollController,
-              _ => _topArtistsScrollController,
-            };
+          if (index == _pageIndex) {
+            final controller = _pageIndex == 0
+                ? _activitiesScrollController
+                : _profileScrollController;
             if (controller.hasClients) {
               controller.animateTo(
                 0,
@@ -142,11 +125,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
             }
             return;
           }
-          // Tapping Profile nav always lands on the Top Songs page.
-          final targetPage = index == 0 ? 0 : 1;
-          setState(() => _pageIndex = targetPage);
+          setState(() => _pageIndex = index);
           _pageController.animateToPage(
-            targetPage,
+            index,
             duration: const Duration(milliseconds: 300),
             curve: Curves.easeInOut,
           );
