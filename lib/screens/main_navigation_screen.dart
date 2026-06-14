@@ -26,6 +26,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   late final ScrollController _topArtistsScrollController;
   late final List<Widget> _screens;
 
+  // Pages 1 and 2 are both profile-related; both map to nav index 1.
   int get _navIndex => _pageIndex == 0 ? 0 : 1;
 
   @override
@@ -37,8 +38,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     _topArtistsScrollController = ScrollController();
     _screens = [
       _KeepAlive(child: ActivitiesScreen(scrollController: _activitiesScrollController)),
-      _KeepAlive(child: TopSongsScreen(scrollController: _profileScrollController)),
-      _KeepAlive(child: TopArtistsScreen(scrollController: _topArtistsScrollController)),
+      _KeepAlive(child: TopSongsScreen(
+        scrollController: _profileScrollController,
+        outerPageController: _pageController,
+      )),
+      _KeepAlive(child: TopArtistsScreen(
+        scrollController: _topArtistsScrollController,
+        outerPageController: _pageController,
+      )),
     ];
     AppLogger.info('🏠 MainNavigationScreen initialized');
     WidgetsBinding.instance.addObserver(this);
@@ -120,6 +127,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
         onTap: (index) {
           HapticFeedback.selectionClick();
           if (index == _navIndex) {
+            // Tapping the active nav item scrolls the current page to top.
             final controller = switch (_pageIndex) {
               0 => _activitiesScrollController,
               1 => _profileScrollController,
@@ -134,6 +142,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
             }
             return;
           }
+          // Tapping Profile nav always lands on the Top Songs page.
           final targetPage = index == 0 ? 0 : 1;
           setState(() => _pageIndex = targetPage);
           _pageController.animateToPage(

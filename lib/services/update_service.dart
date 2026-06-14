@@ -439,7 +439,7 @@ class UpdateService {
     // built within the threshold window.
     final currentBuild = int.tryParse(currentVersion.buildNumber);
     final newBuild = int.tryParse(nightlyInfo.buildNumber);
-    if (currentBuild != null && newBuild != null && newBuild != currentBuild) {
+    if (currentBuild != null && newBuild != null) {
       final shouldUpdate = newBuild > currentBuild;
       AppLogger.info('Nightly build-number comparison: current=$currentBuild new=$newBuild shouldUpdate=$shouldUpdate');
       return shouldUpdate;

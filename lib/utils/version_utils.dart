@@ -161,18 +161,14 @@ class VersionUtils {
       AppLogger.error('Error parsing nightly version timestamps', e);
     }
 
-    // If we can't parse either timestamp, fall back to string comparison
     if (currentBuildTime == null || newVersionBuildTime == null) {
-      AppLogger.debug('  Could not parse build times, using string comparison');
-      return isNewerVersion(currentVersion: currentVersion, newVersion: newVersion);
+      AppLogger.debug('  Could not parse build times, returning false');
+      return false;
     }
 
-    // Compare build times with a threshold to avoid updates for very recent builds
-    final timeDifference = newVersionBuildTime.difference(currentBuildTime);
-    const minimumUpdateThreshold = Duration(minutes: 5); // Minimum 5 minutes difference
-
-    final isNewer = timeDifference > minimumUpdateThreshold;
-    AppLogger.debug('  Time difference: ${timeDifference.inMinutes} minutes');
+    final isNewer = newVersionBuildTime.isAfter(currentBuildTime);
+    AppLogger.debug('  Current build time: $currentBuildTime');
+    AppLogger.debug('  New build time: $newVersionBuildTime');
     AppLogger.debug('  Is newer: $isNewer');
 
     return isNewer;

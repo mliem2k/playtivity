@@ -17,7 +17,8 @@ import 'settings_screen.dart';
 
 class TopSongsScreen extends StatefulWidget {
   final ScrollController? scrollController;
-  const TopSongsScreen({super.key, this.scrollController});
+  final PageController? outerPageController;
+  const TopSongsScreen({super.key, this.scrollController, this.outerPageController});
 
   @override
   State<TopSongsScreen> createState() => _TopSongsScreenState();
@@ -237,23 +238,96 @@ class _TopSongsScreenState extends State<TopSongsScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: CurrentlyPlayingCard(track: currentlyPlaying),
               ),
-            const SizedBox(height: 16),
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  'Top Songs',
-                  style: TextStyle(
-                    color: AppTheme.textPrimary,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 18,
-                  ),
-                ),
-              ),
+            const SizedBox(height: 8),
+            ProfileTabBar(
+              showSongsActive: true,
+              onArtistsTap: () {
+                HapticFeedback.selectionClick();
+                widget.outerPageController?.animateToPage(
+                  2,
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                );
+              },
             ),
-            const SizedBox(height: 4),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Shared tab bar used by both [TopSongsScreen] and [TopArtistsScreen].
+/// Both screens use identical headers so during a swipe between them the
+/// header appears stationary — only the list content slides.
+class ProfileTabBar extends StatelessWidget {
+  final bool showSongsActive;
+  final VoidCallback? onSongsTap;
+  final VoidCallback? onArtistsTap;
+
+  const ProfileTabBar({
+    super.key,
+    required this.showSongsActive,
+    this.onSongsTap,
+    this.onArtistsTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: _ProfileTab(
+            label: 'Top Songs',
+            isActive: showSongsActive,
+            onTap: onSongsTap,
+          ),
+        ),
+        Expanded(
+          child: _ProfileTab(
+            label: 'Top Artists',
+            isActive: !showSongsActive,
+            onTap: onArtistsTap,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ProfileTab extends StatelessWidget {
+  final String label;
+  final bool isActive;
+  final VoidCallback? onTap;
+
+  const _ProfileTab({
+    required this.label,
+    required this.isActive,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: isActive ? null : onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: isActive ? AppTheme.primary : Colors.transparent,
+              width: 2,
+            ),
+          ),
+        ),
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: isActive ? AppTheme.textPrimary : AppTheme.textSecondary,
+            fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+            fontSize: 14,
+          ),
         ),
       ),
     );
