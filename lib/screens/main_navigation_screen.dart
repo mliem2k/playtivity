@@ -32,7 +32,16 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     _profileScrollController = ScrollController();
     _screens = [
       _KeepAlive(child: ActivitiesScreen(scrollController: _activitiesScrollController)),
-      _KeepAlive(child: ProfileScreen(scrollController: _profileScrollController)),
+      _KeepAlive(
+        child: ProfileScreen(
+          scrollController: _profileScrollController,
+          onSwipeBack: () => _pageController.animateToPage(
+            0,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+          ),
+        ),
+      ),
     ];
     AppLogger.info('🏠 MainNavigationScreen initialized');
     WidgetsBinding.instance.addObserver(this);
