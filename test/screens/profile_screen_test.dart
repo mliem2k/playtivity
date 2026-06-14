@@ -7,7 +7,7 @@ import 'package:playtivity/screens/profile_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  group('ProfileScreen', () {
+  group('TopSongsScreen', () {
     late AuthProvider authProvider;
     late SpotifyProvider spotifyProvider;
 
@@ -28,7 +28,7 @@ void main() {
             ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
             ChangeNotifierProvider<SpotifyProvider>.value(value: spotifyProvider),
           ],
-          child: const MaterialApp(home: ProfileScreen()),
+          child: const MaterialApp(home: TopSongsScreen()),
         );
 
     testWidgets('does not use Consumer2 at screen root', (tester) async {
@@ -39,17 +39,16 @@ void main() {
       expect(consumer2Widgets, findsNothing);
     });
 
-    testWidgets('renders tab bar', (tester) async {
+    testWidgets('renders profile tab bar', (tester) async {
       await tester.pumpWidget(buildSubject());
       await tester.pump();
-      expect(find.byType(TabBar), findsOneWidget);
+      expect(find.byType(ProfileTabBar), findsOneWidget);
     });
 
     testWidgets('wraps TrackTile in RepaintBoundary', (tester) async {
       await tester.pumpWidget(buildSubject());
       await tester.pump();
-      // Even with empty list, structure should be valid
-      expect(find.byType(ProfileScreen), findsOneWidget);
+      expect(find.byType(TopSongsScreen), findsOneWidget);
     });
 
     testWidgets('has RefreshIndicator for pull-to-refresh', (tester) async {
@@ -66,11 +65,11 @@ void main() {
           ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
           ChangeNotifierProvider<SpotifyProvider>.value(value: spotifyProvider),
         ],
-        child: MaterialApp(home: ProfileScreen(scrollController: controller)),
+        child: MaterialApp(home: TopSongsScreen(scrollController: controller)),
       );
       await tester.pumpWidget(widget);
       await tester.pump();
-      expect(find.byType(ProfileScreen), findsOneWidget);
+      expect(find.byType(TopSongsScreen), findsOneWidget);
     });
   });
 }
