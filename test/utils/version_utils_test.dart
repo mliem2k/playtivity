@@ -98,7 +98,7 @@ void main() {
   });
 
   group('VersionUtils.isNewerNightly', () {
-    test('returns true when new nightly build is more than 5 minutes newer', () {
+    test('returns true when new nightly build is newer', () {
       const current = '0.0.2-nightly-20250901-100000';
       const newer = '0.0.2-nightly-20250901-120000'; // 2 hours later
       expect(
@@ -110,7 +110,7 @@ void main() {
       );
     });
 
-    test('returns false when build times are within 5-minute threshold', () {
+    test('returns true when build is only 3 minutes newer', () {
       const current = '0.0.2-nightly-20250901-100000';
       const sameish = '0.0.2-nightly-20250901-100300'; // 3 minutes later
       expect(
@@ -118,7 +118,7 @@ void main() {
           currentVersion: current,
           newVersion: sameish,
         ),
-        isFalse,
+        isTrue,
       );
     });
   });

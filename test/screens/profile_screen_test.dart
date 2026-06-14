@@ -7,7 +7,7 @@ import 'package:playtivity/screens/profile_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  group('TopSongsScreen', () {
+  group('ProfileScreen', () {
     late AuthProvider authProvider;
     late SpotifyProvider spotifyProvider;
 
@@ -28,7 +28,7 @@ void main() {
             ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
             ChangeNotifierProvider<SpotifyProvider>.value(value: spotifyProvider),
           ],
-          child: const MaterialApp(home: TopSongsScreen()),
+          child: const MaterialApp(home: ProfileScreen()),
         );
 
     testWidgets('does not use Consumer2 at screen root', (tester) async {
@@ -39,16 +39,18 @@ void main() {
       expect(consumer2Widgets, findsNothing);
     });
 
-    testWidgets('renders profile tab bar', (tester) async {
+    testWidgets('renders tab bar with Songs and Artists tabs', (tester) async {
       await tester.pumpWidget(buildSubject());
       await tester.pump();
-      expect(find.byType(ProfileTabBar), findsOneWidget);
+      expect(find.byType(TabBar), findsOneWidget);
+      expect(find.text('Top Songs'), findsOneWidget);
+      expect(find.text('Top Artists'), findsOneWidget);
     });
 
-    testWidgets('wraps TrackTile in RepaintBoundary', (tester) async {
+    testWidgets('renders profile screen', (tester) async {
       await tester.pumpWidget(buildSubject());
       await tester.pump();
-      expect(find.byType(TopSongsScreen), findsOneWidget);
+      expect(find.byType(ProfileScreen), findsOneWidget);
     });
 
     testWidgets('has RefreshIndicator for pull-to-refresh', (tester) async {
@@ -65,11 +67,11 @@ void main() {
           ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
           ChangeNotifierProvider<SpotifyProvider>.value(value: spotifyProvider),
         ],
-        child: MaterialApp(home: TopSongsScreen(scrollController: controller)),
+        child: MaterialApp(home: ProfileScreen(scrollController: controller)),
       );
       await tester.pumpWidget(widget);
       await tester.pump();
-      expect(find.byType(TopSongsScreen), findsOneWidget);
+      expect(find.byType(ProfileScreen), findsOneWidget);
     });
   });
 }

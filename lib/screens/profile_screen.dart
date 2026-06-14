@@ -4,10 +4,12 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/auth_provider.dart';
 import '../providers/spotify_provider.dart';
+import '../models/artist.dart';
 import '../models/track.dart';
 import '../models/user.dart';
 import '../utils/theme.dart';
 import '../utils/spotify_launcher.dart';
+import '../widgets/artist_tile.dart';
 import '../widgets/track_tile.dart';
 import '../widgets/currently_playing_card.dart';
 import '../widgets/common/state_display_widget.dart';
@@ -15,33 +17,22 @@ import '../widgets/common/profile_skeleton.dart';
 import '../services/app_logger.dart';
 import 'settings_screen.dart';
 
-class TopSongsScreen extends StatefulWidget {
+class ProfileScreen extends StatefulWidget {
   final ScrollController? scrollController;
-  final PageController? outerPageController;
-  const TopSongsScreen({super.key, this.scrollController, this.outerPageController});
+  const ProfileScreen({super.key, this.scrollController});
 
   @override
-  State<TopSongsScreen> createState() => _TopSongsScreenState();
+  State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _TopSongsScreenState extends State<TopSongsScreen> {
-  late final ScrollController _scrollController;
-  bool _ownScrollController = false;
+class _ProfileScreenState extends State<ProfileScreen> {
   bool _hasError = false;
   String _errorMessage = '';
 
   @override
   void initState() {
     super.initState();
-    _scrollController = widget.scrollController ?? ScrollController();
-    _ownScrollController = widget.scrollController == null;
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadData());
-  }
-
-  @override
-  void dispose() {
-    if (_ownScrollController) _scrollController.dispose();
-    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -82,73 +73,148 @@ class _TopSongsScreenState extends State<TopSongsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-      body: RefreshIndicator(
-        onRefresh: _onRefresh,
-        color: AppTheme.primary,
-        child: Selector2<AuthProvider, SpotifyProvider,
-            ({User? user, Track? currentlyPlaying, List<Track> topTracks, bool isLoading})>(
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        extendBodyBehindAppBar: true,
+        body: Selector2<AuthProvider, SpotifyProvider,
+            ({User? user, Track? currentlyPlaying, List<Track> topTracks, List<Artist> topArtists, bool isLoading})>(
           selector: (_, auth, sp) => (
             user: auth.currentUser,
             currentlyPlaying: sp.currentlyPlaying,
             topTracks: sp.topTracks,
+            topArtists: sp.topArtists,
             isLoading: sp.isLoading,
           ),
           shouldRebuild: (prev, next) =>
               !identical(prev.user, next.user) ||
               prev.currentlyPlaying?.uri != next.currentlyPlaying?.uri ||
               !identical(prev.topTracks, next.topTracks) ||
+              !identical(prev.topArtists, next.topArtists) ||
               prev.isLoading != next.isLoading,
-          builder: (ctx, data, _) => CustomScrollView(
-            controller: _scrollController,
-            physics: const AlwaysScrollableScrollPhysics(),
-            slivers: [
-              SliverToBoxAdapter(child: _buildHeader(data.user, data.currentlyPlaying)),
-              _buildContentSliver(data.topTracks, data.isLoading),
-            ],
+          builder: (ctx, data, _) => RefreshIndicator(
+            onRefresh: _onRefresh,
+            color: AppTheme.primary,
+            child: NestedScrollView(
+              controller: widget.scrollController,
+              headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                SliverToBoxAdapter(child: _buildHeader(data.user, data.currentlyPlaying)),
+                const SliverPersistentHeader(
+                  pinned: true,
+                  delegate: _StickyTabBarDelegate(
+                    TabBar(
+                      tabs: [Tab(text: 'Top Songs'), Tab(text: 'Top Artists')],
+                      indicatorColor: AppTheme.primary,
+                      labelColor: AppTheme.textPrimary,
+                      unselectedLabelColor: AppTheme.textSecondary,
+                      indicatorSize: TabBarIndicatorSize.label,
+                    ),
+                  ),
+                ),
+              ],
+              body: TabBarView(
+                children: [
+                  _buildSongsTab(data.topTracks, data.isLoading),
+                  _buildArtistsTab(data.topArtists, data.isLoading),
+                ],
+              ),
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildContentSliver(List<Track> topTracks, bool isLoading) {
+  Widget _buildSongsTab(List<Track> topTracks, bool isLoading) {
     if (_hasError) {
-      return SliverFillRemaining(
-        child: StateDisplayWidget.error(
-          title: 'Could not load',
-          error: _errorMessage,
-          buttonText: 'Retry',
-          onAction: _retryLoad,
-        ),
+      return CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverFillRemaining(
+            child: StateDisplayWidget.error(
+              title: 'Could not load',
+              error: _errorMessage,
+              buttonText: 'Retry',
+              onAction: _retryLoad,
+            ),
+          ),
+        ],
       );
     }
     if (isLoading) {
-      return const SliverToBoxAdapter(child: ProfileSkeleton(count: 10));
+      return const SingleChildScrollView(child: ProfileSkeleton(count: 10));
     }
     if (topTracks.isEmpty) {
-      return SliverFillRemaining(
-        child: StateDisplayWidget.empty(
-          title: 'No top tracks found',
-          icon: Icons.music_note_outlined,
-        ),
+      return CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverFillRemaining(
+            child: StateDisplayWidget.empty(
+              title: 'No top tracks found',
+              icon: Icons.music_note_outlined,
+            ),
+          ),
+        ],
       );
     }
-    return SliverPadding(
-      padding: const EdgeInsets.only(top: 8, bottom: 16),
-      sliver: SliverList(
-        delegate: SliverChildBuilderDelegate(
-          (_, i) {
-            if (i.isOdd) return const Divider(height: 1, color: AppTheme.dividerColor);
-            final idx = i ~/ 2;
-            return RepaintBoundary(child: TrackTile(track: topTracks[idx], rank: idx + 1));
-          },
-          childCount: topTracks.length * 2 - 1,
-          addAutomaticKeepAlives: false,
-          addRepaintBoundaries: false,
+    return CustomScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.only(top: 8, bottom: 16),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (_, i) {
+                if (i.isOdd) return const Divider(height: 1, color: AppTheme.dividerColor);
+                final idx = i ~/ 2;
+                return RepaintBoundary(child: TrackTile(track: topTracks[idx], rank: idx + 1));
+              },
+              childCount: topTracks.length * 2 - 1,
+              addAutomaticKeepAlives: false,
+              addRepaintBoundaries: false,
+            ),
+          ),
         ),
-      ),
+      ],
+    );
+  }
+
+  Widget _buildArtistsTab(List<Artist> topArtists, bool isLoading) {
+    if (isLoading) {
+      return const SingleChildScrollView(child: ProfileSkeleton(count: 10));
+    }
+    if (topArtists.isEmpty) {
+      return CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverFillRemaining(
+            child: StateDisplayWidget.empty(
+              title: 'No top artists found',
+              icon: Icons.person_outline,
+            ),
+          ),
+        ],
+      );
+    }
+    return CustomScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.only(top: 8, bottom: 16),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (_, i) {
+                if (i.isOdd) return const Divider(height: 1, color: AppTheme.dividerColor);
+                final idx = i ~/ 2;
+                return RepaintBoundary(child: ArtistTile(artist: topArtists[idx], rank: idx + 1));
+              },
+              childCount: topArtists.length * 2 - 1,
+              addAutomaticKeepAlives: false,
+              addRepaintBoundaries: false,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -238,18 +304,7 @@ class _TopSongsScreenState extends State<TopSongsScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: CurrentlyPlayingCard(track: currentlyPlaying),
               ),
-            const SizedBox(height: 8),
-            ProfileTabBar(
-              showSongsActive: true,
-              onArtistsTap: () {
-                HapticFeedback.selectionClick();
-                widget.outerPageController?.animateToPage(
-                  2,
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeInOut,
-                );
-              },
-            ),
+            const SizedBox(height: 16),
           ],
         ),
       ),
@@ -257,79 +312,21 @@ class _TopSongsScreenState extends State<TopSongsScreen> {
   }
 }
 
-/// Shared tab bar used by both [TopSongsScreen] and [TopArtistsScreen].
-/// Both screens use identical headers so during a swipe between them the
-/// header appears stationary — only the list content slides.
-class ProfileTabBar extends StatelessWidget {
-  final bool showSongsActive;
-  final VoidCallback? onSongsTap;
-  final VoidCallback? onArtistsTap;
-
-  const ProfileTabBar({
-    super.key,
-    required this.showSongsActive,
-    this.onSongsTap,
-    this.onArtistsTap,
-  });
+class _StickyTabBarDelegate extends SliverPersistentHeaderDelegate {
+  final TabBar tabBar;
+  const _StickyTabBarDelegate(this.tabBar);
 
   @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _ProfileTab(
-            label: 'Top Songs',
-            isActive: showSongsActive,
-            onTap: onSongsTap,
-          ),
-        ),
-        Expanded(
-          child: _ProfileTab(
-            label: 'Top Artists',
-            isActive: !showSongsActive,
-            onTap: onArtistsTap,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ProfileTab extends StatelessWidget {
-  final String label;
-  final bool isActive;
-  final VoidCallback? onTap;
-
-  const _ProfileTab({
-    required this.label,
-    required this.isActive,
-    this.onTap,
-  });
+  double get minExtent => tabBar.preferredSize.height;
 
   @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: isActive ? null : onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(
-              color: isActive ? AppTheme.primary : Colors.transparent,
-              width: 2,
-            ),
-          ),
-        ),
-        child: Text(
-          label,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: isActive ? AppTheme.textPrimary : AppTheme.textSecondary,
-            fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-            fontSize: 14,
-          ),
-        ),
-      ),
-    );
+  double get maxExtent => tabBar.preferredSize.height;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return ColoredBox(color: AppTheme.background, child: tabBar);
   }
+
+  @override
+  bool shouldRebuild(_StickyTabBarDelegate oldDelegate) => false;
 }

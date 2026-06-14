@@ -13,13 +13,11 @@ import '../widgets/artist_tile.dart';
 import '../widgets/currently_playing_card.dart';
 import '../widgets/common/state_display_widget.dart';
 import '../widgets/common/profile_skeleton.dart';
-import 'profile_screen.dart' show ProfileTabBar;
 import 'settings_screen.dart';
 
 class TopArtistsScreen extends StatefulWidget {
   final ScrollController? scrollController;
-  final PageController? outerPageController;
-  const TopArtistsScreen({super.key, this.scrollController, this.outerPageController});
+  const TopArtistsScreen({super.key, this.scrollController});
 
   @override
   State<TopArtistsScreen> createState() => _TopArtistsScreenState();
@@ -166,18 +164,7 @@ class _TopArtistsScreenState extends State<TopArtistsScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: CurrentlyPlayingCard(track: currentlyPlaying),
               ),
-            const SizedBox(height: 8),
-            ProfileTabBar(
-              showSongsActive: false,
-              onSongsTap: () {
-                HapticFeedback.selectionClick();
-                widget.outerPageController?.animateToPage(
-                  1,
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeInOut,
-                );
-              },
-            ),
+            const SizedBox(height: 16),
           ],
         ),
       ),
