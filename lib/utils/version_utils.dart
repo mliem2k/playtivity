@@ -196,7 +196,7 @@ class VersionUtils {
           final year = int.parse(dateTimePart.substring(0, 4));
           final month = int.parse(dateTimePart.substring(4, 6));
           final day = int.parse(dateTimePart.substring(6, 8));
-            final date = DateTime(year, month, day);
+          final date = DateTime(year, month, day);
           return '$baseVersion Nightly (${_formatDate(date)})';
         }
 
@@ -227,7 +227,7 @@ class VersionUtils {
 
     return '$baseVersion $preReleaseType ${preReleaseParts[1]}';
   }
-    // Helper for formatting dates
+
   static String _formatDate(DateTime date) {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

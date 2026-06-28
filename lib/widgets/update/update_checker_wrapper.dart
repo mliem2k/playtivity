@@ -60,10 +60,9 @@ class _UpdateCheckerWrapperState extends State<UpdateCheckerWrapper> {
 
     // showDialog needs a context that is a descendant of the Navigator.
     // UpdateCheckerWrapper sits above the Navigator in MaterialApp.builder,
-    // so `context` has no Navigator ancestor. Use navigatorKey.currentContext
-    // which resolves to the Navigator widget itself and is accepted by showDialog.
-    final dialogContext = navigatorKey.currentContext;
-    if (dialogContext == null) return;
+    // so `context` has no Navigator ancestor. navigatorKey.currentContext
+    // resolves to the Navigator widget itself and is accepted by showDialog.
+    if (navigatorKey.currentContext == null) return;
 
     // Reuse a previously-downloaded file if it still exists on disk.
     String? filePath = _downloadedFilePath;
@@ -75,7 +74,9 @@ class _UpdateCheckerWrapperState extends State<UpdateCheckerWrapper> {
 
     if (filePath == null) {
       if (!mounted) return;
-      filePath = await showDownloadDialog(dialogContext, _updateInfo!);
+      final dlCtx = navigatorKey.currentContext;
+      if (dlCtx == null || !dlCtx.mounted) return;
+      filePath = await showDownloadDialog(dlCtx, _updateInfo!);
       if (filePath != null) {
         setState(() => _downloadedFilePath = filePath);
       }
@@ -84,7 +85,9 @@ class _UpdateCheckerWrapperState extends State<UpdateCheckerWrapper> {
     }
 
     if (filePath != null && mounted) {
-      final installed = await showInstallDialog(dialogContext, filePath);
+      final installCtx = navigatorKey.currentContext;
+      if (installCtx == null || !installCtx.mounted) return;
+      final installed = await showInstallDialog(installCtx, filePath);
       if (installed) {
         setState(() {
           _updateInfo = null;
