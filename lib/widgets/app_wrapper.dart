@@ -15,26 +15,45 @@ class AppWrapper extends StatefulWidget {
 }
 
 class _AppWrapperState extends State<AppWrapper> {
+  AuthProvider? _authProvider;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final auth = context.read<AuthProvider>();
+    if (_authProvider != auth) {
+      _authProvider?.removeListener(_syncBearer);
+      _authProvider = auth;
+      _authProvider!.addListener(_syncBearer);
+      _syncBearer();
+    }
+  }
+
+  @override
+  void dispose() {
+    _authProvider?.removeListener(_syncBearer);
+    super.dispose();
+  }
+
+  void _syncBearer() {
+    if (!mounted) return;
+    final auth = _authProvider!;
+    final spotify = context.read<SpotifyProvider>();
+    if (auth.authState == AuthState.authenticated && auth.bearerToken != null) {
+      spotify.setBearer(auth.bearerToken!);
+    } else if (auth.authState == AuthState.unauthenticated) {
+      spotify.clearBearer();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Consumer<AuthProvider>(
-      builder: (context, authProvider, child) {
-        final spotifyProvider = context.read<SpotifyProvider>();
-        if (authProvider.authState == AuthState.authenticated &&
-            authProvider.bearerToken != null) {
-          spotifyProvider.setBearer(authProvider.bearerToken!);
-        } else if (authProvider.authState == AuthState.unauthenticated) {
-          spotifyProvider.clearBearer();
-        }
-
-        AppLogger.debug('🔍 AppWrapper rebuild - AuthProvider state:');
-        AppLogger.debug('   - authState: ${authProvider.authState}');
-        AppLogger.debug('   - isAuthenticated: ${authProvider.isAuthenticated}');
-        AppLogger.debug('   - currentUser: ${authProvider.currentUser?.displayName ?? 'null'}');
-        AppLogger.debug('   - bearerToken exists: ${authProvider.bearerToken != null}');
-
-        return switch (authProvider.authState) {
-          AuthState.uninitialized || AuthState.loading => AuthLoadingScreen(authProvider: authProvider),
+    return Selector<AuthProvider, AuthState>(
+      selector: (_, auth) => auth.authState,
+      builder: (context, authState, _) {
+        AppLogger.debug('AppWrapper: authState=${authState.name}');
+        return switch (authState) {
+          AuthState.uninitialized || AuthState.loading => AuthLoadingScreen(authProvider: _authProvider!),
           AuthState.authenticated => const MainNavigationScreen(),
           AuthState.unauthenticated => const LoginScreen(),
         };

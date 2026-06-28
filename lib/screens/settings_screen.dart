@@ -179,7 +179,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ? null
           : () {
               HapticFeedback.selectionClick();
-              onTap!();
+              onTap();
             },
     );
   }

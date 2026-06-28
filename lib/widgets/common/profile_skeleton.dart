@@ -38,7 +38,7 @@ class _ProfileSkeletonState extends State<ProfileSkeleton>
       physics: const NeverScrollableScrollPhysics(),
       padding: const EdgeInsets.only(top: 8, bottom: 16),
       itemCount: widget.count,
-      itemBuilder: (_, __) => FadeTransition(
+      itemBuilder: (_, _) => FadeTransition(
         opacity: _animation,
         child: const _SkeletonTile(),
       ),
