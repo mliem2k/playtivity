@@ -182,8 +182,10 @@ class UpdateService {
           return nightlyCheck;
         }
         
-        // For nightly users, only offer stable updates if they're significantly newer
-        if (releaseCheck.hasUpdate && _shouldOfferStableToNightlyUser(currentVersion, releaseCheck)) {
+        // Offer stable update when the release is genuinely newer than the
+        // nightly base version. isNewerVersion() already handles this correctly:
+        // nightly 0.0.4-* vs stable 0.0.5 → true; nightly 0.0.5-* vs stable 0.0.5 → false.
+        if (releaseCheck.hasUpdate) {
           AppLogger.info('Stable release update available for nightly user: ${releaseCheck.updateInfo?.version}');
           return releaseCheck;
         }
@@ -364,52 +366,6 @@ class UpdateService {
     }
   }
   
-  // Helper method to determine if we should offer a stable release to a nightly user
-  static bool _shouldOfferStableToNightlyUser(AppVersionInfo currentVersion, UpdateCheckResult releaseCheck) {
-    if (releaseCheck.updateInfo == null) return false;
-    
-    final currentVersionString = currentVersion.version;
-    final releaseVersionString = releaseCheck.updateInfo!.version;
-    
-    AppLogger.info('Checking if should offer stable to nightly user:');
-    AppLogger.info('  Current nightly: $currentVersionString');
-    AppLogger.info('  Available stable: $releaseVersionString');
-    
-    // Extract base versions for comparison
-    final currentBase = VersionUtils.extractBaseVersion(currentVersionString);
-    final releaseBase = VersionUtils.extractBaseVersion(releaseVersionString);
-    
-    AppLogger.info('  Current base: $currentBase');
-    AppLogger.info('  Release base: $releaseBase');
-    
-    // Only offer stable if it has a higher major or minor version
-    // Don't offer for patch-level updates to avoid unnecessary downgrades
-    final currentBaseParts = currentBase.split('.');
-    final releaseBaseParts = releaseBase.split('.');
-    
-    // Normalize to have at least 3 parts
-    while (currentBaseParts.length < 3) {
-      currentBaseParts.add('0');
-    }
-    while (releaseBaseParts.length < 3) {
-      releaseBaseParts.add('0');
-    }
-    
-    final currentMajor = int.tryParse(currentBaseParts[0]) ?? 0;
-    final currentMinor = int.tryParse(currentBaseParts[1]) ?? 0;
-    
-    final releaseMajor = int.tryParse(releaseBaseParts[0]) ?? 0;
-    final releaseMinor = int.tryParse(releaseBaseParts[1]) ?? 0;
-    
-    // Only offer if it's a major or minor version increase
-    final shouldOffer = (releaseMajor > currentMajor) || 
-                       (releaseMajor == currentMajor && releaseMinor > currentMinor);
-    
-    AppLogger.info('Should offer stable to nightly user: $shouldOffer');
-    
-    return shouldOffer;
-  }
-
   // Helper method to determine if we should update to a nightly build
   static bool _shouldUpdateToNightly(AppVersionInfo currentVersion, UpdateInfo nightlyInfo) {
     AppLogger.info('Checking if should update to nightly:');
