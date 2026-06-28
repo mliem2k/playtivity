@@ -4,8 +4,10 @@
 
 **All releases must be done locally using the scripts in `scripts/`.** Never create releases any other way.
 
-- Nightly build: `node scripts/nightly.js`
-- Promote nightly to release: `node scripts/nightly-release.js [--increment patch|minor|major|none] [--version x.y.z]`
+- **Ship an update to users: `node scripts/nightly.js`** — this is the standard distribution path.
+- Promote nightly to a stable release: `node scripts/nightly-release.js [--increment patch|minor|major|none] [--version x.y.z]` — only for formal stable milestones (0.1.0, 1.0.0, etc.).
+
+**Use `nightly.js` for all routine updates.** The in-app updater parses the nightly release body format (`**Version**: \`...\``) to extract version and build number. Stable releases produced by `nightly-release.js` use a different body format and have caused updater failures in the past (v0.0.5, v0.0.6 — deleted 2026-06-29). When in doubt, always reach for `nightly.js`.
 
 **Forbidden release paths (never use these):**
 - `gh release create` — manual gh CLI release
@@ -62,7 +64,7 @@ Example: `0.0.2-nightly-20260611-050901+1781212141`
 | Installed | Available | Rule |
 |-----------|-----------|------|
 | nightly   | nightly   | BUILD (integer) comparison — larger BUILD wins. Timestamp fallback if BUILDs are unparseable. |
-| nightly   | stable    | Only offered if stable has a higher major or minor base version. |
+| nightly   | stable    | Offered when stable base version > nightly base version (any semver bump). |
 | stable    | stable    | Semver comparison on NAME. |
 | stable    | nightly   | Only offered if nightly base version >= installed stable base version. |
 
