@@ -5,13 +5,13 @@
     "": {
       "name": "playtivity-landing",
       "dependencies": {
-        "@tailwindcss/vite": "^4.3.1",
         "astro": "^7.0.3",
-        "tailwindcss": "^4.3.1",
       },
       "devDependencies": {
         "@astrojs/check": "^0.9.9",
+        "@tailwindcss/vite": "^4.3.1",
         "sharp": "^0.34.2",
+        "tailwindcss": "^4.3.1",
         "typescript": "^6.0.3",
       },
     },
