@@ -1,4 +1,10 @@
 ---
+import { Image } from 'astro:assets';
+import homeScreenshot from '@/assets/screenshots/home.webp';
+import loginScreenshot from '@/assets/screenshots/login.webp';
+import profileTopArtistsScreenshot from '@/assets/screenshots/profile_top_artists.webp';
+import profileTopSongsScreenshot from '@/assets/screenshots/profile_top_songs.webp';
+
 const GITHUB = 'https://github.com/mliem2k/playtivity';
 const DOWNLOAD = 'https://github.com/mliem2k/playtivity/releases/latest';
 
@@ -41,11 +47,10 @@ const steps = [
   <meta name="description" content="Playtivity brings Spotify's Friend Activity to your Android home screen. See what your friends are listening to in real-time." />
   <meta property="og:title" content="Playtivity — See what your friends are listening to" />
   <meta property="og:description" content="Real-time Spotify friend activity for Android. Free and open source." />
-  <meta property="og:image" content="/screenshots/home.webp" />
+  <meta property="og:image" content={homeScreenshot.src} />
   <link rel="icon" type="image/webp" href="/playtivity_logo.webp" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="preload" href="/fonts/montserrat-700.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="/fonts/montserrat-900.woff2" as="font" type="font/woff2" crossorigin />
 </head>
 <body>
 
@@ -66,6 +71,7 @@ const steps = [
   </div>
 </nav>
 
+<main>
 <!-- HERO -->
 <section class="hero">
   <div class="hero-content">
@@ -89,7 +95,7 @@ const steps = [
     </div>
     <div class="hero-phone">
       <div class="phone-frame">
-        <img src="/screenshots/home.webp" alt="Playtivity friend activity feed" width="320" height="693" />
+        <Image src={homeScreenshot} alt="Playtivity friend activity feed" width={320} height={676} loading="eager" fetchpriority="high" />
       </div>
     </div>
   </div>
@@ -121,14 +127,14 @@ const steps = [
   <div class="screenshots-scroll">
     <div class="screenshots-track">
       {[
-        { src: '/screenshots/home.webp', label: 'Friend Activity' },
-        { src: '/screenshots/profile_top_songs.webp', label: 'Top Songs' },
-        { src: '/screenshots/profile_top_artists.webp', label: 'Top Artists' },
-        { src: '/screenshots/login.webp', label: 'Sign in' },
+        { src: homeScreenshot, label: 'Friend Activity' },
+        { src: profileTopSongsScreenshot, label: 'Top Songs' },
+        { src: profileTopArtistsScreenshot, label: 'Top Artists' },
+        { src: loginScreenshot, label: 'Sign in' },
       ].map(s => (
         <div class="screenshot-item">
           <div class="phone-frame phone-frame--sm">
-            <img src={s.src} alt={s.label} width="220" loading="lazy" />
+            <Image src={s.src} alt={s.label} width={220} height={464} loading="lazy" />
           </div>
           <span class="screenshot-label">{s.label}</span>
         </div>
@@ -171,6 +177,7 @@ const steps = [
     <p class="cta-note">Android &middot; Free &middot; Open source under MIT</p>
   </div>
 </section>
+</main>
 
 <!-- FOOTER -->
 <footer>
@@ -197,6 +204,49 @@ const steps = [
 </html>
 
 <style is:global>
+  @font-face {
+    font-family: 'Montserrat';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('/fonts/montserrat-400.woff2') format('woff2');
+  }
+  @font-face {
+    font-family: 'Montserrat';
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: url('/fonts/montserrat-500.woff2') format('woff2');
+  }
+  @font-face {
+    font-family: 'Montserrat';
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url('/fonts/montserrat-600.woff2') format('woff2');
+  }
+  @font-face {
+    font-family: 'Montserrat';
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url('/fonts/montserrat-700.woff2') format('woff2');
+  }
+  @font-face {
+    font-family: 'Montserrat';
+    font-style: normal;
+    font-weight: 800;
+    font-display: swap;
+    src: url('/fonts/montserrat-800.woff2') format('woff2');
+  }
+  @font-face {
+    font-family: 'Montserrat';
+    font-style: normal;
+    font-weight: 900;
+    font-display: swap;
+    src: url('/fonts/montserrat-900.woff2') format('woff2');
+  }
+
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
@@ -208,7 +258,7 @@ const steps = [
     --green-light: #1ED760;
     --text:        #ffffff;
     --muted:       #a7a7a7;
-    --subdued:     #535353;
+    --subdued:     #8a8a8a;
     --radius:      12px;
   }
 
@@ -259,7 +309,6 @@ const steps = [
 
   .nav-links a { color: var(--muted); transition: color 0.15s; }
   .nav-links a:hover { color: var(--text); }
-  .nav-links .btn-primary { color: #fff; }
 
   .nav-github {
     display: flex;
@@ -445,7 +494,7 @@ const steps = [
     .hero-note { text-align: center; }
     .equalizer { justify-content: center; }
     .hero-phone { margin-top: 2rem; }
-    .phone-frame img { width: 260px; }
+    .phone-frame img { width: 260px; height: auto; }
   }
 
   /* SECTION COMMON */
