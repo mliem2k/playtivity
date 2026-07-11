@@ -1,37 +1,24 @@
+# ===== Playtivity project-specific (carried over from pre-Skip .gitignore) =====
+
 # Miscellaneous
 *.class
 *.log
 *.pyc
-*.swp
-.DS_Store
 .atom/
-.build/
 .buildlog/
 .history
 .svn/
-.swiftpm/
 migrate_working_dir/
 
 # IntelliJ related
 *.iml
 *.ipr
 *.iws
-.idea/
 
 # The .vscode folder contains launch configuration and tasks you configure in
 # VS Code which you may wish to be included in version control, so this line
 # is commented out by default.
 #.vscode/
-
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
-.dart_tool/
-.flutter-plugins
-.flutter-plugins-dependencies
-.pub-cache/
-.pub/
-/build/
 
 # Symbolication related
 app.*.symbols
@@ -39,34 +26,105 @@ app.*.symbols
 # Obfuscation related
 app.*.map.json
 
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
-
-/.fvm/
-
 # Environment variables
 .env
 
-# Android Keystore files
+# Release signing / secrets
 *.jks
 *.keystore
 *.base64.txt
-android/app/release-key.jks
-android/app/upload-keystore.jks
-*.txt
+
+# Build tooling output (scripts/build-apk.js, scripts/nightly.js, etc.)
 *.apk
 /nightly
-.pub-cache-hash
 delete-releases.js
 /.omc
 
-# Node
+# Node (root package.json build tooling + landing/)
 /node_modules/
 
-# Local debug/probe scripts
-/tool/_*.dart
+# Internal planning docs (not meant to be committed)
 /docs/superpowers/
+
+# Misc tooling
 /.playwright-mcp/
 /coverage/
+
+# ===== Skip (skip.dev) generated =====
+
+## User settings
+
+# vi
+.*.swp
+.*.swo
+
+# macOS
+.DS_Store
+
+# gradle properties
+local.properties
+.gradle/
+.android/
+.kotlin/
+Android/app/keystore.jks
+Android/app/keystore.properties
+
+xcodebuild*.log
+
+default.profraw
+*.mobileprovision
+*.cer
+*.p12
+*.p12.password
+
+# Xcode automatically generates this directory with a .xcworkspacedata file and xcuserdata
+# hence it is not needed unless you have added a package configuration file to your project
+.swiftpm
+.build/
+build/
+DerivedData/
+xcuserdata/
+xcodebuild*.log
+.idea/
+
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+*.xcscmblueprint
+*.xccheckout
+
+## Obj-C/Swift specific
+*.hmap
+
+## App packaging
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+## Playgrounds
+timeline.xctimeline
+playground.xcworkspace
+
+# Swift Package Manager
+#
+# Add this line if you want to avoid checking in source code from Swift Package Manager dependencies.
+Packages/
+Package.pins
+Package.resolved
+#*.xcodeproj
+
+Carthage/Build/
+
+# fastlane
+
+**/fastlane/apikey.json
+**/fastlane/report.xml
+**/fastlane/README.md
+**/fastlane/Preview.html
+**/fastlane/test_output

@@ -1,0 +1,4 @@
+# Skip configuration for PlaytivityTests module
+
+#build:
+#  contents:
