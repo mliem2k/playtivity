@@ -1,6 +1,3 @@
-// Licensed under the GNU General Public License v2.0 or later
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 import Testing
 import Foundation
 @testable import Playtivity
