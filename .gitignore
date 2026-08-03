@@ -70,3 +70,5 @@ delete-releases.js
 /docs/superpowers/
 /.playwright-mcp/
 /coverage/
+.superpowers/
+docs/superpowers/
