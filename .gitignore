@@ -84,7 +84,6 @@ default.profraw
 build/
 DerivedData/
 xcuserdata/
-xcodebuild*.log
 .idea/
 
 *.moved-aside
