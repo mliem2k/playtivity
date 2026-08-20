@@ -235,7 +235,16 @@ final class AuthStore: @unchecked Sendable {
     /// silently shipping a permanently-logged-out cold start; it also produces a real,
     /// unconditional throw on both platforms, Kotlin's `error()` on Android with no debug/release
     /// gating, and a native Swift assertion trap, not a Swift-only or debug-only behavior).
+    ///
+    /// Guarded against re-entry: `PlaytivityRootView` calls this from a `.task` attached to a
+    /// `Group` whose body switches on `isInitialized`/`isAuthenticated`. If SwiftUI (or Skip's
+    /// Compose mapping) ever redistributes that modifier to the resolved branch instead of the
+    /// `Group` node, the task would restart on every route change; without this guard that would
+    /// re-run `authState = .loading` and flip `isAuthenticated` false mid-session, routing back to
+    /// `LoginScreen`. Unverified against a real device in either direction (see the task report),
+    /// so this guard is cheap insurance rather than a fix for a confirmed bug.
     func initialize() async {
+        guard authState == .uninitialized else { return }
         authState = .loading
 
         addEvent("Starting auth initialization...")

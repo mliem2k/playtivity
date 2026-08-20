@@ -402,6 +402,10 @@ final class SpotifyStore: @unchecked Sendable {
     /// exists only so the two Dart call sites (end of `fastInitialLoad`, end of
     /// `loadFriendsActivities` when `friendsActivities` is non-empty) are already wired for
     /// Phase 5 to fill in.
+    ///
+    /// Both current call sites are inside an already-gated `serialized(_:)` operation. Do NOT
+    /// route Phase 5's real implementation through `serialized(_:)` itself, `serialized(_:)` is
+    /// not reentrant and doing so would deadlock.
     func updateWidget(currentUser: User?) async {
     }
 }
