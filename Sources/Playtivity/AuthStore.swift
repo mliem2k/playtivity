@@ -44,8 +44,8 @@ final class AuthStore {
     private(set) var lastAuthError: String?
 
     /// The restored/authenticated user, if any. Backed by `_currentUser` so internal code can
-    /// read/write it without tripping the DEBUG guard below, which is only meant to catch an
-    /// external caller reading this before `initialize()` has ever run.
+    /// read/write it without tripping the guard below, which is only meant to catch an external
+    /// caller reading this before `initialize()` has ever run.
     var currentUser: User? {
         assertStoreIsInitialized()
         return _currentUser
@@ -65,24 +65,34 @@ final class AuthStore {
     // trip the assert it exists to avoid needing.
     var isInitialized: Bool { authState != .uninitialized }
 
-    // DEBUG-only guard: currentUser and isAuthenticated both read as an "empty"/false value both
-    // when the store has never been initialized AND when it genuinely has no user or is logged
-    // out, so a forgotten `initialize()` call silently looks identical to a normal logged-out
-    // state, with no signal anything is wrong. Trap loudly in development instead. authState
-    // itself does not need this: `.uninitialized` already is the loud, unambiguous signal, and
-    // asserting on every read of it would break the legitimate "check isInitialized, then decide
-    // whether to call initialize()" pattern.
+    // currentUser and isAuthenticated both read as an "empty"/false value both when the store has
+    // never been initialized AND when it genuinely has no user or is logged out, so a forgotten
+    // `initialize()` call silently looks identical to a normal logged-out state, with no signal
+    // anything is wrong. authState itself does not need this: `.uninitialized` already is the
+    // loud, unambiguous signal, and asserting on every read of it would break the legitimate
+    // "check isInitialized, then decide whether to call initialize()" pattern.
+    //
+    // Runs unconditionally (no `#if DEBUG`): it is a single enum comparison, cheap enough to
+    // always pay for, and gating it behind `#if DEBUG` turned out to be silently stripped to a
+    // no-op by Skip's Android transpile step (confirmed by reading the actual generated Kotlin,
+    // which compiled the whole function body down to `= Unit`), so the guard never fired on
+    // Android, the one platform this app tests and ships. Signals through two channels: a
+    // `logger.error` call, already used elsewhere in this file (see `loginComplete`'s catch
+    // block) and confirmed to transpile and produce a visible signal on both platforms, plus
+    // `assertionFailure`, which additionally traps the process on native Swift debug builds
+    // (Swift's real, unconditional behavior there, not gated by this file). No test deliberately
+    // triggers the `assertionFailure` path: doing so would abort the whole native `swift test`
+    // process rather than fail a single test, since that is exactly what an assertion trap does
+    // by design. The `logger.error` channel is what is verified instead, by reading the compiled
+    // Kotlin output directly rather than by executing the crash path.
     private func assertStoreIsInitialized() {
-        #if DEBUG
-        if authState == .uninitialized {
-            assertionFailure("""
-                AuthStore.currentUser or .isAuthenticated was read before initialize() was ever \
-                called. Without that call, authState stays .uninitialized forever and these read \
-                exactly like a genuine logged-out user, with no signal why. Call \
-                `await store.initialize()` before reading either.
-                """)
-        }
-        #endif
+        guard authState == .uninitialized else { return }
+        let message = "AuthStore.currentUser or .isAuthenticated was read before initialize() " +
+            "was ever called. Without that call, authState stays .uninitialized forever and " +
+            "these read exactly like a genuine logged-out user, with no signal why. Call " +
+            "`await store.initialize()` before reading either."
+        logger.error("\(message)")
+        assertionFailure(message)
     }
 
     private var spDc: String?
@@ -133,9 +143,11 @@ final class AuthStore {
     ///
     /// REQUIRED: without this call, `authState` remains `.uninitialized` forever and any stored
     /// credentials are never restored. `currentUser`/`isAuthenticated` will read exactly like a
-    /// genuine logged-out user in that case (see `assertStoreIsInitialized`, which traps on that
-    /// specific read in DEBUG builds so a forgotten call fails loudly during development instead
-    /// of silently shipping a permanently-logged-out cold start).
+    /// genuine logged-out user in that case (see `assertStoreIsInitialized`, which logs an error
+    /// on that specific read, on both platforms, so a forgotten call fails loudly rather than
+    /// silently shipping a permanently-logged-out cold start; it also traps the process on native
+    /// Swift debug builds, though that is Swift's own assertion behavior, not something this app
+    /// currently ships or tests, per the design doc's Android-only target).
     func initialize() async {
         authState = .loading
 
