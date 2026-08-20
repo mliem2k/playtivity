@@ -104,6 +104,15 @@ final class BuddyActivityService: @unchecked Sendable {
     /// In-memory cached activities (may be stale persisted data on first launch).
     var cachedActivities: [Activity]? { cachedBuddyActivitiesStorage }
 
+    /// Lets an external caller (`SpotifyStore`'s constructor-time priming) await persistence
+    /// readiness without touching the `persistenceReady` property directly.
+    /// Needed because Skip's Kotlin transpiler fails to resolve `Task<Void, Never>.value` when
+    /// accessed on an external instance's property from outside the declaring class, even though
+    /// the identical access from inside this class (`getFriendActivity` above) compiles fine.
+    func waitUntilPersistenceReady() async {
+        _ = await persistenceReady.value
+    }
+
     /// Re-reads the persisted buddy list from disk into memory. Ported from the Dart original's
     /// doc comment (lines 71-77): the home-screen widget writes merged historical friend data to
     /// storage during background updates, but this in-app instance keeps its own in-memory copy;
