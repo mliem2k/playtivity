@@ -67,6 +67,21 @@ final class ActivityTests: XCTestCase {
         XCTAssertEqual(decoded, original)
     }
 
+    // A round trip alone cannot catch a missing CodingKeys enum: encode and decode would agree
+    // with each other on the wrong (camelCase) key just as happily as the right one. This test
+    // inspects the raw encoded JSON directly so a regression back to compiler-default camelCase
+    // keys fails loudly, matching the snake_case key toJson() actually writes.
+    func testCodableConformanceEncodesSnakeCaseIsCurrentlyPlayingKey() throws {
+        let original = Activity(
+            user: sampleUser(), track: sampleTrack(), timestamp: Date(timeIntervalSince1970: 1_700_000_000),
+            isCurrentlyPlaying: false, type: ActivityType.track
+        )
+        let data = try JSONEncoder().encode(original)
+        let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        XCTAssertNotNil(obj?["is_currently_playing"])
+        XCTAssertNil(obj?["isCurrentlyPlaying"])
+    }
+
     // MARK: - isCurrentlyPlaying recompute on decode (never trust the persisted flag)
 
     func testDecodeRecomputesIsCurrentlyPlayingFalseForStaleOldTimestampEvenWhenPersistedTrue() throws {

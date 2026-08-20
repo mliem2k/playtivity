@@ -50,6 +50,12 @@ struct Activity: Codable, Equatable {
         self.type = type
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case user, track, playlist, timestamp
+        case isCurrentlyPlaying = "is_currently_playing"
+        case type
+    }
+
     /// The invariant the Dart original enforces with an `assert` in its constructor, extracted as
     /// a pure, directly-testable predicate rather than only living inside the `precondition` call
     /// (which traps the process and so cannot be exercised by a passing test).
