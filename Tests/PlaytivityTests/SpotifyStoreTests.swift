@@ -114,7 +114,7 @@ final class SpotifyStoreTests: XCTestCase {
         let now = nowMsEpoch()
         BuddyActivityService.buddyListFetchOverride = { _ in (statusCode: 200, body: self.friendsBody([("u1", now, "Song")])) }
 
-        store.setBearer("tok")
+        await store.setBearer("tok")
         await store.loadFriendsActivities()
 
         XCTAssertEqual(store.friendsActivities.count, 1)
@@ -126,11 +126,11 @@ final class SpotifyStoreTests: XCTestCase {
         let store = SpotifyStore(buddyService: service)
         let now = nowMsEpoch()
         BuddyActivityService.buddyListFetchOverride = { _ in (statusCode: 200, body: self.friendsBody([("u1", now, "Song")])) }
-        store.setBearer("tok")
+        await store.setBearer("tok")
         await store.loadFriendsActivities()
         XCTAssertFalse(store.friendsActivities.isEmpty)
 
-        store.clearBearer()
+        await store.clearBearer()
 
         XCTAssertTrue(store.friendsActivities.isEmpty)
         XCTAssertNil(store.lastUpdated)
@@ -148,7 +148,7 @@ final class SpotifyStoreTests: XCTestCase {
     func testLoadFriendsActivitiesSuccessPopulatesListAndLastUpdated() async throws {
         let service = BuddyActivityService(userDefaults: freshUserDefaults())
         let store = SpotifyStore(buddyService: service)
-        store.setBearer("tok")
+        await store.setBearer("tok")
         let now = nowMsEpoch()
         BuddyActivityService.buddyListFetchOverride = { _ in (statusCode: 200, body: self.friendsBody([("u1", now, "Song")])) }
 
@@ -165,7 +165,7 @@ final class SpotifyStoreTests: XCTestCase {
     func testLoadFriendsActivitiesEmptySuccessNeverDropsAlreadyLoadedList() async throws {
         let service = BuddyActivityService(userDefaults: freshUserDefaults())
         let store = SpotifyStore(buddyService: service)
-        store.setBearer("tok")
+        await store.setBearer("tok")
         let now = nowMsEpoch()
         BuddyActivityService.buddyListFetchOverride = { _ in (statusCode: 200, body: self.friendsBody([("u1", now, "Song")])) }
         await store.loadFriendsActivities()
@@ -183,7 +183,7 @@ final class SpotifyStoreTests: XCTestCase {
     func testLoadFriendsActivitiesNonAuthFailureNeverDropsAlreadyLoadedList() async throws {
         let service = BuddyActivityService(userDefaults: freshUserDefaults())
         let store = SpotifyStore(buddyService: service)
-        store.setBearer("tok")
+        await store.setBearer("tok")
         let now = nowMsEpoch()
         BuddyActivityService.buddyListFetchOverride = { _ in (statusCode: 200, body: self.friendsBody([("u1", now, "Song")])) }
         await store.loadFriendsActivities()
@@ -203,7 +203,7 @@ final class SpotifyStoreTests: XCTestCase {
     func testLoadFriendsActivitiesAuthFailureClearsListAndSetsAuthErrorFlag() async throws {
         let service = BuddyActivityService(userDefaults: freshUserDefaults())
         let store = SpotifyStore(buddyService: service)
-        store.setBearer("tok")
+        await store.setBearer("tok")
         let now = nowMsEpoch()
         BuddyActivityService.buddyListFetchOverride = { _ in (statusCode: 200, body: self.friendsBody([("u1", now, "Song")])) }
         await store.loadFriendsActivities()
@@ -222,12 +222,12 @@ final class SpotifyStoreTests: XCTestCase {
     func testClearAuthErrorResetsFlagAndMessage() async throws {
         let service = BuddyActivityService(userDefaults: freshUserDefaults())
         let store = SpotifyStore(buddyService: service)
-        store.setBearer("tok")
+        await store.setBearer("tok")
         BuddyActivityService.buddyListFetchOverride = { _ in (statusCode: 401, body: "") }
         await store.loadFriendsActivities()
         XCTAssertTrue(store.hasAuthError)
 
-        store.clearAuthError()
+        await store.clearAuthError()
 
         XCTAssertFalse(store.hasAuthError)
         XCTAssertNil(store.authErrorMessage)
@@ -239,7 +239,7 @@ final class SpotifyStoreTests: XCTestCase {
         let ud = freshUserDefaults()
         let service = BuddyActivityService(userDefaults: ud)
         let store = SpotifyStore(buddyService: service)
-        store.setBearer("tok")
+        await store.setBearer("tok")
         let now = nowMsEpoch()
 
         // Seed the persisted merged cache directly (simulating data written by an earlier session
@@ -277,7 +277,7 @@ final class SpotifyStoreTests: XCTestCase {
 
         let service = BuddyActivityService(userDefaults: ud)
         let store = SpotifyStore(buddyService: service)
-        store.setBearer("tok")
+        await store.setBearer("tok")
 
         let now = nowMsEpoch()
         BuddyActivityService.buddyListFetchOverride = { _ in
@@ -297,7 +297,7 @@ final class SpotifyStoreTests: XCTestCase {
     func testFastInitialLoadShowsSkeletonWhenNothingIsCachedAtAll() async throws {
         let service = BuddyActivityService(userDefaults: freshUserDefaults()) // nothing persisted
         let store = SpotifyStore(buddyService: service)
-        store.setBearer("tok")
+        await store.setBearer("tok")
 
         let now = nowMsEpoch()
         BuddyActivityService.buddyListFetchOverride = { _ in
@@ -331,7 +331,7 @@ final class SpotifyStoreTests: XCTestCase {
 
         let service = BuddyActivityService(userDefaults: ud)
         let store = SpotifyStore(buddyService: service)
-        store.setBearer("tok")
+        await store.setBearer("tok")
 
         BuddyActivityService.buddyListFetchOverride = { _ in
             try? await Task.sleep(for: Duration.milliseconds(120))
@@ -378,20 +378,20 @@ final class SpotifyStoreTests: XCTestCase {
         await store.loadFriendsActivities() // no bearer -> sets error = "Not authenticated"
         XCTAssertNotNil(store.error)
 
-        store.clearError()
+        await store.clearError()
         XCTAssertNil(store.error)
     }
 
     func testClearDataResetsEverything() async throws {
         let service = BuddyActivityService(userDefaults: freshUserDefaults())
         let store = SpotifyStore(buddyService: service)
-        store.setBearer("tok")
+        await store.setBearer("tok")
         let now = nowMsEpoch()
         BuddyActivityService.buddyListFetchOverride = { _ in (statusCode: 200, body: self.friendsBody([("u1", now, "Song")])) }
         await store.loadFriendsActivities()
         XCTAssertFalse(store.friendsActivities.isEmpty)
 
-        store.clearData()
+        await store.clearData()
 
         XCTAssertTrue(store.friendsActivities.isEmpty)
         XCTAssertFalse(store.isLoading)
@@ -408,7 +408,7 @@ final class SpotifyStoreTests: XCTestCase {
     func testSilentRefreshSetsAndClearsIsRefreshing() async throws {
         let service = BuddyActivityService(userDefaults: freshUserDefaults())
         let store = SpotifyStore(buddyService: service)
-        store.setBearer("tok")
+        await store.setBearer("tok")
         BuddyActivityService.buddyListFetchOverride = { _ in
             try? await Task.sleep(for: Duration.milliseconds(120))
             return (statusCode: 200, body: "{\"friends\": []}")
@@ -426,7 +426,7 @@ final class SpotifyStoreTests: XCTestCase {
     func testSilentRefreshDoesNotShowLoadingOrSkeletonIndicators() async throws {
         let service = BuddyActivityService(userDefaults: freshUserDefaults())
         let store = SpotifyStore(buddyService: service)
-        store.setBearer("tok")
+        await store.setBearer("tok")
         BuddyActivityService.buddyListFetchOverride = { _ in (statusCode: 200, body: "{\"friends\": []}") }
 
         await store.silentRefresh()
@@ -460,7 +460,7 @@ final class SpotifyStoreTests: XCTestCase {
     func testConcurrentLoadFriendsActivitiesCallsNeverEnterTheBuddyServiceFetchSimultaneously() async throws {
         let service = BuddyActivityService(userDefaults: freshUserDefaults())
         let store = SpotifyStore(buddyService: service)
-        store.setBearer("tok")
+        await store.setBearer("tok")
 
         let lock = NSLock()
         var concurrentEntries = 0
@@ -490,7 +490,7 @@ final class SpotifyStoreTests: XCTestCase {
         let ud = freshUserDefaults()
         let service = BuddyActivityService(userDefaults: ud)
         let store = SpotifyStore(buddyService: service)
-        store.setBearer("tok")
+        await store.setBearer("tok")
 
         let lock = NSLock()
         var concurrentEntries = 0

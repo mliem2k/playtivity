@@ -535,7 +535,13 @@ final class AuthStore: @unchecked Sendable {
         userDefaults.removeObject(forKey: Self.spDcKey)
         spDc = nil
         // Buddy/activity cache clearing (`_buddyService.clearActivityCache()` in the Dart
-        // original) is out of scope: that service has not been ported in this auth-flow phase.
+        // original) does NOT happen directly in this method: this store has no reference to
+        // SpotifyStore/BuddyActivityService by design (a deliberate decoupling, not an oversight).
+        // Instead, `clearStoredData()` above already set `bearerToken` to nil, and
+        // `PlaytivityRootView`'s root-wiring bridge observes that transition and calls
+        // `SpotifyStore.clearBearer()`, which itself now calls
+        // `BuddyActivityService.clearActivityCache()`. See `SpotifyStore.clearBearer()`'s own doc
+        // comment for why the cache-clear lives there instead of here.
         authState = .unauthenticated
         addEvent("Logged out")
     }

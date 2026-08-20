@@ -12,20 +12,30 @@ import Observation
 /// `@unchecked Sendable`: mirrors `BuddyActivityService`'s own reasoning, for the same mechanical
 /// cause. Constructor-time priming (below) fires a `Task { [weak self] in ... }` to mirror the
 /// Dart constructor's fire-and-forget `_buddyService.persistenceReady.then(...)`, and Swift 6
-/// only allows a class to be captured that way if it is `Sendable`. Unlike `BuddyActivityService`,
-/// this store's instance state IS protected against the specific hazard Task 2's review raised
-/// (see `serialized(_:)` below): every method that touches `buddyService`, or mutates this
-/// store's own observable properties as a result, funnels through a single `NSLock`-guarded task
-/// chain, so at most one such operation is ever actually running at a time regardless of how many
-/// external callers (a refresh button, an auto-refresh timer) fire concurrently. What remains
-/// genuinely unguarded, matching every other `@Observable` store in this codebase (`AuthStore`
-/// included), is a plain concurrent READ of a property (e.g. a UI layer reading
-/// `friendsActivities` on one thread while a serialized operation is mid-write on another); that
-/// is the same characteristic any mutable class instance shared across threads has in Swift
-/// unless explicitly actor-isolated, it is not a new hazard this store introduces, and resolving
-/// it store-wide is out of this task's scope (the hard requirement from Task 2's review is
-/// specifically about concurrent, unsynchronized MUTATION of `BuddyActivityService`'s own
-/// instance state from multiple overlapping callers, which `serialized(_:)` eliminates).
+/// only allows a class to be captured that way if it is `Sendable`. This store's instance state IS
+/// protected against the specific hazard Task 2's review raised (see `serialized(_:)` below):
+/// every method that touches `buddyService`, or mutates this store's own observable properties,
+/// funnels through a single `NSLock`-guarded task chain, so at most one such operation is ever
+/// actually running at a time regardless of how many external callers (a refresh button, an
+/// auto-refresh timer, `ActivitiesScreen.handleReAuth()`, the root-wiring bearer-token bridge)
+/// fire concurrently.
+///
+/// Corrected claim, previously wrong in this comment: this is genuinely true of every mutating
+/// method now, not just the four originally wired through `serialized(_:)`
+/// (`loadFriendsActivities`/`fastInitialLoad`/`reloadFriendsFromPersistedCache`/constructor
+/// priming). `setBearer`/`clearBearer`/`clearData`/`clearError`/`clearAuthError` were plain
+/// synchronous methods until this phase's whole-branch review caught it: since `ActivitiesScreen`
+/// is implicitly `@MainActor` and a synchronous call performs no actor hop, `handleReAuth()`
+/// (which calls several of these) wrote these `@Observable` properties directly on the main actor
+/// while the async gate chain wrote the same properties off the main actor, the exact SpotifyStore
+/// analogue of the race already fixed twice in `AuthStore`. All five are now `async` and route
+/// through `serialized(_:)` like every other mutating method here; `silentRefresh()`'s
+/// `isRefreshing` flag was also pulled inside its own gated operation for the same reason (see its
+/// own doc comment). What remains genuinely unguarded, matching every other `@Observable` store in
+/// this codebase (`AuthStore` included), is a plain concurrent READ of a property (e.g. a UI layer
+/// reading `friendsActivities` on one thread while a serialized operation is mid-write on
+/// another); that is the same characteristic any mutable class instance shared across threads has
+/// in Swift unless explicitly actor-isolated, not a new hazard this store introduces.
 @Observable
 final class SpotifyStore: @unchecked Sendable {
     private let buddyService: BuddyActivityService
@@ -124,13 +134,30 @@ final class SpotifyStore: @unchecked Sendable {
 
     // MARK: - Bearer token (ported from lines 76-83)
 
-    func setBearer(_ token: String) {
-        bearerToken = token
+    /// `async`, routed through `serialized(_:)`: see this class's own doc comment for why a plain
+    /// synchronous write here raced the async gate chain.
+    func setBearer(_ token: String) async {
+        await serialized { [weak self] in
+            self?.bearerToken = token
+        }
     }
 
-    func clearBearer() {
-        bearerToken = nil
-        clearData()
+    /// `async`, routed through `serialized(_:)`. Also clears `BuddyActivityService`'s persisted
+    /// buddylist cache, matching Dart's `AuthProvider.logout()` calling
+    /// `_buddyService.clearActivityCache()` directly: this is where that call actually lands in
+    /// this port (see `AuthStore.logout()`'s own doc comment for why it isn't done there instead).
+    /// Without this, one account's friends could bleed into a different account's buddylist on the
+    /// same device after a logout/re-login. Calls the private `performClearData()` directly, not
+    /// the public `clearData()`, since the latter is itself routed through `serialized(_:)` and
+    /// nesting a second `serialized(_:)` call from inside an already-running one would deadlock
+    /// (the new link would wait for the current link, which is itself).
+    func clearBearer() async {
+        await serialized { [weak self] in
+            guard let self else { return }
+            self.bearerToken = nil
+            self.performClearData()
+            self.buddyService.clearActivityCache()
+        }
     }
 
     // MARK: - Authentication error handling (ported from lines 86-114)
@@ -156,10 +183,14 @@ final class SpotifyStore: @unchecked Sendable {
         self.error = "Authentication expired. Please login again."
     }
 
-    /// Ported from `clearAuthError` (lines 109-114).
-    func clearAuthError() {
-        hasAuthError = false
-        authErrorMessage = nil
+    /// Ported from `clearAuthError` (lines 109-114). `async`, routed through `serialized(_:)`: see
+    /// this class's own doc comment for why a plain synchronous write here raced the async gate
+    /// chain.
+    func clearAuthError() async {
+        await serialized { [weak self] in
+            self?.hasAuthError = false
+            self?.authErrorMessage = nil
+        }
     }
 
     // MARK: - loadFriendsActivities (ported from lines 212-289)
@@ -242,11 +273,15 @@ final class SpotifyStore: @unchecked Sendable {
 
     // MARK: - clearError / clearData (ported from lines 291-309)
 
-    func clearError() {
-        error = nil
+    /// `async`, routed through `serialized(_:)`: see this class's own doc comment for why a plain
+    /// synchronous write here raced the async gate chain.
+    func clearError() async {
+        await serialized { [weak self] in
+            self?.error = nil
+        }
     }
 
-    func clearData() {
+    private func performClearData() {
         friendsActivities = []
         isLoading = false
         isRefreshing = false
@@ -257,15 +292,34 @@ final class SpotifyStore: @unchecked Sendable {
         authErrorMessage = nil
     }
 
+    /// `async`, routed through `serialized(_:)`: see this class's own doc comment for why a plain
+    /// synchronous write here raced the async gate chain.
+    func clearData() async {
+        await serialized { [weak self] in
+            self?.performClearData()
+        }
+    }
+
     // MARK: - silentRefresh (this phase's narrowed version of lines 345-356)
 
     /// This phase's narrowed `silentRefresh`: calls only `loadFriendsActivities`, not the Dart
     /// `refreshData`'s four-loader `Future.wait` (`loadCurrentlyPlaying`/`loadTopTracks`/
     /// `loadTopArtists` are Phase 4's scope and are not ported here).
+    ///
+    /// Routed through `serialized(_:)` with `isRefreshing` set/cleared *inside* the same gated
+    /// operation as the load, not bracketing an `await` outside the gate: the previous shape set
+    /// `isRefreshing = true`, awaited the (separately gated) public `loadFriendsActivities`, then
+    /// set `isRefreshing = false`, which left a window where a second concurrent caller could read
+    /// `isRefreshing` as `false` while this operation was still queued behind another one on the
+    /// gate. Calls `performLoadFriendsActivities` directly (not the public `loadFriendsActivities`
+    /// wrapper) for the same nesting-deadlock reason `performFastInitialLoad` does.
     func silentRefresh() async {
-        isRefreshing = true
-        await loadFriendsActivities(showLoading: false)
-        isRefreshing = false
+        await serialized { [weak self] in
+            guard let self else { return }
+            self.isRefreshing = true
+            await self.performLoadFriendsActivities(showLoading: false, showSkeleton: false)
+            self.isRefreshing = false
+        }
     }
 
     // MARK: - reloadFriendsFromPersistedCache (ported from lines 358-380)

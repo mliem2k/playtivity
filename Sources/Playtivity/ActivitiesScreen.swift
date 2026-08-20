@@ -55,6 +55,12 @@ struct ActivitiesScreen: View {
         }
         if authStore.isAuthenticated {
             await spotifyStore.fastInitialLoad()
+            // Finding 11 (whole-branch review, Minor, disclosed not fixed): authStore.currentUser
+            // is read here after an `await` into spotifyStore with no cross-store consistency
+            // guarantee across that gap (a concurrent logout could flip currentUser to nil
+            // mid-await). Currently inert only because updateWidget is a Phase-5 no-op stub; once
+            // Phase 5 implements the real widget writer, this needs a snapshot-before-await or an
+            // explicit re-check of authStore.isAuthenticated after the await.
             await spotifyStore.updateWidget(currentUser: authStore.currentUser)
         } else {
             logger.warning("No authentication available - cannot load friend activities")
@@ -69,6 +75,8 @@ struct ActivitiesScreen: View {
         }
         if authStore.isAuthenticated {
             await spotifyStore.silentRefresh()
+            // See loadData()'s identical comment above (whole-branch review finding 11): same
+            // cross-store consistency gap, currently inert for the same reason.
             await spotifyStore.updateWidget(currentUser: authStore.currentUser)
         } else {
             logger.warning("No authentication available - cannot refresh friend activities")
@@ -96,8 +104,10 @@ struct ActivitiesScreen: View {
     /// `DebouncedRefreshService`'s doc comment) is replaced by a direct call; nothing here fires
     /// rapidly enough (a single button tap) to need debouncing.
     private func retry() {
-        spotifyStore.clearError()
-        Task { await refreshData() }
+        Task {
+            await spotifyStore.clearError()
+            await refreshData()
+        }
     }
 
     /// Port of `_handleReAuth` (ref_activities_screen.dart:119-129), adapted: the Dart original
@@ -110,22 +120,27 @@ struct ActivitiesScreen: View {
     /// The recovery-success sequence (push the new token into `SpotifyStore`, clear both its error
     /// flags, then reload) mirrors `AuthUtils.handleAuthenticationError`'s own successful-recovery
     /// path (ref_auth_utils.dart:118-127: `sp.clearAuthError(); sp.refreshData();`), the closest
-    /// Dart analogue for a silent-recovery-then-reload flow. Both steps are required, not optional:
-    /// `AuthStore.tryRecoverFromExpiredToken()` only updates its own `bearerToken`, nothing wires
-    /// that into `SpotifyStore` automatically (no shared listener/provider bridge exists here), so
-    /// without the explicit `setBearer` call `loadData()` would silently re-fetch with the stale
-    /// token and 401 again; and `SpotifyStore.error`/`hasAuthError` are only cleared by
-    /// `performLoadFriendsActivities` when called with `showLoading`/`showSkeleton` true, neither
-    /// of which `loadData()` uses, so a successful reload would otherwise leave the old error
-    /// banner rendered over the freshly-loaded list.
+    /// Dart analogue for a silent-recovery-then-reload flow.
+    ///
+    /// The whole-branch review's root-wiring fix added a general bearer-token bridge at
+    /// `PlaytivityRootView` (an `.onChange(of: authStore.bearerToken)` observer that calls
+    /// `spotifyStore.setBearer`/`clearBearer` on every transition, mirroring Dart's `AppWrapper`
+    /// listener), which now covers this same transition too. The explicit `setBearer` call below
+    /// is deliberately kept anyway, not removed as redundant: the bridge fires from a SwiftUI state
+    /// change observation, which is not guaranteed to run before this method's own very next line
+    /// (`await loadData()`) does, so relying on the bridge alone would reopen the exact race this
+    /// call was added to close (`loadData()` reading a still-stale `spotifyStore` bearer token
+    /// before the bridge's own `Task` has had a chance to run). Calling it here too is safe either
+    /// way, `setBearer` is idempotent, so the bridge redundantly re-setting the same value later is
+    /// a no-op.
     private func handleReAuth() async {
         let recovered = await authStore.tryRecoverFromExpiredToken()
         guard recovered else { return }
         if let token = authStore.bearerToken, !token.isEmpty {
-            spotifyStore.setBearer(token)
+            await spotifyStore.setBearer(token)
         }
-        spotifyStore.clearAuthError()
-        spotifyStore.clearError()
+        await spotifyStore.clearAuthError()
+        await spotifyStore.clearError()
         await loadData()
     }
 
