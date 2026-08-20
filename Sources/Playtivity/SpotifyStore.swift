@@ -75,6 +75,11 @@ final class SpotifyStore: @unchecked Sendable {
     // guarantees full FIFO serialization: a second caller's operation never starts until the
     // first's has completely finished, so `buddyService`'s unlocked instance state is never
     // mutated by two callers at once.
+    // Cancellation limitation, harmless today since nothing calls this store from a SwiftUI
+    // `.task { }` yet: each link is an unstructured `Task { }`, so it does not inherit the calling
+    // Task's cancellation, and `Task<Void, Never>.value` cannot throw `CancellationError`. A
+    // future caller that cancels mid-chain (e.g. a `.task { }` torn down by view disappearance)
+    // will block until its queued operation actually finishes rather than being cancelled.
     private let gateLock = NSLock()
     private var gateTail: Task<Void, Never>?
 
@@ -311,6 +316,15 @@ final class SpotifyStore: @unchecked Sendable {
 
         // If the constructor (or the reload above) already primed the list, skip to the live
         // fetch. Otherwise show stale data now, or the skeleton if nothing is cached.
+        //
+        // Inherited Dart behavior, not a new bug: when nothing is cached, `isSkeletonLoading` is
+        // set true here but this method never clears it back to false, faithfully matching the
+        // Dart original (lines 401/408): the subsequent live fetch below is called with
+        // `showSkeleton: false`, so `performLoadFriendsActivities`'s own `if showSkeleton {
+        // isSkeletonLoading = false }` guard never fires for it. The flag stays true even after
+        // real data has loaded. Whatever UI consumes this flag (a later phase) must derive
+        // "show skeleton" from `isSkeletonLoading && friendsActivities.isEmpty`, not the flag
+        // alone, exactly as the Dart original's own callers must.
         if friendsActivities.isEmpty {
             if let stale = buddyService.cachedActivities, !stale.isEmpty {
                 friendsActivities = stale

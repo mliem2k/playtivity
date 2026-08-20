@@ -48,10 +48,14 @@ final class SpotifyStoreTests: XCTestCase {
         User(id: id, displayName: "Friend", email: "", imageUrl: nil, followers: 0, country: "")
     }
 
-    /// Lock-guarded counter box. A plain captured `var` cannot be mutated from inside a
-    /// `@Sendable` `Task { }` closure under Swift 6 (known transpile-adjacent quirk, matches
-    /// `TOTPGenerator`/`HeadlessReAuthSpikeCoordinator`'s own `NSLock`-backed reference-type
-    /// idiom), so the counter has to live behind a small reference type instead.
+    /// Lock-guarded counter box. A plain captured `var` cannot be mutated from inside a closure
+    /// passed directly to `Task { }` under Swift 6 (matches `TOTPGenerator`/
+    /// `HeadlessReAuthSpikeCoordinator`'s own `NSLock`-backed reference-type idiom), so the
+    /// counter used across a `Task { }` boundary (`runInBackground`/`awaitAll` below) lives behind
+    /// a small reference type instead. This restriction is specific to `Task.init`'s closure, not
+    /// a general Swift 6 rule: ordinary closures like `BuddyActivityService.buddyListFetchOverride`
+    /// below mutate their own captured `var`s (`concurrentEntries`, `maxConcurrentEntries`)
+    /// directly with no issue, since they are never themselves handed to `Task { }`.
     private final class Counter: @unchecked Sendable {
         private let lock = NSLock()
         private var value = 0
@@ -308,6 +312,11 @@ final class SpotifyStoreTests: XCTestCase {
 
         await waitForLoad()
         XCTAssertEqual(store.friendsActivities.map { $0.user.id }, ["live"])
+        // Inherited Dart behavior (see performFastInitialLoad's doc comment), not overlooked:
+        // fastInitialLoad never clears isSkeletonLoading back to false once set, even after the
+        // live fetch has populated real data. Pinned here so a future reader can tell this is
+        // known, not a bug this test failed to catch.
+        XCTAssertTrue(store.isSkeletonLoading, "isSkeletonLoading is inherited-stuck true even though live data has now loaded")
     }
 
     func testFastInitialLoadDoesNotShowSkeletonWhenConstructorAlreadyPrimedTheList() async throws {
@@ -400,10 +409,17 @@ final class SpotifyStoreTests: XCTestCase {
         let service = BuddyActivityService(userDefaults: freshUserDefaults())
         let store = SpotifyStore(buddyService: service)
         store.setBearer("tok")
-        BuddyActivityService.buddyListFetchOverride = { _ in (statusCode: 200, body: "{\"friends\": []}") }
+        BuddyActivityService.buddyListFetchOverride = { _ in
+            try? await Task.sleep(for: Duration.milliseconds(120))
+            return (statusCode: 200, body: "{\"friends\": []}")
+        }
 
         XCTAssertFalse(store.isRefreshing)
-        await store.silentRefresh()
+        let waitForRefresh = runInBackground { await store.silentRefresh() }
+        try await Task.sleep(for: Duration.milliseconds(30))
+        XCTAssertTrue(store.isRefreshing, "isRefreshing must be true while silentRefresh is in flight, not only before/after")
+
+        await waitForRefresh()
         XCTAssertFalse(store.isRefreshing, "isRefreshing must be cleared once silentRefresh completes")
     }
 
@@ -489,12 +505,19 @@ final class SpotifyStoreTests: XCTestCase {
             return (statusCode: 200, body: "{\"friends\": []}")
         }
 
+        // reloadFriendsFromPersistedCache alone never enters buddyListFetchOverride (it only
+        // reads UserDefaults), so pairing it only with fastInitialLoad would make this test pass
+        // even with the serialization gate removed, since only one of the two operands could ever
+        // increment concurrentEntries. loadFriendsActivities is added as a third operand
+        // specifically so two genuinely competing entries into the override-instrumented fetch
+        // exist to race, giving this test the power to actually fail without the gate.
         await awaitAll([
             { await store.fastInitialLoad() },
             { await store.reloadFriendsFromPersistedCache() },
+            { await store.loadFriendsActivities() },
         ])
 
-        XCTAssertEqual(maxConcurrentEntries, 1, "fastInitialLoad and reloadFriendsFromPersistedCache must not race on the shared BuddyActivityService instance")
+        XCTAssertEqual(maxConcurrentEntries, 1, "fastInitialLoad, reloadFriendsFromPersistedCache, and loadFriendsActivities must not race on the shared BuddyActivityService instance")
     }
 
     // MARK: - updateWidget: stub, callable, does not throw or crash
