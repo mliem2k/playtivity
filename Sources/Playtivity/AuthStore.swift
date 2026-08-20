@@ -79,11 +79,14 @@ final class AuthStore {
     // Android, the one platform this app tests and ships. Signals through two channels: a
     // `logger.error` call, already used elsewhere in this file (see `loginComplete`'s catch
     // block) and confirmed to transpile and produce a visible signal on both platforms, plus
-    // `assertionFailure`, which additionally traps the process on native Swift debug builds
-    // (Swift's real, unconditional behavior there, not gated by this file). No test deliberately
-    // triggers the `assertionFailure` path: doing so would abort the whole native `swift test`
-    // process rather than fail a single test, since that is exactly what an assertion trap does
-    // by design. The `logger.error` channel is what is verified instead, by reading the compiled
+    // `assertionFailure`, which produces a real, unconditional throw on BOTH platforms, not just
+    // native Swift: on Kotlin/Android it maps to `error(message)` (SkipLib's `Globals.kt`),
+    // Kotlin's stdlib function that throws `IllegalStateException` with no debug/release gating
+    // at all, and on native Swift it traps the process, also unconditionally, neither gated by
+    // this file. No test deliberately triggers the `assertionFailure` path: doing so would abort
+    // the whole native `swift test` process (a Swift assertion trap is not per-test recoverable)
+    // and would surface as an uncaught exception on the Kotlin/Robolectric side too, rather than
+    // pass. The `logger.error` channel is what is verified instead, by reading the compiled
     // Kotlin output directly rather than by executing the crash path.
     private func assertStoreIsInitialized() {
         guard authState == .uninitialized else { return }
@@ -145,9 +148,9 @@ final class AuthStore {
     /// credentials are never restored. `currentUser`/`isAuthenticated` will read exactly like a
     /// genuine logged-out user in that case (see `assertStoreIsInitialized`, which logs an error
     /// on that specific read, on both platforms, so a forgotten call fails loudly rather than
-    /// silently shipping a permanently-logged-out cold start; it also traps the process on native
-    /// Swift debug builds, though that is Swift's own assertion behavior, not something this app
-    /// currently ships or tests, per the design doc's Android-only target).
+    /// silently shipping a permanently-logged-out cold start; it also produces a real,
+    /// unconditional throw on both platforms, Kotlin's `error()` on Android with no debug/release
+    /// gating, and a native Swift assertion trap, not a Swift-only or debug-only behavior).
     func initialize() async {
         authState = .loading
 
