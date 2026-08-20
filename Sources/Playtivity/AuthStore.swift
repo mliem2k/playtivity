@@ -27,8 +27,21 @@ private struct AuthStoreError: Error, CustomStringConvertible {
 /// would race a test's post-construction `store.tokenFetchOverride = ...` assignment against
 /// `initialize()` already reading it. So construction here does no async work; callers (tests, and
 /// eventually the app's root view) call `initialize()` explicitly once overrides are set.
+///
+/// `@unchecked Sendable`, added in Task 4 of the activities-feed phase: `ActivitiesScreen` is the
+/// first caller that both (a) reads `authStore` from a `@MainActor`-isolated context (SwiftUI view
+/// code) and (b) calls one of its nonisolated `async` methods (`tryRecoverFromExpiredToken`) and
+/// then touches `authStore` again shortly after (e.g. `loadData()` re-reading `isInitialized`).
+/// Swift 6's region-based isolation checker cannot prove that reuse is safe for a non-Sendable
+/// type ("sending 'self.authStore' risks causing data races"), even though nothing here is
+/// actually unsafe: `AuthStore` has no unsynchronized cross-task mutation path different from
+/// `SpotifyStore`/`BuddyActivityService`, which already carry this same `@unchecked Sendable`
+/// marker for the identical reason (see `SpotifyStore`'s own doc comment: "matches every other
+/// `@Observable` store in this codebase"). A plain concurrent READ of a property is the only
+/// unsynchronized hazard this class has, same as before; this annotation removes a compile-time
+/// false positive, it does not change runtime behavior.
 @Observable
-final class AuthStore {
+final class AuthStore: @unchecked Sendable {
     private static let bearerTokenKey = "spotify_bearer_token"
     private static let headersKey = "spotify_headers"
     private static let userKey = "spotify_user"
