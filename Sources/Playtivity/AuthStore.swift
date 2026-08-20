@@ -50,25 +50,60 @@ private struct AuthStoreError: Error, CustomStringConvertible {
 /// call path this phase makes reachable *concurrently* with MainActor reads of `authStore`
 /// (`loadData()`/`refreshData()`, both invoked from the same screen's `.task { }` and its 30s
 /// auto-refresh loop, which can fire while a manual "Login Again" tap is mid-flight).
-/// `tryRecoverFromExpiredToken()` is marked `@MainActor` below specifically to close that path: it
-/// forces its whole write chain (including the private `trySilentRefresh()` helper it calls) onto
-/// the same serial executor every MainActor read already uses, so the write and the concurrent
-/// reads can no longer overlap for this reachable interleaving.
+///
+/// First attempt at this fix (superseded, recorded here because the mistake is worth naming): a
+/// single `@MainActor` on `tryRecoverFromExpiredToken()` alone was believed to pin its *entire*
+/// call chain to the main actor, including the private `trySilentRefresh()`/`enrichedProfile()`
+/// helpers it calls. That is false, and was verified false by direct experiment, not just
+/// asserted: a nonisolated `async` function does **not** inherit its caller's actor isolation
+/// merely by being awaited from an isolated context. This project's `swift-tools-version` is 6.1
+/// with no `NonisolatedNonsendingByDefault` upcoming feature enabled, so under this configuration
+/// a nonisolated async callee genuinely runs off the main actor even when the caller is
+/// `@MainActor`, for the whole duration of its own body (here, the entire network round trip
+/// inside `trySilentRefresh()`). The original fix only closed the actor-crossing at the *call
+/// site* in `ActivitiesScreen` (which is why the compiler's "sending" error went away); it did
+/// nothing to the write chain the doc comment claimed it protected. `_currentUser` continued to be
+/// written off-main-actor inside `trySilentRefresh()`/`enrichedProfile()` while
+/// `ActivitiesScreen.loadData()`/`refreshData()` read it on the main actor, the exact interleaving
+/// this section exists to rule out.
+///
+/// The actual fix: `tryRecoverFromExpiredToken()`, `trySilentRefresh()`, and `enrichedProfile()`
+/// are all three marked `@MainActor` (see each method's own doc comment). Every write this call
+/// chain performs (`authState`, `spDc`, `bearerToken`, `headers`, `_currentUser`, plus the
+/// nonisolated-but-*synchronous* `addEvent()`/`saveStoredData()` helpers it also calls, which run
+/// wherever their caller runs since a synchronous nonisolated function call performs no actor hop
+/// at all, unlike an `async` one) now genuinely executes on the same serial executor as every
+/// MainActor reader in `ActivitiesScreen`, so the write and the concurrent reads can no longer
+/// overlap for this reachable interleaving.
 ///
 /// What remains genuinely unguarded, disclosed rather than silently carried forward:
 /// `initialize()`, `loginComplete()`, `logout()`, and `refreshIfNeeded()` are unchanged, still
-/// nonisolated, still lock-free. This is a pre-existing Phase 2 characteristic, not something this
-/// task's diff created, and comprehensively hardening all four is out of this task's scope (Task
-/// 4 is the activities-feed UI, not an AuthStore concurrency audit). None of the four currently has
-/// a reachable concurrent caller in this codebase: `loginComplete()`/`logout()` only run from
+/// nonisolated, still lock-free (though each of them does now hop onto the main actor for the
+/// portion of their own work that calls into `trySilentRefresh()`/`enrichedProfile()`, since
+/// awaiting a `@MainActor` method from a nonisolated caller is always legal and always hops in;
+/// their own direct writes, e.g. `initialize()`'s `authState = .loading` at its own top, are not
+/// covered by that). This is a pre-existing Phase 2 characteristic, not something this task's diff
+/// created, and comprehensively hardening all four is out of this task's scope (Task 4 is the
+/// activities-feed UI, not an AuthStore concurrency audit). None of the four currently has a
+/// reachable concurrent caller in this codebase: `loginComplete()`/`logout()` only run from
 /// `LoginScreen`'s own login flow, which is not concurrently active alongside `ActivitiesScreen`
 /// in the app's actual navigation (you are either on the login screen or already past it), and
 /// `initialize()`/`refreshIfNeeded()` have no caller at all yet (the app-root wiring that will call
 /// `initialize()` is itself out of this phase's scope). If a later phase adds a caller that makes
 /// any of these four genuinely concurrently reachable with a MainActor reader, it needs the same
-/// treatment `tryRecoverFromExpiredToken()` gets here (either `@MainActor` isolation or a
-/// `SpotifyStore.serialized(_:)`-style lock-guarded gate), not another `@unchecked Sendable`-style
-/// assertion that the problem doesn't exist.
+/// treatment applied here (either `@MainActor` isolation on the whole reachable write chain, not
+/// just its entry point, or a `SpotifyStore.serialized(_:)`-style lock-guarded gate), not another
+/// `@unchecked Sendable`-style assertion that the problem doesn't exist.
+///
+/// Marking the whole class `@MainActor` (removing `@unchecked Sendable` entirely) was tried and
+/// rejected as the broader alternative: it compiles cleanly for every production call site, but
+/// breaks roughly 40 of `AuthStoreTests`'s 43 tests (confirmed by actually building the test
+/// target, not estimated), since `XCTAssertEqual`/`XCTAssertTrue`'s `@autoclosure` arguments do
+/// not themselves inherit the enclosing test method's actor isolation, so every assertion reading
+/// an actor-isolated property from a plain synchronous or even `async` (non-`@MainActor`) test
+/// method fails to compile. That cost is real and out of proportion to what this task needs; the
+/// three-method narrow fix above achieves the same safety property for the one reachable path that
+/// matters here at a fraction of the blast radius.
 @Observable
 final class AuthStore: @unchecked Sendable {
     private static let bearerTokenKey = "spotify_bearer_token"
@@ -389,6 +424,11 @@ final class AuthStore: @unchecked Sendable {
     // that is mutated in a capturing closure"), which broke every later property access on it.
     // Stored properties (like `_currentUser` in trySilentRefresh below) don't have this problem:
     // Skip already force-unwraps every access to those instead of relying on a smart cast.
+    //
+    // `@MainActor`: called from `trySilentRefresh()` (now `@MainActor`, see its own doc comment);
+    // without this same annotation this nonisolated async method would still hop off the main
+    // actor for its own body, reopening the write race one call deeper than `trySilentRefresh()`.
+    @MainActor
     private func enrichedProfile(_ profile: User, spDc: String?) async -> User {
         guard profile.email.isEmpty || profile.country.isEmpty, let spDc else { return profile }
         guard let acct = await SpotifyTokenService.fetchAccountProfile(spDc: spDc) else { return profile }
@@ -513,6 +553,16 @@ final class AuthStore: @unchecked Sendable {
     }
 
     /// Port of `_trySilentRefresh` (ref_auth_provider.dart:487-548).
+    ///
+    /// `@MainActor`: a nonisolated `async` function does not inherit its caller's actor merely by
+    /// being called from an isolated context (verified empirically for this project: this class's
+    /// `swift-tools-version` is 6.1 with no `NonisolatedNonsendingByDefault` upcoming feature
+    /// enabled, so a nonisolated async callee genuinely runs off the main actor even when awaited
+    /// from a `@MainActor` caller). `tryRecoverFromExpiredToken()`'s own `@MainActor` annotation
+    /// therefore does *not*, by itself, keep this method's writes on the main actor when it calls
+    /// this one; this method needs its own annotation too, or the exact race the class doc comment
+    /// describes closing would still exist, just one call deeper.
+    @MainActor
     private func trySilentRefresh() async -> Bool {
         let effectiveSpDc = spDc ?? userDefaults.string(forKey: Self.spDcKey)
         guard let effectiveSpDc, !effectiveSpDc.isEmpty else {
