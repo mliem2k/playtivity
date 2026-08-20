@@ -64,6 +64,20 @@ final class ApiRetryServiceTests: XCTestCase {
         XCTAssertEqual(calls, 1)
     }
 
+    func testNegativeMaxRetriesThrowsInsteadOfTrapping() async throws {
+        var calls = 0
+        do {
+            let _: String = try await ApiRetryService.retryApiCall({
+                calls += 1
+                return "unreachable"
+            }, maxRetries: -1, initialDelay: Duration.zero)
+            XCTFail("expected retryApiCall to throw")
+        } catch {
+            // expected: a typed throw, not a range-construction crash
+        }
+        XCTAssertEqual(calls, 0)
+    }
+
     func testSucceedsOnLastAllowedRetry() async throws {
         ApiRetryService.sleepOverride = { _ in }
         var calls = 0
@@ -187,6 +201,23 @@ final class ApiRetryServiceTests: XCTestCase {
         XCTAssertEqual(result, "ok")
         XCTAssertEqual(calls, 3)
         XCTAssertEqual(capturedDelays, [Duration.milliseconds(100), Duration.milliseconds(200)])
+    }
+
+    func testOmittingInitialDelayUsesTheDefault50MillisecondBackoff() async throws {
+        // Exercises ApiRetryService.retryApiCall's default `initialDelay` parameter value
+        // directly (every other test in this file passes initialDelay explicitly), confirming
+        // the default is both reachable and produces the documented 50ms base backoff.
+        var capturedDelays: [Duration] = []
+        ApiRetryService.sleepOverride = { delay in capturedDelays.append(delay) }
+        var calls = 0
+        let result: String = try await ApiRetryService.retryApiCall({
+            calls += 1
+            if calls == 1 { throw TestError(message: "timeout") }
+            return "ok"
+        }, maxRetries: 1)
+        XCTAssertEqual(result, "ok")
+        XCTAssertEqual(calls, 2)
+        XCTAssertEqual(capturedDelays, [Duration.milliseconds(50)])
     }
 
     func testOperationNameAppearsInLogButDoesNotAffectRetryBehavior() async throws {

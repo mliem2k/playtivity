@@ -13,9 +13,16 @@ enum ApiRetryService {
     static func retryApiCall<T>(
         _ apiCall: () async throws -> T,
         maxRetries: Int = 3,
-        initialDelay: Duration = .milliseconds(50),
+        initialDelay: Duration = Duration.milliseconds(50),
         operation: String = "API call"
     ) async throws -> T {
+        // A negative maxRetries has no valid attempt range (Dart's `for (attempt=0;
+        // attempt<=maxRetries; ...)` simply never runs its body in that case, landing on the
+        // same "should not reach this point" outcome below); guard explicitly rather than
+        // letting the range construction below trap.
+        guard maxRetries >= 0 else {
+            throw UnreachableRetryError()
+        }
         for attempt in 0...maxRetries {
             do {
                 let result = try await apiCall()

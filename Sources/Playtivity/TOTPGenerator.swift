@@ -1,7 +1,13 @@
+import Foundation
+
 /// Pure-Swift port of lib/services/spotify_totp_helper.dart.
 /// Deliberately uses no CryptoKit and no Foundation crypto APIs, only
 /// arithmetic/bit operations, so it can be validated for Skip Lite
-/// transpilation before the rest of the app is built on top of it.
+/// transpilation before the rest of the app is built on top of it. (The
+/// `Foundation` import above is only for `NSLock`, guarding the mutable
+/// secrets dictionary below; the "no Foundation crypto" constraint is about
+/// not shortcutting the hand-rolled HMAC-SHA1/base32 implementation this
+/// file exists to prove out, not about avoiding Foundation altogether.)
 enum TOTPGenerator {
     // NOTE: declared as separate top-level [UInt8]-typed constants, rather than
     // inline array literals nested directly inside the dictionary literal below.
@@ -26,11 +32,23 @@ enum TOTPGenerator {
     private static let hardcodedSecretCipherDict: [String: [UInt8]] = ["59": cipher59, "60": cipher60, "61": cipher61]
 
     // Runtime-applied secrets from SpotifySecretsService, taking over from the hardcoded
-    // fallback above once set. `nonisolated(unsafe)` because Swift 6's strict concurrency mode
-    // rejects a plain mutable static var as unsynchronized global state; writes only happen via
-    // applySecrets/clearRuntimeSecrets, an infrequent, non-hot-path operation (a periodic secrets
-    // refresh, or a test resetting state), not a value read/written from a tight concurrent loop.
-    nonisolated(unsafe) private static var runtimeSecretCipherDict: [String: [UInt8]]?
+    // fallback above once set. Guarded by a lock rather than left as a bare unsynchronized var:
+    // Task 2/3 add real concurrent callers (a background secrets refresh via applySecrets racing
+    // a TOTP-code read on another task), and an unguarded dictionary-reference swap is a genuine
+    // data race under Swift's memory model even though it is "only" a single-word store.
+    // `withLock` mirrors the pattern SkipFoundation's own URLSession.swift uses internally for
+    // the same purpose, so this is a proven-transpilable idiom on Skip Lite, not a novel one.
+    // `nonisolated(unsafe)` is still required on the backing var itself (Swift 6's strict
+    // concurrency mode rejects any mutable static var as unsynchronized global state by default,
+    // with no exemption for one that is, in fact, manually synchronized behind a lock); the lock
+    // is what actually makes that safe here, not the attribute.
+    private static let runtimeSecretCipherLock = NSLock()
+    nonisolated(unsafe) private static var _runtimeSecretCipherDict: [String: [UInt8]]?
+
+    private static var runtimeSecretCipherDict: [String: [UInt8]]? {
+        get { runtimeSecretCipherLock.withLock { _runtimeSecretCipherDict } }
+        set { runtimeSecretCipherLock.withLock { _runtimeSecretCipherDict = newValue } }
+    }
 
     /// The active cipher dictionary: runtime-applied secrets if `applySecrets` has been called,
     /// else the hardcoded fallback baked in at build time.
