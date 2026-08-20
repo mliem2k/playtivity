@@ -23,7 +23,34 @@ enum TOTPGenerator {
     private static let cipher60: [UInt8] = [79, 109, 69, 123, 90, 65, 46, 74, 94, 34, 58, 48, 70, 71, 92, 85, 122, 63, 91, 64, 87, 87].map { UInt8($0) }
     private static let cipher61: [UInt8] = [44, 55, 47, 42, 70, 40, 34, 114, 76, 74, 50, 111, 120, 97, 75, 76, 94, 102, 43, 69, 49, 120, 118, 80, 64, 78].map { UInt8($0) }
 
-    static let secretCipherDict: [String: [UInt8]] = ["59": cipher59, "60": cipher60, "61": cipher61]
+    private static let hardcodedSecretCipherDict: [String: [UInt8]] = ["59": cipher59, "60": cipher60, "61": cipher61]
+
+    // Runtime-applied secrets from SpotifySecretsService, taking over from the hardcoded
+    // fallback above once set. `nonisolated(unsafe)` because Swift 6's strict concurrency mode
+    // rejects a plain mutable static var as unsynchronized global state; writes only happen via
+    // applySecrets/clearRuntimeSecrets, an infrequent, non-hot-path operation (a periodic secrets
+    // refresh, or a test resetting state), not a value read/written from a tight concurrent loop.
+    nonisolated(unsafe) private static var runtimeSecretCipherDict: [String: [UInt8]]?
+
+    /// The active cipher dictionary: runtime-applied secrets if `applySecrets` has been called,
+    /// else the hardcoded fallback baked in at build time.
+    static var secretCipherDict: [String: [UInt8]] {
+        runtimeSecretCipherDict ?? hardcodedSecretCipherDict
+    }
+
+    /// Applies a freshly fetched secrets dictionary, taking over from the hardcoded fallback.
+    /// Mirrors `SpotifyTotpHelper.applySecrets` in the original Dart. After this call,
+    /// `activeVersion`/`generateCode`/`generateParams` all reflect the newly applied secrets.
+    static func applySecrets(_ secrets: [String: [UInt8]]) {
+        runtimeSecretCipherDict = secrets
+    }
+
+    /// Reverts to the hardcoded fallback dictionary, discarding any applied secrets. Mirrors the
+    /// Dart `clearRuntimeSecrets`; primarily useful for test isolation between cases that call
+    /// `applySecrets`.
+    static func clearRuntimeSecrets() {
+        runtimeSecretCipherDict = nil
+    }
 
     static let totpInterval: Int64 = 30
 
