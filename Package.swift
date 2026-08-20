@@ -11,11 +11,13 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://source.skip.tools/skip.git", from: "1.9.4"),
-        .package(url: "https://source.skip.tools/skip-ui.git", from: "1.0.0")
+        .package(url: "https://source.skip.tools/skip-ui.git", from: "1.0.0"),
+        .package(url: "https://source.skip.tools/skip-web.git", from: "0.9.0")
     ],
     targets: [
         .target(name: "Playtivity", dependencies: [
-            .product(name: "SkipUI", package: "skip-ui")
+            .product(name: "SkipUI", package: "skip-ui"),
+            .product(name: "SkipWeb", package: "skip-web")
         ], resources: [.process("Resources")], plugins: [.plugin(name: "skipstone", package: "skip")]),
         .testTarget(name: "PlaytivityTests", dependencies: [
             "Playtivity",
