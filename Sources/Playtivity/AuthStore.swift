@@ -104,21 +104,28 @@ final class AuthStore {
     /// Injectable token fetcher, override in tests to avoid real network calls.
     var tokenFetchOverride: ((String) async -> String?)?
 
-    /// Injectable user-profile fetcher, override in tests. No production default is wired here:
-    /// the Dart original falls back to a `SpotifyBuddyService` that has not been ported in this
-    /// phase (out of scope per the task brief), so in production the only profile source is the
-    /// WebView-prefetched `x-prefetched-user` header handled directly in `loginComplete`.
+    /// Injectable user-profile fetcher, override in tests as a pure test seam. Production code
+    /// never reads this property directly; every call site falls back to
+    /// `SpotifyTokenService.fetchProfileViaSpclient` when it's nil (the normal, un-overridden
+    /// case), so a fresh login whose WebView JS identity injection failed or timed out, or a
+    /// startup silent refresh with no WebView to inject into, still gets a real profile instead of
+    /// silently failing.
     var userProfileFetchOverride: ((String) async -> User?)?
 
     /// Injectable sp_dc cookie-store reader for `tryRecoverFromExpiredToken`'s fast paths. Reading
-    /// from the real WebView cookie store needs a live engine reference, which is Task 5's
-    /// concern; defaults to nil, meaning "no cookie store access available yet", which correctly
-    /// falls through past both fast paths to the headless path below.
+    /// from the real WebView cookie store needs a live engine reference; `HeadlessReAuthSpike`
+    /// (built and tested) is the candidate for supplying one, but per its own doc comment it is
+    /// deliberately left unwired here pending a real-device verification pass (its go/no-go
+    /// disposition, not yet run). Defaults to nil, meaning "no cookie store access available yet",
+    /// which correctly falls through past both fast paths to the headless path below.
     var readCookieStoreSpDc: (() async -> String?)?
 
     /// Injectable slow-path re-auth (loads a headless WebView so Spotify can issue a fresh sp_dc).
-    /// This is Task 5's concern; defaults to nil, meaning "not available", which correctly makes
-    /// recovery return false, the safe fallback the design doc specifies.
+    /// `HeadlessReAuthSpike.attempt` is the built, unit-tested candidate for this closure, but per
+    /// its own doc comment it is deliberately left unwired here: wiring it in is gated on a real
+    /// Android device confirming the mounted-WebView approach doesn't hang, which has not been run
+    /// yet. Defaults to nil, meaning "not available", which correctly makes recovery return false,
+    /// the safe fallback the design doc specifies.
     var headlessReAuthOverride: (() async -> Bool)?
 
     init(userDefaults: UserDefaults = .standard) {
@@ -283,7 +290,13 @@ final class AuthStore {
             // Server-side fallback, only used when WebView JS injection failed or was absent.
             if userProfile == nil {
                 addEvent("Profile fetch (server-side fallback)...")
-                if let fetched = await userProfileFetchOverride?(bearerToken) {
+                let fetched: User?
+                if let override = userProfileFetchOverride {
+                    fetched = await override(bearerToken)
+                } else {
+                    fetched = await SpotifyTokenService.fetchProfileViaSpclient(bearerToken: bearerToken)
+                }
+                if let fetched {
                     userProfile = fetched
                     addEvent("Profile loaded: \(fetched.displayName)")
                 }
@@ -485,7 +498,11 @@ final class AuthStore {
         // WebView JS injection and is correct; spclient/profile/me returns a different account
         // (social profile, not account settings).
         if _currentUser == nil {
-            _currentUser = await userProfileFetchOverride?(newToken)
+            if let override = userProfileFetchOverride {
+                _currentUser = await override(newToken)
+            } else {
+                _currentUser = await SpotifyTokenService.fetchProfileViaSpclient(bearerToken: newToken)
+            }
 
             if _currentUser == nil {
                 addEvent("Silent refresh: no profile, aborting")

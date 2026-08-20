@@ -11,6 +11,7 @@ final class SpotifyTokenServiceTests: XCTestCase {
         SpotifyTokenService.serverTimeFetchOverride = nil
         SpotifyTokenService.bearerTokenFetchOverride = nil
         SpotifyTokenService.accountProfileFetchOverride = nil
+        SpotifyTokenService.spclientProfileFetchOverride = nil
         super.tearDown()
     }
 
@@ -329,6 +330,74 @@ final class SpotifyTokenServiceTests: XCTestCase {
         }
 
         let profile = await SpotifyTokenService.fetchAccountProfile(spDc: "mySpDc")
+        XCTAssertNil(profile)
+    }
+
+    // MARK: - fetchProfileViaSpclient (production default for AuthStore's profile-fetch fallback)
+
+    func testFetchProfileViaSpclientSendsExpectedHeadersAndReturnsProfile() async {
+        let token = makeJwt(sub: "spotify:user:abc123")
+        var capturedRequest: URLRequest?
+        SpotifyTokenService.spclientProfileFetchOverride = { request in
+            capturedRequest = request
+            return (statusCode: 200, body: "{\"name\":\"Test User\",\"image_url\":\"https://i.scdn.co/img.jpg\",\"followers_count\":42}")
+        }
+
+        let profile = await SpotifyTokenService.fetchProfileViaSpclient(bearerToken: token)
+
+        XCTAssertEqual(profile?.id, "abc123")
+        XCTAssertEqual(profile?.displayName, "Test User")
+        XCTAssertEqual(profile?.imageUrl, "https://i.scdn.co/img.jpg")
+        XCTAssertEqual(profile?.followers, 42)
+        // Not available from this endpoint, filled in separately by AuthStore's enrichedProfile.
+        XCTAssertEqual(profile?.email, "")
+        XCTAssertEqual(profile?.country, "")
+        XCTAssertEqual(capturedRequest?.url?.absoluteString, "https://guc-spclient.spotify.com/user-profile-view/v3/profile/abc123")
+        XCTAssertEqual(capturedRequest?.value(forHTTPHeaderField: "Authorization"), "Bearer \(token)")
+        XCTAssertEqual(capturedRequest?.value(forHTTPHeaderField: "Accept"), "application/json")
+        XCTAssertEqual(capturedRequest?.value(forHTTPHeaderField: "App-Platform"), "WebPlayer")
+    }
+
+    func testFetchProfileViaSpclientReturnsNilForMalformedJwt() async {
+        // No network override configured: if this reached the request path it would attempt a
+        // real network call and hang/timeout instead of returning promptly.
+        let profile = await SpotifyTokenService.fetchProfileViaSpclient(bearerToken: "not-a-valid-jwt")
+        XCTAssertNil(profile)
+    }
+
+    func testFetchProfileViaSpclientReturnsNilOnNon200Status() async {
+        let token = makeJwt(sub: "spotify:user:abc123")
+        SpotifyTokenService.spclientProfileFetchOverride = { _ in (statusCode: 404, body: "") }
+
+        let profile = await SpotifyTokenService.fetchProfileViaSpclient(bearerToken: token)
+        XCTAssertNil(profile)
+    }
+
+    func testFetchProfileViaSpclientReturnsNilForMalformedJson() async {
+        let token = makeJwt(sub: "spotify:user:abc123")
+        SpotifyTokenService.spclientProfileFetchOverride = { _ in (statusCode: 200, body: "not-json{{{") }
+
+        let profile = await SpotifyTokenService.fetchProfileViaSpclient(bearerToken: token)
+        XCTAssertNil(profile)
+    }
+
+    func testFetchProfileViaSpclientDefaultsDisplayNameToUserIdWhenNameFieldMissing() async {
+        let token = makeJwt(sub: "spotify:user:abc123")
+        SpotifyTokenService.spclientProfileFetchOverride = { _ in (statusCode: 200, body: "{}") }
+
+        let profile = await SpotifyTokenService.fetchProfileViaSpclient(bearerToken: token)
+        XCTAssertEqual(profile?.id, "abc123")
+        XCTAssertEqual(profile?.displayName, "abc123")
+        XCTAssertEqual(profile?.followers, 0)
+    }
+
+    func testFetchProfileViaSpclientReturnsNilOnNetworkError() async {
+        let token = makeJwt(sub: "spotify:user:abc123")
+        SpotifyTokenService.spclientProfileFetchOverride = { _ in
+            throw FakeNetworkError()
+        }
+
+        let profile = await SpotifyTokenService.fetchProfileViaSpclient(bearerToken: token)
         XCTAssertNil(profile)
     }
 }

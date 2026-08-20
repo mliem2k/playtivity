@@ -32,6 +32,18 @@ enum SpotifySecretsService {
 
     /// Loads secrets (cache-first, then remote), applies them to TOTPGenerator.
     /// Silent on failure: TOTPGenerator falls back to whatever it already has.
+    ///
+    /// NOT CALLED FROM PRODUCTION CODE ANYWHERE IN THIS PHASE. This is meant to be called once at
+    /// app startup, and ideally periodically thereafter (once per session, or on a timer, matching
+    /// this service's own 6 hour cache TTL) so the app keeps picking up Spotify's secret rotations
+    /// automatically, matching `AuthStore.initialize()`'s own "call once, before reading auth
+    /// state" contract. No app root view exists yet in this phase (`PlaytivityRootView` still just
+    /// loads the template `ContentView`, see `PlaytivityApp.swift`), so there is nowhere in the
+    /// live app to place that startup call yet; wiring it in is deferred to whichever task builds
+    /// the real root view and the app's startup sequence. Until then, the TOTP generator only ever
+    /// uses `TOTPGenerator`'s hardcoded fallback secrets, and the app will fail the same way it
+    /// did historically (see this file's own doc comment: v14 to v59-v61) the day Spotify rotates
+    /// them again.
     static func loadAndApply() async -> [String: [Int]]? {
         guard let secrets = await loadSecrets() else { return nil }
 

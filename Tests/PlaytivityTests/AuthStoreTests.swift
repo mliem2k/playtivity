@@ -7,23 +7,26 @@ final class AuthStoreTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        // AuthStore's email/country enrichment step, and its own default (un-overridden) token
-        // refresh path, both call SpotifyTokenService's static functions directly, not through an
-        // AuthStore-level seam. Stub all three of SpotifyTokenService's network seams here so no
-        // test can accidentally make a real network call, regardless of whether a given test's
-        // own AuthStore-level overrides happen to be wired up before the call that would reach
-        // them. This is defense-in-depth: every test below should still set its own
-        // tokenFetchOverride before any call that can reach trySilentRefresh, this blanket stub
-        // only catches the case where one forgets to.
+        // AuthStore's email/country enrichment step, its own default (un-overridden) token
+        // refresh path, and its default (un-overridden) profile-fetch fallback all call
+        // SpotifyTokenService's static functions directly, not through an AuthStore-level seam.
+        // Stub all four of SpotifyTokenService's network seams here so no test can accidentally
+        // make a real network call, regardless of whether a given test's own AuthStore-level
+        // overrides happen to be wired up before the call that would reach them. This is
+        // defense-in-depth: every test below should still set its own tokenFetchOverride/
+        // userProfileFetchOverride before any call that can reach trySilentRefresh, this blanket
+        // stub only catches the case where one forgets to.
         SpotifyTokenService.accountProfileFetchOverride = { _ in (statusCode: 404, body: "") }
         SpotifyTokenService.bearerTokenFetchOverride = { _ in (statusCode: 401, body: "") }
         SpotifyTokenService.serverTimeFetchOverride = { nil }
+        SpotifyTokenService.spclientProfileFetchOverride = { _ in (statusCode: 404, body: "") }
     }
 
     override func tearDown() {
         SpotifyTokenService.accountProfileFetchOverride = nil
         SpotifyTokenService.bearerTokenFetchOverride = nil
         SpotifyTokenService.serverTimeFetchOverride = nil
+        SpotifyTokenService.spclientProfileFetchOverride = nil
         super.tearDown()
     }
 
@@ -359,9 +362,13 @@ final class AuthStoreTests: XCTestCase {
     }
 
     func testLoginCompleteFallsBackToProfileFetcherWhenXPrefetchedUserHeaderIsAbsent() async {
+        var profileFetcherCalled = false
         let store = AuthStore(userDefaults: makeUserDefaults())
         await store.initialize()
-        store.userProfileFetchOverride = { _ in nil }
+        store.userProfileFetchOverride = { _ in
+            profileFetcherCalled = true
+            return nil
+        }
 
         do {
             try await store.loginComplete(bearerToken: validToken, headers: ["Cookie": "sp_dc=validSpDc"])
@@ -369,6 +376,7 @@ final class AuthStoreTests: XCTestCase {
         } catch {
             // expected
         }
+        XCTAssertTrue(profileFetcherCalled)
         XCTAssertFalse(store.isAuthenticated)
     }
 
@@ -605,9 +613,29 @@ final class AuthStoreTests: XCTestCase {
     func testRefreshIfNeededReturnsFalseWhenUserProfileFetchFailsAfterTokenFetch() async {
         let ud = makeUserDefaults(["spotify_sp_dc": "validSpDc"])
         let store = AuthStore(userDefaults: ud)
+        // Keep initialize()'s own silent refresh attempt deterministic/network-free; it lands
+        // unauthenticated with no cached user, which is the starting state this test needs.
+        store.tokenFetchOverride = { _ in nil }
+        await store.initialize()
+        XCTAssertFalse(store.isAuthenticated)
+
+        // trySilentRefresh only re-fetches the profile when _currentUser is nil (see its own
+        // "Only fetch profile when we don't already have one" comment), so authenticating via a
+        // successful initialize()/trySilentRefresh call first, the way the sibling
+        // "...WhenSilentRefreshFails" test does for the token-fetch branch, would leave
+        // _currentUser populated and permanently skip the profile-fetch branch on every later
+        // call, reproducing this same test's original bug in a new shape. The headless recovery
+        // path is the one production path that sets authState == .authenticated without ever
+        // touching _currentUser, so it's used here purely to reach the exact starting state this
+        // test needs: authenticated, but with no cached user yet.
+        store.headlessReAuthOverride = { true }
+        let recovered = await store.tryRecoverFromExpiredToken()
+        XCTAssertTrue(recovered)
+        XCTAssertTrue(store.isAuthenticated)
+
+        store.headlessReAuthOverride = nil
         store.tokenFetchOverride = { _ in "freshToken12345678901234567890123456789012345" }
         store.userProfileFetchOverride = { _ in nil }
-        await store.initialize()
 
         let result = await store.refreshIfNeeded()
 
@@ -665,6 +693,10 @@ final class AuthStoreTests: XCTestCase {
 
         XCTAssertFalse(result)
         XCTAssertFalse(store.isAuthenticated)
+        // Proves the fast path was actually attempted (and persisted the fresh sp_dc) before
+        // falling through, rather than the false result coming from the fast path never running
+        // at all, e.g. if readCookieStoreSpDc were silently skipped.
+        XCTAssertEqual(ud.string(forKey: "spotify_sp_dc"), "freshSpDc")
     }
 
     // MARK: - tryRecoverFromExpiredToken: fast path 2, sp_dc unchanged

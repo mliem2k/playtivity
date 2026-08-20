@@ -220,7 +220,7 @@ final class ApiRetryServiceTests: XCTestCase {
         XCTAssertEqual(capturedDelays, [Duration.milliseconds(50)])
     }
 
-    func testOperationNameAppearsInLogButDoesNotAffectRetryBehavior() async throws {
+    func testOperationNameDoesNotAffectRetryBehavior() async throws {
         var calls = 0
         let result: Int = try await ApiRetryService.retryApiCall({
             calls += 1

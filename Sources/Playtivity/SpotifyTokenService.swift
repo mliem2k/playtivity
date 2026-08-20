@@ -17,6 +17,7 @@ enum SpotifyTokenService {
     nonisolated(unsafe) static var serverTimeFetchOverride: (() async throws -> String?)?
     nonisolated(unsafe) static var bearerTokenFetchOverride: ((URLRequest) async throws -> (statusCode: Int, body: String))?
     nonisolated(unsafe) static var accountProfileFetchOverride: ((URLRequest) async throws -> (statusCode: Int, body: String))?
+    nonisolated(unsafe) static var spclientProfileFetchOverride: ((URLRequest) async throws -> (statusCode: Int, body: String))?
 
     /// Fetches Spotify's server time via the HTTP Date header for TOTP sync. Falls back to the
     /// local clock on any failure (missing header, request error, unparseable date).
@@ -192,6 +193,67 @@ enum SpotifyTokenService {
         let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
         let body = String(data: responseData, encoding: String.Encoding.utf8) ?? ""
         return (statusCode, body)
+    }
+
+    /// Fetches display name, avatar, and follower count via Spotify's user-profile-view endpoint,
+    /// using the user id decoded from the bearer token itself (`extractUserIdFromJwt`). Mirrors
+    /// `LoginScreen.identityJS`'s primary path exactly (same endpoint, same headers): that JS
+    /// prefetch is the fast path used during a fresh WebView login, and this function is the
+    /// production default `AuthStore` falls back to whenever the prefetch failed, timed out, or
+    /// wasn't available at all (e.g. a startup silent refresh, which has no WebView to inject
+    /// into). Returns nil if the token isn't decodable, the request fails, or the response isn't
+    /// 200/parseable JSON. Email and country are not available from this endpoint, so they're
+    /// left empty here; `AuthStore.enrichedProfile`'s separate account-settings fetch fills those
+    /// in afterwards whenever either is still missing.
+    static func fetchProfileViaSpclient(bearerToken: String) async -> User? {
+        guard let userId = extractUserIdFromJwt(bearerToken) else {
+            logger.warning("fetchProfileViaSpclient: could not decode user id from bearer token")
+            return nil
+        }
+
+        var request = URLRequest(
+            url: URL(string: "https://guc-spclient.spotify.com/user-profile-view/v3/profile/\(userId)")!,
+            timeoutInterval: 10
+        )
+        request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("WebPlayer", forHTTPHeaderField: "App-Platform")
+
+        do {
+            let (statusCode, body) = try await performSpclientProfileRequest(request)
+            guard statusCode == 200 else {
+                logger.warning("fetchProfileViaSpclient: HTTP \(statusCode)")
+                return nil
+            }
+            guard let data = body.data(using: String.Encoding.utf8) else { return nil }
+            guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+            let displayName = json["name"] as? String ?? userId
+            let imageUrl = json["image_url"] as? String
+            let followers = spclientIntValue(from: json["followers_count"]) ?? 0
+            return User(id: userId, displayName: displayName, email: "", imageUrl: imageUrl, followers: followers, country: "")
+        } catch {
+            logger.error("fetchProfileViaSpclient failed: \(error)")
+            return nil
+        }
+    }
+
+    private static func performSpclientProfileRequest(_ request: URLRequest) async throws -> (statusCode: Int, body: String) {
+        if let override = spclientProfileFetchOverride {
+            return try await override(request)
+        }
+        let (responseData, response) = try await URLSession.shared.data(for: request)
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let body = String(data: responseData, encoding: String.Encoding.utf8) ?? ""
+        return (statusCode, body)
+    }
+
+    // JSON numeric values can arrive boxed as either a 32-bit or 64-bit integer depending on
+    // magnitude and platform (org.json's JSONTokener on Android picks Integer vs Long per value),
+    // so both are tried explicitly, same fix as SpotifySecretsService.intValue.
+    private static func spclientIntValue(from element: Any?) -> Int? {
+        if let i = element as? Int { return i }
+        if let i32 = element as? Int32 { return Int(i32) }
+        return nil
     }
 
     /// Builds a minimal headers map from an sp_dc value for downstream API calls.
