@@ -165,7 +165,8 @@ struct LoginScreen: View {
         processingStep = "Loading your profile..."
         do {
             try await authStore.loginComplete(bearerToken: token, headers: headers)
-            onComplete?()
+            processingAuth = false
+            performComplete()
         } catch {
             completed = false
             processingAuth = false
@@ -202,6 +203,19 @@ struct LoginScreen: View {
         processingAuth = false
         completed = false
         performCancel()
+    }
+
+    /// Port of the Dart original's unconditional `Navigator.of(context).pop(true)` after a
+    /// successful `onAuthComplete` (ref_spotify_webview_login.dart:296-298): falls back to
+    /// `dismiss()` when no `onComplete` is supplied, so the screen (and its "Loading your
+    /// profile..." overlay) cannot get stuck on screen after a successful login just because the
+    /// caller didn't supply `onComplete`. Mirrors `performCancel` below exactly.
+    private func performComplete() {
+        if let onComplete {
+            onComplete()
+        } else {
+            dismiss()
+        }
     }
 
     /// Port of the Dart original's `widget.onCancel ?? () => Navigator.of(context).pop()`
