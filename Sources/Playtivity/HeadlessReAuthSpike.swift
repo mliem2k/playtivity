@@ -74,7 +74,28 @@ import SkipWeb
 struct HeadlessReAuthSpikeHost: View {
     @State private var navigator = WebViewNavigator()
     @State private var webViewState = WebViewState()
+
+    /// The id of the request `processOneRequest` is currently working on (or last worked on).
+    /// Read only by `watchForNewRequests`'s own top-of-loop "is this a genuinely new id" check;
+    /// deliberately never read by anything that resolves a request (see the fix note below).
     @State private var activeRequestID: UUID?
+
+    /// Bumped by the WebView's own two navigation callbacks below, the only two places that
+    /// touch it. Neither callback resolves anything itself, and neither reads `activeRequestID`:
+    /// they just record "something happened" for whichever call is currently polling this count.
+    /// FIX (review round 1): the original version had `onNavigationFinished`/`onNavigationFailed`
+    /// read `activeRequestID` directly at callback-fire time to decide which request to resolve.
+    /// Because `watchForNewRequests` could reassign `activeRequestID` to a NEW request before an
+    /// OLD, slow-to-settle navigation's callback fired, a late callback belonging to the OLD
+    /// request would resolve the NEW request with the OLD request's stale cookie data instead,
+    /// the coordinator's own stale-id guard never seeing the mismatch because the wrong id had
+    /// already been substituted before `resolve` was ever called. See the fix report appended to
+    /// this task's report for the full trace. The fix below never lets that substitution happen:
+    /// `processOneRequest` captures its id into a plain local parameter once, at the top, and
+    /// every call it makes (including into `handleNavigationEvent`) threads that same captured
+    /// value through explicitly; nothing downstream of it ever reads `activeRequestID` again.
+    @State private var navigationEventCount = 0
+    @State private var lastNavigationFailed = false
 
     private static let persistentID = "headless-reauth"
     private static let targetURL = URL(string: "https://open.spotify.com/")!
@@ -90,10 +111,11 @@ struct HeadlessReAuthSpikeHost: View {
             url: Self.targetURL,
             state: $webViewState,
             onNavigationFinished: {
-                Task { await handleNavigationFinished() }
+                navigationEventCount += 1
             },
             onNavigationFailed: {
-                Task { await failActiveRequest() }
+                lastNavigationFailed = true
+                navigationEventCount += 1
             },
             persistentWebViewID: Self.persistentID
         )
@@ -106,44 +128,83 @@ struct HeadlessReAuthSpikeHost: View {
 
     // MARK: - Request watching
 
-    /// Notices a new `HeadlessReAuthSpikeCoordinator` request and forces a fresh navigation to
-    /// `open.spotify.com` for it. A forced `navigator.load(url:)` is required on every attempt,
-    /// not just the first: `WebViewNavigator`'s own `webEngine.didSet` only auto-loads
-    /// `initialURL` when the (possibly reused, persistent) engine has no existing back/forward
-    /// history yet, so a warm, already-navigated engine from a prior attempt would otherwise just
-    /// sit on whatever page it last landed on.
+    /// Notices a new `HeadlessReAuthSpikeCoordinator` request and processes it fully,
+    /// `await`ing `processOneRequest` to completion before ever looking for another one. This
+    /// serialization is what makes the id-capture fix below actually work: `activeRequestID` can
+    /// only ever move on to a different value once the request it currently names has already
+    /// been fully handled (resolved, or its own wait budget below expired), so there is no window
+    /// where a second `navigator.load(url:)` is in flight while a first one's callback could still
+    /// land and be misattributed to it.
     private func watchForNewRequests() async {
         while !Task.isCancelled {
             if let id = HeadlessReAuthSpikeCoordinator.currentRequestID, id != activeRequestID {
-                activeRequestID = id
-                navigator.load(url: Self.targetURL)
+                await processOneRequest(id: id)
             }
             try? await Task.sleep(for: Self.requestPollInterval)
         }
     }
 
+    /// Owns one request end to end: issues the navigation, then waits for and consumes
+    /// navigation events (there can be more than one per request, e.g. an `.ignore`d sub-resource
+    /// load before the real `open.spotify.com` landing) up to the same 20 second/80 poll budget
+    /// `HeadlessReAuthSpikeLogic.awaitResolution` uses, resolving `id` (the parameter captured
+    /// once here, never re-read from `@State`) the moment a conclusive event arrives. If the
+    /// budget expires with nothing conclusive, this simply returns without resolving:
+    /// `attempt()`'s own `awaitResolution` is the authoritative timeout for `id` and will already
+    /// have (or will shortly) time it out on its own; this loop just moves on to poll for the
+    /// next coordinator request.
+    ///
+    /// A forced `navigator.load(url:)` is required on every request, not just the first:
+    /// `WebViewNavigator`'s own `webEngine.didSet` only auto-loads `initialURL` when the
+    /// (possibly reused, persistent) engine has no existing back/forward history yet, so a warm,
+    /// already-navigated engine from a prior request would otherwise just sit on whatever page it
+    /// last landed on.
+    private func processOneRequest(id: UUID) async {
+        activeRequestID = id
+        lastNavigationFailed = false
+        var baseline = navigationEventCount
+        navigator.load(url: Self.targetURL)
+
+        for _ in 0..<HeadlessReAuthSpikeLogic.overallTimeoutMaxPolls {
+            if navigationEventCount != baseline {
+                baseline = navigationEventCount
+                if await handleNavigationEvent(id: id) {
+                    return
+                }
+                // `.ignore`: keep waiting, a later event for this same request may still arrive.
+                continue
+            }
+            try? await Task.sleep(for: HeadlessReAuthSpikeLogic.overallTimeoutPollInterval)
+        }
+    }
+
     // MARK: - Navigation handling (ref_auth_provider.dart:393-439)
 
-    private func handleNavigationFinished() async {
-        guard let id = activeRequestID, let url = webViewState.url else { return }
+    /// Returns `true` once `id` has been resolved (success or failure), `false` for `.ignore`
+    /// (the caller should keep waiting for a later event on the same request). `id` is always
+    /// the value `processOneRequest` captured at the top of its own call, never a fresh read of
+    /// `activeRequestID`.
+    private func handleNavigationEvent(id: UUID) async -> Bool {
+        if lastNavigationFailed {
+            lastNavigationFailed = false
+            HeadlessReAuthSpikeCoordinator.resolve(id: id, spDc: nil)
+            return true
+        }
+        guard let url = webViewState.url else { return false }
         switch HeadlessReAuthSpikeLogic.classifyNavigation(url: url) {
         case .sessionGone:
             HeadlessReAuthSpikeCoordinator.resolve(id: id, spDc: nil)
+            return true
         case .ignore:
-            return
+            return false
         case .checkCookiesNow:
             let spDc = await HeadlessReAuthSpikeLogic.checkWithSettleRetry(
                 checkNow: { await self.readSpDcCookie() },
                 sleep: { try await Task.sleep(for: $0) }
             )
             HeadlessReAuthSpikeCoordinator.resolve(id: id, spDc: spDc)
+            return true
         }
-    }
-
-    /// Port of `onReceivedError` (ref_auth_provider.dart:440-442).
-    private func failActiveRequest() async {
-        guard let id = activeRequestID else { return }
-        HeadlessReAuthSpikeCoordinator.resolve(id: id, spDc: nil)
     }
 
     /// Port of `checkForSpDc` (ref_auth_provider.dart:393-408).
