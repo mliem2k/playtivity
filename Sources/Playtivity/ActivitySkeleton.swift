@@ -24,19 +24,35 @@ struct ActivitySkeleton: View {
 }
 
 private struct SkeletonRow: View {
+    // Matches the Dart original's per-gap `SizedBox` spacers exactly (ref_activity_skeleton.dart:
+    // 28-45: SizedBox(width: 16) then SizedBox(width: 12) horizontally; SizedBox(height: 6/6/4)
+    // between the four column blocks), rather than a single uniform HStack/VStack `spacing` value,
+    // since SwiftUI's `spacing:` parameter can only apply one value to every gap.
     var body: some View {
-        HStack(alignment: .center, spacing: 16) {
+        HStack(alignment: .center, spacing: 0) {
             circleBlock(44)
-            VStack(alignment: .leading, spacing: 6) {
+            gap(width: 16)
+            VStack(alignment: .leading, spacing: 0) {
                 rectBlock(width: 120, height: 12)
+                gap(height: 6)
                 rectBlock(width: 80, height: 10)
+                gap(height: 6)
                 fullWidthBlock(height: 12)
+                gap(height: 4)
                 rectBlock(width: 160, height: 10)
             }
+            gap(width: 12)
             rectBlock(width: 48, height: 48)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+    }
+
+    /// A fixed-size, non-expanding gap, matching Dart's `SizedBox(width:)`/`SizedBox(height:)`
+    /// exactly (a plain `Color.clear` box rather than `Spacer()`, since `Spacer()` is meant to
+    /// expand to fill available space and would fight the explicit fixed size here).
+    private func gap(width: CGFloat = 0, height: CGFloat = 0) -> some View {
+        Color.clear.frame(width: width, height: height)
     }
 
     private func circleBlock(_ diameter: CGFloat) -> some View {

@@ -27,10 +27,13 @@ enum SpotifyDeepLink {
     /// ("spotify:track:...", "spotify:playlist:..."). An empty URI (an activity whose track/
     /// playlist URI is missing) produces a target with both fields nil.
     static func contentTarget(uri: String) -> Target {
-        let trimmedUri: String = uri
-        return Target(
-            appURL: trimmedUri.isEmpty ? nil : URL(string: trimmedUri),
-            webURL: webURL(fromSpotifyUri: trimmedUri)
+        // No intermediate variable needed: `uri`'s type is already explicit from the parameter
+        // declaration, so quirk 6 (an unannotated local's type not being locally obvious to Skip's
+        // inference on `!expr.isEmpty`) doesn't apply here, and this is a plain ternary on
+        // `.isEmpty`, not a negation, either way.
+        Target(
+            appURL: uri.isEmpty ? nil : URL(string: uri),
+            webURL: webURL(fromSpotifyUri: uri)
         )
     }
 

@@ -33,13 +33,42 @@ private struct AuthStoreError: Error, CustomStringConvertible {
 /// code) and (b) calls one of its nonisolated `async` methods (`tryRecoverFromExpiredToken`) and
 /// then touches `authStore` again shortly after (e.g. `loadData()` re-reading `isInitialized`).
 /// Swift 6's region-based isolation checker cannot prove that reuse is safe for a non-Sendable
-/// type ("sending 'self.authStore' risks causing data races"), even though nothing here is
-/// actually unsafe: `AuthStore` has no unsynchronized cross-task mutation path different from
-/// `SpotifyStore`/`BuddyActivityService`, which already carry this same `@unchecked Sendable`
-/// marker for the identical reason (see `SpotifyStore`'s own doc comment: "matches every other
-/// `@Observable` store in this codebase"). A plain concurrent READ of a property is the only
-/// unsynchronized hazard this class has, same as before; this annotation removes a compile-time
-/// false positive, it does not change runtime behavior.
+/// type ("sending 'self.authStore' risks causing data races"). Kept per the same precedent
+/// `SpotifyStore`/`BuddyActivityService` already established (`@unchecked Sendable` on an
+/// `@Observable` store, with each concrete concurrent-access path individually reasoned about
+/// rather than the class being asserted safe wholesale).
+///
+/// Corrected claim, previously wrong in this comment: this class is **not** limited to "a plain
+/// concurrent read is the only hazard." `initialize()`, `loginComplete()`, `logout()`,
+/// `refreshIfNeeded()`, and (before this task's fix) `tryRecoverFromExpiredToken()` all WRITE
+/// `authState`/`bearerToken`/`headers`/`_currentUser`/`authEvents`/`spDc` with no lock and no
+/// actor gate. That was already true before this task; `@unchecked Sendable` did not introduce it,
+/// it only made it legal to reach these methods from contexts where the compiler previously
+/// refused to compile the call at all.
+///
+/// What this task's diff does concretely fix: `ActivitiesScreen.handleReAuth()` is the one new
+/// call path this phase makes reachable *concurrently* with MainActor reads of `authStore`
+/// (`loadData()`/`refreshData()`, both invoked from the same screen's `.task { }` and its 30s
+/// auto-refresh loop, which can fire while a manual "Login Again" tap is mid-flight).
+/// `tryRecoverFromExpiredToken()` is marked `@MainActor` below specifically to close that path: it
+/// forces its whole write chain (including the private `trySilentRefresh()` helper it calls) onto
+/// the same serial executor every MainActor read already uses, so the write and the concurrent
+/// reads can no longer overlap for this reachable interleaving.
+///
+/// What remains genuinely unguarded, disclosed rather than silently carried forward:
+/// `initialize()`, `loginComplete()`, `logout()`, and `refreshIfNeeded()` are unchanged, still
+/// nonisolated, still lock-free. This is a pre-existing Phase 2 characteristic, not something this
+/// task's diff created, and comprehensively hardening all four is out of this task's scope (Task
+/// 4 is the activities-feed UI, not an AuthStore concurrency audit). None of the four currently has
+/// a reachable concurrent caller in this codebase: `loginComplete()`/`logout()` only run from
+/// `LoginScreen`'s own login flow, which is not concurrently active alongside `ActivitiesScreen`
+/// in the app's actual navigation (you are either on the login screen or already past it), and
+/// `initialize()`/`refreshIfNeeded()` have no caller at all yet (the app-root wiring that will call
+/// `initialize()` is itself out of this phase's scope). If a later phase adds a caller that makes
+/// any of these four genuinely concurrently reachable with a MainActor reader, it needs the same
+/// treatment `tryRecoverFromExpiredToken()` gets here (either `@MainActor` isolation or a
+/// `SpotifyStore.serialized(_:)`-style lock-guarded gate), not another `@unchecked Sendable`-style
+/// assertion that the problem doesn't exist.
 @Observable
 final class AuthStore: @unchecked Sendable {
     private static let bearerTokenKey = "spotify_bearer_token"
@@ -540,6 +569,17 @@ final class AuthStore: @unchecked Sendable {
 
     /// Port of the fast paths of `tryRecoverFromExpiredToken` (ref_auth_provider.dart:322-381).
     /// The slow path (headless WebView re-auth) is delegated to `headlessReAuthOverride`.
+    ///
+    /// `@MainActor`: added in Task 4 of the activities-feed phase. `ActivitiesScreen.handleReAuth()`
+    /// calls this while its own screen's auto-refresh loop can concurrently read `authStore` on the
+    /// main actor; without this annotation, this method's write chain (`authState`, `spDc`,
+    /// `bearerToken`, `headers`, `_currentUser` via the private `trySilentRefresh()` it calls) would
+    /// execute off the main actor for the duration of the network round trip, racing those reads.
+    /// Pinning this method to the main actor keeps its entire call chain on the same serial
+    /// executor as every reader, closing that specific race. See this class's own doc comment for
+    /// which other methods remain unguarded and why that is disclosed as out of this task's scope
+    /// rather than fixed here.
+    @MainActor
     func tryRecoverFromExpiredToken() async -> Bool {
         if isRecovering {
             addEvent("Recovery already in progress, skipping duplicate call")

@@ -106,11 +106,27 @@ struct ActivitiesScreen: View {
     /// Dart original, will react to it"). This binds "Login Again" to `AuthStore`'s already-built,
     /// already-tested `tryRecoverFromExpiredToken()` (the closest available equivalent capability)
     /// instead of leaving the button dead pending a type this phase does not build.
+    ///
+    /// The recovery-success sequence (push the new token into `SpotifyStore`, clear both its error
+    /// flags, then reload) mirrors `AuthUtils.handleAuthenticationError`'s own successful-recovery
+    /// path (ref_auth_utils.dart:118-127: `sp.clearAuthError(); sp.refreshData();`), the closest
+    /// Dart analogue for a silent-recovery-then-reload flow. Both steps are required, not optional:
+    /// `AuthStore.tryRecoverFromExpiredToken()` only updates its own `bearerToken`, nothing wires
+    /// that into `SpotifyStore` automatically (no shared listener/provider bridge exists here), so
+    /// without the explicit `setBearer` call `loadData()` would silently re-fetch with the stale
+    /// token and 401 again; and `SpotifyStore.error`/`hasAuthError` are only cleared by
+    /// `performLoadFriendsActivities` when called with `showLoading`/`showSkeleton` true, neither
+    /// of which `loadData()` uses, so a successful reload would otherwise leave the old error
+    /// banner rendered over the freshly-loaded list.
     private func handleReAuth() async {
         let recovered = await authStore.tryRecoverFromExpiredToken()
-        if recovered {
-            await loadData()
+        guard recovered else { return }
+        if let token = authStore.bearerToken, !token.isEmpty {
+            spotifyStore.setBearer(token)
         }
+        spotifyStore.clearAuthError()
+        spotifyStore.clearError()
+        await loadData()
     }
 
     // MARK: - Header (ported from `_HeaderAppBar`/`_HeaderTitle`/`_copyDiagnostic`, lines 231-290)
@@ -191,9 +207,15 @@ struct ActivitiesScreen: View {
     /// Port of `_ContentSlivers`'s skeleton check (`isLoading && activities.isEmpty`, line 309),
     /// using `isSkeletonLoading` per `SpotifyStore.performFastInitialLoad`'s own doc comment: "UI
     /// ... must derive 'show skeleton' from `isSkeletonLoading && friendsActivities.isEmpty`, not
-    /// the flag alone."
+    /// the flag alone." The additional `error == nil` guard is required beyond that doc comment's
+    /// own formula: `isSkeletonLoading` is documented there as a flag `performFastInitialLoad`
+    /// sets and then never clears back to `false` on the cold-start-with-nothing-cached path, so if
+    /// the very first live fetch then fails, `friendsActivities` stays empty and
+    /// `isSkeletonLoading` stays stuck `true` forever, permanently shadowing the error/auth-required
+    /// branch below with an eternal shimmer and no visible "Login Again" button. Checking `error`
+    /// first breaks that shadowing without touching `SpotifyStore`'s own documented behavior.
     private var showSkeleton: Bool {
-        spotifyStore.isSkeletonLoading && spotifyStore.friendsActivities.isEmpty
+        spotifyStore.isSkeletonLoading && spotifyStore.friendsActivities.isEmpty && spotifyStore.error == nil
     }
 
     /// Single `List`, matching the Dart original's single `RefreshIndicator`/`CustomScrollView`

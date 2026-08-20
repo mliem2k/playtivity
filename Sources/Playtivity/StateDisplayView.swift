@@ -70,7 +70,12 @@ struct StateDisplayView: View {
         .frame(maxWidth: .infinity)
     }
 
-    /// Port of `StateDisplayWidget.empty` (ref_state_display_widget.dart:37-52).
+    /// Port of `StateDisplayWidget.empty` (ref_state_display_widget.dart:37-52). Currently unused:
+    /// `ActivitiesScreen`'s own empty state is the bespoke `emptyStateRow` (porting
+    /// `_EmptyState`/`_DiagnosticEmpty`'s diagnostic-copy layout directly), matching the Dart
+    /// original, which likewise never calls `StateDisplayWidget.empty` from `activities_screen.dart`.
+    /// Kept because the task brief asked for `StateDisplayView` to port all three named
+    /// constructors (`.empty`/`.error`/`.authRequired`) as a general-purpose reusable component.
     static func empty(
         title: String,
         subtitle: String? = nil,

@@ -48,6 +48,15 @@ final class SpotifyDeepLinkLogicTests: XCTestCase {
         XCTAssertNil(SpotifyDeepLink.webURL(fromSpotifyUri: ""))
     }
 
+    /// Port of `_convertUriToWebUrl`'s `parts[1]`/`parts[2]` indexing (ref_spotify_launcher.dart:
+    /// 76-78): only the type and id are used; any further colon-separated segments are ignored.
+    func testWebUrlIgnoresExtraColonSeparatedParts() {
+        XCTAssertEqual(
+            SpotifyDeepLink.webURL(fromSpotifyUri: "spotify:track:4iV5W9uYEdYUVa79Axb7Rh:extra:parts"),
+            URL(string: "https://open.spotify.com/track/4iV5W9uYEdYUVa79Axb7Rh")
+        )
+    }
+
     // MARK: - open(_:using:)
 
     func testOpenTriesAppUrlFirstAndStopsWhenAccepted() {
