@@ -39,13 +39,51 @@ final class AuthStore {
     private(set) var authState: AuthState = .uninitialized
     private(set) var bearerToken: String?
     private(set) var headers: [String: String]?
-    private(set) var currentUser: User?
+    private var _currentUser: User?
     private(set) var authEvents: [String] = []
     private(set) var lastAuthError: String?
 
-    var isAuthenticated: Bool { authState == .authenticated }
+    /// The restored/authenticated user, if any. Backed by `_currentUser` so internal code can
+    /// read/write it without tripping the DEBUG guard below, which is only meant to catch an
+    /// external caller reading this before `initialize()` has ever run.
+    var currentUser: User? {
+        assertStoreIsInitialized()
+        return _currentUser
+    }
+
+    var isAuthenticated: Bool {
+        assertStoreIsInitialized()
+        return authState == .authenticated
+    }
+
     var isLoading: Bool { authState == .loading }
+
+    // Deliberately NOT guarded by assertStoreIsInitialized(): authState's own `.uninitialized`
+    // case already discloses "initialize() has not run yet" unambiguously on its own, and
+    // isInitialized (== this check) is the sanctioned way calling code decides whether it needs
+    // to call initialize() in the first place. Guarding it would make that legitimate pre-check
+    // trip the assert it exists to avoid needing.
     var isInitialized: Bool { authState != .uninitialized }
+
+    // DEBUG-only guard: currentUser and isAuthenticated both read as an "empty"/false value both
+    // when the store has never been initialized AND when it genuinely has no user or is logged
+    // out, so a forgotten `initialize()` call silently looks identical to a normal logged-out
+    // state, with no signal anything is wrong. Trap loudly in development instead. authState
+    // itself does not need this: `.uninitialized` already is the loud, unambiguous signal, and
+    // asserting on every read of it would break the legitimate "check isInitialized, then decide
+    // whether to call initialize()" pattern.
+    private func assertStoreIsInitialized() {
+        #if DEBUG
+        if authState == .uninitialized {
+            assertionFailure("""
+                AuthStore.currentUser or .isAuthenticated was read before initialize() was ever \
+                called. Without that call, authState stays .uninitialized forever and these read \
+                exactly like a genuine logged-out user, with no signal why. Call \
+                `await store.initialize()` before reading either.
+                """)
+        }
+        #endif
+    }
 
     private var spDc: String?
     private var isRecovering = false
@@ -92,6 +130,12 @@ final class AuthStore {
 
     /// Port of `_initializeAuth` (ref_auth_provider.dart:68-161). Call once, after any test
     /// override closures have been set, before reading `authState`/`currentUser`.
+    ///
+    /// REQUIRED: without this call, `authState` remains `.uninitialized` forever and any stored
+    /// credentials are never restored. `currentUser`/`isAuthenticated` will read exactly like a
+    /// genuine logged-out user in that case (see `assertStoreIsInitialized`, which traps on that
+    /// specific read in DEBUG builds so a forgotten call fails loudly during development instead
+    /// of silently shipping a permanently-logged-out cold start).
     func initialize() async {
         authState = .loading
 
@@ -130,7 +174,7 @@ final class AuthStore {
                         addEvent("Scrubbed stale placeholder email/country from stored profile")
                     }
 
-                    currentUser = user
+                    _currentUser = user
                     addEvent("Restored: \(user.displayName)")
 
                     // Proactively refresh the bearer token if sp_dc is available. Spotify tokens
@@ -169,9 +213,9 @@ final class AuthStore {
             addEvent("No credentials found")
         }
 
-        addEvent("Init complete, token:\(bearerToken != nil) user:\(currentUser?.displayName ?? "none")")
+        addEvent("Init complete, token:\(bearerToken != nil) user:\(_currentUser?.displayName ?? "none")")
 
-        authState = (bearerToken != nil && currentUser != nil) ? .authenticated : .unauthenticated
+        authState = (bearerToken != nil && _currentUser != nil) ? .authenticated : .unauthenticated
         addEvent("State -> \(authState)")
     }
 
@@ -237,7 +281,7 @@ final class AuthStore {
             // Enrich with email/country if WebView JS didn't capture them.
             let finalProfile = await enrichedProfile(profile, spDc: spDc)
 
-            currentUser = finalProfile
+            _currentUser = finalProfile
             saveStoredData()
 
             authState = .authenticated
@@ -249,7 +293,7 @@ final class AuthStore {
 
             self.bearerToken = nil
             self.headers = nil
-            self.currentUser = nil
+            self._currentUser = nil
             clearStoredData()
 
             authState = .unauthenticated
@@ -273,7 +317,7 @@ final class AuthStore {
     // closure: Skip's Kotlin transpilation cannot smart-cast a local `var` that is reassigned
     // inside such a closure ("Smart cast to 'User' is impossible, because ... is a local variable
     // that is mutated in a capturing closure"), which broke every later property access on it.
-    // Stored properties (like `currentUser` in trySilentRefresh below) don't have this problem:
+    // Stored properties (like `_currentUser` in trySilentRefresh below) don't have this problem:
     // Skip already force-unwraps every access to those instead of relying on a smart cast.
     private func enrichedProfile(_ profile: User, spDc: String?) async -> User {
         guard profile.email.isEmpty || profile.country.isEmpty, let spDc else { return profile }
@@ -311,7 +355,7 @@ final class AuthStore {
         if let headers, let encoded = try? encodeHeaders(headers) {
             userDefaults.set(encoded, forKey: Self.headersKey)
         }
-        if let currentUser, let encoded = try? encodeUser(currentUser) {
+        if let _currentUser, let encoded = try? encodeUser(_currentUser) {
             userDefaults.set(encoded, forKey: Self.userKey)
         }
         if let spDc {
@@ -327,7 +371,7 @@ final class AuthStore {
         // sp_dc intentionally NOT removed, survives token expiry for silent refresh.
         bearerToken = nil
         headers = nil
-        currentUser = nil
+        _currentUser = nil
         addEvent("Auth data cleared")
     }
 
@@ -425,10 +469,10 @@ final class AuthStore {
         // Only fetch profile when we don't already have one. Existing profile was obtained via
         // WebView JS injection and is correct; spclient/profile/me returns a different account
         // (social profile, not account settings).
-        if currentUser == nil {
-            currentUser = await userProfileFetchOverride?(newToken)
+        if _currentUser == nil {
+            _currentUser = await userProfileFetchOverride?(newToken)
 
-            if currentUser == nil {
+            if _currentUser == nil {
                 addEvent("Silent refresh: no profile, aborting")
                 bearerToken = nil
                 headers = nil
@@ -438,12 +482,12 @@ final class AuthStore {
 
         // Enrich with email/country when missing, spclient doesn't return these.
         // account-settings/v1/profile works with just sp_dc, no OAuth scopes needed.
-        if currentUser!.email.isEmpty || currentUser!.country.isEmpty {
-            currentUser = await enrichedProfile(currentUser!, spDc: effectiveSpDc)
+        if _currentUser!.email.isEmpty || _currentUser!.country.isEmpty {
+            _currentUser = await enrichedProfile(_currentUser!, spDc: effectiveSpDc)
         }
 
         saveStoredData()
-        addEvent("Silent refresh OK: \(currentUser!.displayName)")
+        addEvent("Silent refresh OK: \(_currentUser!.displayName)")
         return true
     }
 

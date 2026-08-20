@@ -7,12 +7,17 @@ final class AuthStoreTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        // AuthStore's email/country enrichment step calls SpotifyTokenService.fetchAccountProfile
-        // directly (not through an AuthStore-level override) whenever a profile's email or
-        // country is empty, which several prefetched-user tests below deliberately exercise. Stub
-        // it here so no test can accidentally make a real network call, regardless of whether the
-        // author of a given test noticed it would reach this path.
+        // AuthStore's email/country enrichment step, and its own default (un-overridden) token
+        // refresh path, both call SpotifyTokenService's static functions directly, not through an
+        // AuthStore-level seam. Stub all three of SpotifyTokenService's network seams here so no
+        // test can accidentally make a real network call, regardless of whether a given test's
+        // own AuthStore-level overrides happen to be wired up before the call that would reach
+        // them. This is defense-in-depth: every test below should still set its own
+        // tokenFetchOverride before any call that can reach trySilentRefresh, this blanket stub
+        // only catches the case where one forgets to.
         SpotifyTokenService.accountProfileFetchOverride = { _ in (statusCode: 404, body: "") }
+        SpotifyTokenService.bearerTokenFetchOverride = { _ in (statusCode: 401, body: "") }
+        SpotifyTokenService.serverTimeFetchOverride = { nil }
     }
 
     override func tearDown() {
@@ -518,6 +523,10 @@ final class AuthStoreTests: XCTestCase {
             "spotify_bearer_token": "oldToken",
         ])
         let store = AuthStore(userDefaults: ud)
+        // No spotify_headers stored alongside the bearer token, so initialize() falls into the
+        // "no stored token, silent refresh with sp_dc" branch. Set this before initialize() so
+        // that attempt is deterministic and network-free, not just relying on the setUp() stub.
+        store.tokenFetchOverride = { _ in nil }
         await store.initialize()
 
         await store.logout()
@@ -623,6 +632,11 @@ final class AuthStoreTests: XCTestCase {
     func testRecoveryFastPathSucceedsWithFreshSpDcFromCookieStore() async {
         let ud = makeUserDefaults(["spotify_sp_dc": "oldSpDc"])
         let store = AuthStore(userDefaults: ud)
+        // stored sp_dc with no bearer token/headers routes initialize() into its own silent
+        // refresh attempt; keep that network-free with a plain nil before wiring the overrides
+        // that are actually under test here, since the assertion below expects "freshSpDc"
+        // specifically, which is not the value initialize() would see (it only knows "oldSpDc").
+        store.tokenFetchOverride = { _ in nil }
         await store.initialize()
         store.readCookieStoreSpDc = { "freshSpDc" }
         store.tokenFetchOverride = { spDc in
@@ -641,9 +655,11 @@ final class AuthStoreTests: XCTestCase {
     func testRecoveryFastPathFallsThroughToHeadlessWhenFreshSpDcRefreshFails() async {
         let ud = makeUserDefaults(["spotify_sp_dc": "oldSpDc"])
         let store = AuthStore(userDefaults: ud)
+        // Same nil-returning override covers both initialize()'s own silent refresh attempt and
+        // the recovery call under test, so it can be set once, before initialize().
+        store.tokenFetchOverride = { _ in nil }
         await store.initialize()
         store.readCookieStoreSpDc = { "freshSpDc" }
-        store.tokenFetchOverride = { _ in nil }
 
         let result = await store.tryRecoverFromExpiredToken()
 
@@ -656,6 +672,9 @@ final class AuthStoreTests: XCTestCase {
     func testRecoveryFastPathSucceedsWhenCookieSpDcMatchesStoredAndBearerRefreshWorks() async {
         let ud = makeUserDefaults(["spotify_sp_dc": "sameSpDc"])
         let store = AuthStore(userDefaults: ud)
+        // Keep initialize()'s own silent refresh attempt network-free with a plain nil, then wire
+        // the success overrides for the recovery call actually under test.
+        store.tokenFetchOverride = { _ in nil }
         await store.initialize()
         store.readCookieStoreSpDc = { "sameSpDc" }
         store.tokenFetchOverride = { _ in "newToken1234567890123456789012345678901234567890" }
@@ -670,9 +689,11 @@ final class AuthStoreTests: XCTestCase {
     func testRecoveryFastPathFallsThroughToHeadlessWhenUnchangedSpDcRefreshFails() async {
         let ud = makeUserDefaults(["spotify_sp_dc": "sameSpDc"])
         let store = AuthStore(userDefaults: ud)
+        // Same nil-returning override covers both initialize()'s own silent refresh attempt and
+        // the recovery call under test, so it can be set once, before initialize().
+        store.tokenFetchOverride = { _ in nil }
         await store.initialize()
         store.readCookieStoreSpDc = { "sameSpDc" }
-        store.tokenFetchOverride = { _ in nil }
 
         let result = await store.tryRecoverFromExpiredToken()
 
