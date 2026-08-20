@@ -210,11 +210,12 @@ enum SpotifyTokenService {
             logger.warning("fetchProfileViaSpclient: could not decode user id from bearer token")
             return nil
         }
+        guard let url = URL(string: "https://guc-spclient.spotify.com/user-profile-view/v3/profile/\(userId)") else {
+            logger.warning("fetchProfileViaSpclient: could not build profile URL for decoded user id")
+            return nil
+        }
 
-        var request = URLRequest(
-            url: URL(string: "https://guc-spclient.spotify.com/user-profile-view/v3/profile/\(userId)")!,
-            timeoutInterval: 10
-        )
+        var request = URLRequest(url: url, timeoutInterval: 10)
         request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("WebPlayer", forHTTPHeaderField: "App-Platform")
