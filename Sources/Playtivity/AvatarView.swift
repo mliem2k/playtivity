@@ -48,7 +48,13 @@ struct AvatarView: View {
         return name.isEmpty ? "?" : String(name.prefix(1)).uppercased()
     }
 
+    /// Only accepts `http`/`https`: `imageUrl` comes from the buddylist API, another Spotify
+    /// account's data crossing a real trust boundary, so a malicious/compromised friend entry
+    /// pointing at a `file://` or `content://` URI must fall back to the placeholder rather than
+    /// being handed to `AsyncImage`.
     private static func nonEmptyURL(_ raw: String) -> URL? {
-        raw.isEmpty ? nil : URL(string: raw)
+        guard !raw.isEmpty, let url = URL(string: raw) else { return nil }
+        guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return nil }
+        return url
     }
 }

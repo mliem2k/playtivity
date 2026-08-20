@@ -730,17 +730,49 @@ final class BuddyActivityServiceTests: XCTestCase {
         XCTAssertEqual(service.cachedActivities?.count, 1, "a failed fetch must not wipe the already-known friend")
     }
 
+    /// Finding 9 (whole-branch review, Important): the previous version of this test only asserted
+    /// `cachedActivities` stayed nil, which is true regardless of whether `lastBuddyListFetch =
+    /// Date()` runs, since `shouldRefreshBuddyList`'s very first guard already returns `true`
+    /// whenever `cachedActivities` itself is nil (`guard let activities = ..., let lastFetch =
+    /// ... else { return true }` requires BOTH), independent of the fetch-time write. That means
+    /// the write's effect is only observable once a cache already exists: this test seeds one with
+    /// a real (non-empty) fetch first, then exercises an empty-bodied response against it (fresh
+    /// data is `[]`, but `mergeWithExisting` carries the existing friend over, so the cache stays
+    /// populated either way, unrelated to the line under test), and proves the fetch-time write
+    /// specifically by checking that a third call within the cache window does not hit the network
+    /// again. Non-vacuity confirmed by temporarily commenting out `self.lastBuddyListFetch =
+    /// Date()` in `BuddyActivityService.getFriendActivity` and observing this test fail (the third
+    /// call re-hits the network because `lastBuddyListFetch` never became non-nil again after
+    /// `forceRefresh()` cleared it), then restoring the line and observing it pass again.
     func testGetFriendActivityAlwaysRecordsFetchTimeEvenOnEmptyResult() async throws {
         let service = BuddyActivityService(userDefaults: freshUserDefaults())
-        BuddyActivityService.buddyListFetchOverride = { _ in (statusCode: 200, body: "{\"friends\": []}") }
+        let now = nowMsEpoch()
+        BuddyActivityService.buddyListFetchOverride = { _ in (statusCode: 200, body: self.friendsBody([("u1", now, "Song")])) }
         _ = try await service.getFriendActivity(bearerToken: "tok")
-        // With no prior cache, an empty result stays uncached (cachedActivities remains nil), but
-        // the fetch timestamp must still have been recorded so the next call doesn't immediately
-        // refetch and hammer the API. shouldRefreshBuddyList's first guard is "no cached data"
-        // (cache OR fetch time nil), which is still true here since the cache itself stayed nil,
-        // so this is verified indirectly via the persistence tests below and the empty-fetch
-        // never-wipes test above, which is the behavior that actually depends on it.
-        XCTAssertNil(service.cachedActivities)
+        XCTAssertEqual(service.cachedActivities?.count, 1)
+
+        // Force the next check to want a refresh, then return an empty body against the existing
+        // cache.
+        service.forceRefresh()
+        var secondCallCount = 0
+        BuddyActivityService.buddyListFetchOverride = { _ in
+            secondCallCount += 1
+            return (statusCode: 200, body: "{\"friends\": []}")
+        }
+        _ = try await service.getFriendActivity(bearerToken: "tok")
+        XCTAssertEqual(secondCallCount, 1)
+
+        // A third call within the cache window must not hit the network: this only holds if the
+        // empty-bodied second fetch actually recorded a fresh lastBuddyListFetch, since
+        // forceRefresh() above had already cleared it and the cache being populated alone is not
+        // sufficient (shouldRefreshBuddyList requires both).
+        var thirdCallCount = 0
+        BuddyActivityService.buddyListFetchOverride = { _ in
+            thirdCallCount += 1
+            return (statusCode: 200, body: "{\"friends\": []}")
+        }
+        _ = try await service.getFriendActivity(bearerToken: "tok")
+        XCTAssertEqual(thirdCallCount, 0, "an empty-bodied fetch must still record the fetch time, or the next call within the cache window hammers the API again")
     }
 
     func testGetFriendActivityPersistsRawAndMergedOnSuccessfulNonEmptyFetch() async throws {
