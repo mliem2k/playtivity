@@ -231,9 +231,14 @@ enum UpdateService {
     /// dependent `CFBundleShortVersionString`/`CFBundleVersion` -- e.g. `"16.0"`/`"24904"` -- so an
     /// unguarded Bundle read would silently make every `checkForUpdates` comparison test's result
     /// depend on which Xcode version ran the suite). Absent an override, both fields fall back to a
-    /// sentinel default (`"0.0.2"`/`"1"`, matching Dart's own `**Base Version**` fallback constant
-    /// used elsewhere in this file) when Bundle info is empty/unset, which is what a real device/app
-    /// run with no Info.plist version keys configured would see.
+    /// sentinel default (`"0.0.2"`/`"1"`) when Bundle info is empty/unset. This fallback is a
+    /// deliberate addition beyond Dart, not a port: Dart's `PackageInfo.fromPlatform()` has no
+    /// equivalent, it throws when platform metadata is unavailable, which would propagate out of
+    /// `checkForUpdates` through its outer catch as a generic "error checking for updates" failure.
+    /// A low, safe fallback here is preferable to that: worst case it makes `isNewerVersion`/
+    /// `shouldUpdateToNightly` treat any real release as an update (an extra update prompt, the same
+    /// class of harmless false positive this file already accepts elsewhere), rather than losing the
+    /// whole check to an uncaught throw over a missing Info.plist key.
     static func getCurrentAppVersion() async -> AppVersionInfo {
         if let override = currentAppVersionOverride {
             return override
@@ -333,13 +338,21 @@ enum UpdateService {
     /// Ported from `UpdateService._parsePublishedAt` (lines 228-237); uses `DateFormatter` (the
     /// established idiom, see `Activity.iso8601Formatter`) rather than `ISO8601DateFormatter`,
     /// which has no precedent elsewhere in this app's own source (only inside `SkipFoundation`'s own
-    /// implementation).
+    /// implementation). Narrower than Dart's `DateTime.parse`, which also accepts explicit numeric
+    /// offsets and other separators: only two exact `...Z` patterns are tried here. Deliberate, not
+    /// an oversight, since GitHub's REST API always emits `published_at` as `YYYY-MM-DDTHH:MM:SSZ`
+    /// (UTC, zero or three fractional-second digits, literal `Z`), never an offset form.
     fileprivate static func parsePublishedAt(_ releaseJson: [String: Any]) -> Date? {
         guard let publishedAt = releaseJson["published_at"] as? String, !publishedAt.isEmpty else { return nil }
         return iso8601Formatter(withFractionalSeconds: true).date(from: publishedAt)
             ?? iso8601Formatter(withFractionalSeconds: false).date(from: publishedAt)
     }
 
+    // Deliberate near-duplicate of `Activity.iso8601Formatter` (private to that file), not an
+    // oversight: reusing it would require widening its access level for a single cross-file call,
+    // and this function already follows the same "fresh DateFormatter per call" rationale documented
+    // there (DateFormatter is not safe to use concurrently, and this file's callers can run from
+    // background Tasks too).
     private static func iso8601Formatter(withFractionalSeconds: Bool) -> DateFormatter {
         let formatter = DateFormatter()
         formatter.dateFormat = withFractionalSeconds ? "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'" : "yyyy-MM-dd'T'HH:mm:ss'Z'"
@@ -533,10 +546,14 @@ enum UpdateService {
         let fileURL = directory.appendingPathComponent(updateInfo.apkFileName)
 
         // Reuse an already-complete download (e.g. user cancelled the Android installer prompt and
-        // tries again -- no need to re-download).
+        // tries again -- no need to re-download). Stats the file rather than reading it into memory
+        // (`Data(contentsOf:)`): real APKs in `releases/` are ~55MB, so a read-to-compare dedup check
+        // would allocate and discard a full APK-sized buffer on every call, a real OOM/stall risk on
+        // Android. Matches Dart's own `existingFile.length()` stat (ref_update_service.dart:430).
         if updateInfo.fileSizeBytes > 0,
-           let existingData = try? Data(contentsOf: fileURL),
-           existingData.count == updateInfo.fileSizeBytes {
+           let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+           let existingSize = int64Value(from: attrs[.size]),
+           existingSize == Int64(updateInfo.fileSizeBytes) {
             logger.info("Reusing existing download: \(fileURL.path)")
             return UpdateDownloadResult(success: true, filePath: fileURL.path, updateInfo: updateInfo, error: nil)
         }
@@ -618,7 +635,12 @@ enum UpdateService {
     /// already-lowercased `lowerText`/`markerLower` pair (see file header for why this is safe).
     /// Returns `nil` if the marker isn't found, if no backtick immediately follows (after optional
     /// whitespace), or if no closing backtick is ever found, or if the captured span is empty --
-    /// matching the regex's `+` (one-or-more) and overall match-or-nothing semantics.
+    /// matching the regex's `+` (one-or-more) and overall match-or-nothing semantics. Locates the
+    /// FIRST occurrence of `markerLower`, not (like Dart's `RegExp.firstMatch`) the first position
+    /// where the WHOLE pattern (marker + value + closing backtick) matches; the two can differ if a
+    /// marker appears more than once in the same body with a non-matching span after the first
+    /// occurrence. No real release body produced by `scripts/nightly.js`/`nightly-release.js`
+    /// repeats a marker like `**Version**:`, so this is a documented narrowing, not a live bug.
     fileprivate static func extractBacktickedValue(_ lowerText: String, markerLower: String) -> String? {
         guard let markerRange = lowerText.range(of: markerLower) else { return nil }
         var idx = markerRange.upperBound
@@ -638,7 +660,10 @@ enum UpdateService {
     }
 
     /// `<marker>\s*([^\s\n]+)` equivalent (case-insensitive): a non-whitespace token immediately
-    /// (after optional whitespace) following the marker.
+    /// (after optional whitespace) following the marker. Same first-occurrence-of-marker narrowing
+    /// as `extractBacktickedValue` above (locates the first `markerLower`, not the first position
+    /// where the whole pattern matches); safe for the same reason, no real release body repeats a
+    /// marker.
     fileprivate static func extractTokenValue(_ lowerText: String, markerLower: String) -> String? {
         guard let markerRange = lowerText.range(of: markerLower) else { return nil }
         var idx = markerRange.upperBound
@@ -724,6 +749,19 @@ enum UpdateService {
     fileprivate static func intValue(from element: Any?) -> Int? {
         if let i = element as? Int { return i }
         if let i32 = element as? Int32 { return Int(i32) }
+        return nil
+    }
+
+    /// Same idea as `intValue(from:)` but widened to `Int64`, for the `.size` file attribute read
+    /// by `downloadUpdate`'s dedup check. `SkipFoundation`'s Android `FileManager` shim boxes it as
+    /// a Kotlin `Long` (`battrs.size()`, `FileManager.swift:91-92`), not a 32-bit `Int`; native
+    /// Foundation boxes it as an `NSNumber` castable via either `Int` or `Int64`. Trying `Int64`
+    /// first (then `Int`, then `Int32`) covers both platforms, same defensive order as
+    /// `BuddyActivityService.int64Value`.
+    fileprivate static func int64Value(from element: Any?) -> Int64? {
+        if let i64 = element as? Int64 { return i64 }
+        if let i = element as? Int { return Int64(i) }
+        if let i32 = element as? Int32 { return Int64(i32) }
         return nil
     }
 

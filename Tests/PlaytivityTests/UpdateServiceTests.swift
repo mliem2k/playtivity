@@ -48,9 +48,13 @@ final class UpdateServiceTests: XCTestCase {
     func testIsNewerVersionBothNightlyAlwaysReturnsFalse() {
         // Pins the Dart original's actual (slightly odd) behavior: this path
         // always returns false, callers must use isNewerNightly instead.
+        // `new`'s base (0.0.5) is deliberately higher than `current`'s (0.0.4), not equal: if the
+        // both-nightly early-return were deleted, fallthrough would reach the final
+        // `compareBaseVersions(current, new) > 0` and flip this to true, so this fixture is a real
+        // discriminator for the branch rather than passing by coincidence at matching bases.
         XCTAssertFalse(UpdateService.isNewerVersion(
             current: "0.0.4-nightly-20260610-000000",
-            new: "0.0.4-nightly-20260611-000000"
+            new: "0.0.5-nightly-20260611-000000"
         ))
     }
 
@@ -125,14 +129,26 @@ final class UpdateServiceTests: XCTestCase {
         XCTAssertTrue(result.hasUpdate)
         XCTAssertEqual(result.updateInfo?.version, "0.0.5")
         XCTAssertEqual(result.updateInfo?.apkUrl, "https://github.com/x/0.0.5.apk")
+        // Asset name is "playtivity-0.0.5.apk"; apkFileName must come from the URL's last path
+        // segment ("0.0.5.apk"), not the asset's own name field, proving fromGithubJson actually
+        // re-derives it rather than reading `asset["name"]` directly.
+        XCTAssertEqual(result.updateInfo?.apkFileName, "0.0.5.apk")
     }
 
     func testCheckForUpdatesExcludesLatestNightlyPointerTagFromNightlySelection() async {
         let ud = freshUserDefaults()
         await UpdateService.setNightlyBuildPreference(true, userDefaults: ud)
         UpdateService.githubReleasesFetchOverride = { _ in
+            // "latest-nightly" is given a LATER published_at than the real nightly tag,
+            // matching production (scripts/nightly.js:447-481 always recreates the floating
+            // "latest-nightly" pointer tag after the individual nightly-YYYYMMDD-HHMMSS release,
+            // so it is always the more-recently-published of the two). With the timestamps the
+            // other way around, this test would still pass even if "latest-nightly" were
+            // accidentally included as a nightly candidate, since it would lose the
+            // most-recent-published_at comparison regardless; this ordering makes the
+            // hasPrefix("nightly-") exclusion filter the thing actually being tested.
             let releases: [[String: Any]] = [
-                ["tag_name": "latest-nightly", "name": "latest", "body": "", "published_at": "2026-07-01T00:00:00Z", "assets": [Any]()],
+                ["tag_name": "latest-nightly", "name": "latest", "body": "", "published_at": "2026-07-01T06:00:00Z", "assets": [Any]()],
                 ["tag_name": "nightly-20260701-050901", "name": "nightly", "body": "**Version**: `0.0.5-nightly-20260701-050901+123`",
                  "published_at": "2026-07-01T05:09:01Z", "assets": [
                     ["name": "playtivity-nightly.apk", "browser_download_url": "https://github.com/x/n.apk", "size": 500],
@@ -180,17 +196,89 @@ final class UpdateServiceTests: XCTestCase {
         XCTAssertFalse(result.hasUpdate)
     }
 
+    // MARK: - shouldUpdateToNightly's both-nightly build-number comparison
+    //
+    // Every test above pins currentAppVersionOverride to a stable version (via setUp), so none of
+    // them ever exercise the both-nightly branch of shouldUpdateToNightly, the branch this
+    // project's own CLAUDE.md calls "the primary signal used by the in-app update checker" for
+    // routine nightly-to-nightly updates. These three tests override the current version to a
+    // nightly build to reach it.
+
+    func testCheckForUpdatesNightlyToNightlyNewerBuildNumberOffersUpdate() async {
+        let ud = freshUserDefaults()
+        UpdateService.currentAppVersionOverride = AppVersionInfo(version: "0.0.5-nightly-20260610-050901", buildNumber: "100")
+        await UpdateService.setNightlyBuildPreference(true, userDefaults: ud)
+        UpdateService.githubReleasesFetchOverride = { _ in
+            let releases: [[String: Any]] = [
+                ["tag_name": "nightly-20260611-050901", "name": "nightly", "body": "**Version**: `0.0.5-nightly-20260611-050901+150`",
+                 "published_at": "2026-06-11T05:09:01Z", "assets": [Any]()],
+            ]
+            let data = try! JSONSerialization.data(withJSONObject: releases)
+            return (200, String(data: data, encoding: .utf8)!)
+        }
+        defer { UpdateService.githubReleasesFetchOverride = nil }
+
+        let result = await UpdateService.checkForUpdates(forceCheck: true, userDefaults: ud)
+        XCTAssertTrue(result.hasUpdate, "a strictly higher build number (150 > 100) must offer the update")
+        XCTAssertEqual(result.updateInfo?.buildNumber, "150")
+    }
+
+    func testCheckForUpdatesNightlyToNightlyOlderBuildNumberDoesNotOfferUpdate() async {
+        let ud = freshUserDefaults()
+        UpdateService.currentAppVersionOverride = AppVersionInfo(version: "0.0.5-nightly-20260611-050901", buildNumber: "200")
+        await UpdateService.setNightlyBuildPreference(true, userDefaults: ud)
+        UpdateService.githubReleasesFetchOverride = { _ in
+            // Published earlier AND carries a lower build number than the installed nightly: the
+            // build-number comparison (not the timestamp) must be what decides this.
+            let releases: [[String: Any]] = [
+                ["tag_name": "nightly-20260610-050901", "name": "nightly", "body": "**Version**: `0.0.5-nightly-20260610-050901+150`",
+                 "published_at": "2026-06-10T05:09:01Z", "assets": [Any]()],
+            ]
+            let data = try! JSONSerialization.data(withJSONObject: releases)
+            return (200, String(data: data, encoding: .utf8)!)
+        }
+        defer { UpdateService.githubReleasesFetchOverride = nil }
+
+        let result = await UpdateService.checkForUpdates(forceCheck: true, userDefaults: ud)
+        XCTAssertFalse(result.hasUpdate, "a strictly lower build number (150 < 200) must not offer the update")
+    }
+
+    func testCheckForUpdatesAutoEnablesNightlyPreferenceWhenRunningNightlyBuildWithPreferenceOff() async {
+        let ud = freshUserDefaults()
+        UpdateService.currentAppVersionOverride = AppVersionInfo(version: "0.0.4-nightly-20260610-050901", buildNumber: "100")
+        // Explicitly force the preference off first: getNightlyBuildPreference's own "unset defaults
+        // to nightly when the current version is nightly" behavior would otherwise make the final
+        // assertion pass even if autoEnableNightlyIfApplicable were deleted entirely.
+        await UpdateService.setNightlyBuildPreference(false, userDefaults: ud)
+        let preferenceBefore = await UpdateService.getNightlyBuildPreference(userDefaults: ud)
+        XCTAssertFalse(preferenceBefore)
+
+        UpdateService.githubReleasesFetchOverride = { _ in (200, "[]") }
+        defer { UpdateService.githubReleasesFetchOverride = nil }
+
+        _ = await UpdateService.checkForUpdates(forceCheck: true, userDefaults: ud)
+
+        let preferenceAfter = await UpdateService.getNightlyBuildPreference(userDefaults: ud)
+        XCTAssertTrue(
+            preferenceAfter,
+            "checkForUpdates must auto-enable the nightly preference when running a nightly build with it off"
+        )
+    }
+
     func testShouldCheckForUpdatesRespectsFrequencyGuardAndForceOverride() async {
         let ud = freshUserDefaults()
         UpdateService.githubReleasesFetchOverride = { _ in (200, "[]") }
         defer { UpdateService.githubReleasesFetchOverride = nil }
 
+        // `UpdateCheckResult` is a non-optional struct, so `XCTAssertNotNil` on it is structurally
+        // incapable of failing regardless of outcome; assert on `.error` instead so these actually
+        // discriminate "the guard let the call through" from "the guard blocked it".
         let first = await UpdateService.checkForUpdates(userDefaults: ud) // records "checked"
-        XCTAssertNotNil(first)
+        XCTAssertNil(first.error, "the first call on a fresh UserDefaults must not be blocked by the rate guard")
         let secondWithoutForce = await UpdateService.shouldCheckForUpdates(userDefaults: ud)
         XCTAssertFalse(secondWithoutForce, "must not allow a second check within the frequency window")
         let secondResult = await UpdateService.checkForUpdates(forceCheck: true, userDefaults: ud)
-        XCTAssertNotNil(secondResult) // forceCheck bypasses the guard entirely
+        XCTAssertNotEqual(secondResult.error, "Too soon since last check") // forceCheck bypasses the guard entirely
     }
 
     // MARK: - downloadUpdate
@@ -215,6 +303,29 @@ final class UpdateServiceTests: XCTestCase {
         let result = await UpdateService.downloadUpdate(info)
         XCTAssertTrue(result.success)
         XCTAssertFalse(downloadWasCalled, "must skip re-download when an existing file already matches the expected size")
+    }
+
+    func testDownloadUpdateRedownloadsWhenExistingFileSizeDiffersFromExpected() async {
+        let info = UpdateInfo(
+            version: "0.0.5", buildNumber: "1", buildDate: Date(),
+            apkUrl: "https://github.com/x/y.apk", apkFileName: "test-mismatched-size.apk",
+            changelog: nil, isNightly: false, fileSizeBytes: 5
+        )
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent(info.apkFileName)
+        // Existing file is 3 bytes; UpdateInfo expects 5, so the dedup stat check must NOT reuse it.
+        try? "abc".data(using: .utf8)!.write(to: path)
+        defer { try? FileManager.default.removeItem(at: path) }
+
+        var downloadWasCalled = false
+        UpdateService.downloadFetchOverride = { _ in
+            downloadWasCalled = true
+            return (200, Data(count: 5), 5)
+        }
+        defer { UpdateService.downloadFetchOverride = nil }
+
+        let result = await UpdateService.downloadUpdate(info)
+        XCTAssertTrue(result.success)
+        XCTAssertTrue(downloadWasCalled, "must re-download when an existing file's size does not match the expected size")
     }
 
     func testDownloadUpdateReportsProgressAndCompletes() async {
