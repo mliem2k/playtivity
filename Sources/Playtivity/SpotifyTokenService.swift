@@ -19,6 +19,14 @@ enum SpotifyTokenService {
     nonisolated(unsafe) static var accountProfileFetchOverride: ((URLRequest) async throws -> (statusCode: Int, body: String))?
     nonisolated(unsafe) static var spclientProfileFetchOverride: ((URLRequest) async throws -> (statusCode: Int, body: String))?
 
+    // `loadCurrentlyPlaying`'s endpoint has no relationship to `BuddyActivityService` at all (a
+    // standalone `api.spotify.com` call, unlike the `guc-spclient`/`api-partner` endpoints that
+    // service owns), so its own injectable seam lives here rather than on that class, following
+    // this file's own established one-closure-per-real-network-boundary convention. Read/written
+    // by `SpotifyStore.performLoadCurrentlyPlaying`/tests only; production code elsewhere never
+    // touches it.
+    nonisolated(unsafe) static var currentlyPlayingFetchOverride: ((URLRequest) async throws -> (statusCode: Int, body: String))?
+
     /// Fetches Spotify's server time via the HTTP Date header for TOTP sync. Falls back to the
     /// local clock on any failure (missing header, request error, unparseable date).
     static func fetchServerTime() async -> Int64 {
@@ -240,6 +248,21 @@ enum SpotifyTokenService {
 
     private static func performSpclientProfileRequest(_ request: URLRequest) async throws -> (statusCode: Int, body: String) {
         if let override = spclientProfileFetchOverride {
+            return try await override(request)
+        }
+        let (responseData, response) = try await URLSession.shared.data(for: request)
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let body = String(data: responseData, encoding: String.Encoding.utf8) ?? ""
+        return (statusCode, body)
+    }
+
+    /// Performs (or, in tests, overrides) the raw HTTP call behind `SpotifyStore`'s
+    /// `loadCurrentlyPlaying`. Not `private`: called from `SpotifyStore.swift`, a different file
+    /// in the same module. Request-building and response parsing (the `item`/204/other-status
+    /// handling) live in `SpotifyStore` itself, not here; this is purely the injectable network
+    /// boundary, matching every other `performXRequest` helper in this file.
+    static func performCurrentlyPlayingRequest(_ request: URLRequest) async throws -> (statusCode: Int, body: String) {
+        if let override = currentlyPlayingFetchOverride {
             return try await override(request)
         }
         let (responseData, response) = try await URLSession.shared.data(for: request)

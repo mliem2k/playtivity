@@ -6,12 +6,18 @@ final class SpotifyStoreTests: XCTestCase {
     override func setUp() {
         super.setUp()
         BuddyActivityService.buddyListFetchOverride = nil
+        BuddyActivityService.topContentFetchOverride = nil
+        BuddyActivityService.artistDetailsFetchOverride = nil
+        SpotifyTokenService.currentlyPlayingFetchOverride = nil
         ApiRetryService.sleepOverride = { _ in } // skip real backoff delays in retry tests
         resetDiagnostics()
     }
 
     override func tearDown() {
         BuddyActivityService.buddyListFetchOverride = nil
+        BuddyActivityService.topContentFetchOverride = nil
+        BuddyActivityService.artistDetailsFetchOverride = nil
+        SpotifyTokenService.currentlyPlayingFetchOverride = nil
         ApiRetryService.sleepOverride = nil
         resetDiagnostics()
         super.tearDown()
@@ -526,5 +532,121 @@ final class SpotifyStoreTests: XCTestCase {
         let store = SpotifyStore(buddyService: BuddyActivityService(userDefaults: freshUserDefaults()))
         await store.updateWidget(currentUser: nil)
         // No assertion beyond "did not crash": this is a documented no-op stub pending Phase 5.
+    }
+
+    // MARK: - loadCurrentlyPlaying (Task 4)
+
+    func testLoadCurrentlyPlayingParsesItemFromResponse() async throws {
+        let service = BuddyActivityService(userDefaults: freshUserDefaults())
+        let store = SpotifyStore(buddyService: service)
+        await store.setBearer("tok")
+        SpotifyTokenService.currentlyPlayingFetchOverride = { _ in
+            let responseJson: [String: Any] = ["item": ["uri": "spotify:track:t1", "name": "Now Playing"]]
+            let data = try! JSONSerialization.data(withJSONObject: responseJson)
+            return (200, String(data: data, encoding: .utf8)!)
+        }
+        defer { SpotifyTokenService.currentlyPlayingFetchOverride = nil }
+
+        await store.loadCurrentlyPlaying()
+        XCTAssertEqual(store.currentlyPlaying?.uri, "spotify:track:t1")
+    }
+
+    func testLoadCurrentlyPlayingReturns204AsNilWithoutSettingError() async throws {
+        let service = BuddyActivityService(userDefaults: freshUserDefaults())
+        let store = SpotifyStore(buddyService: service)
+        await store.setBearer("tok")
+        SpotifyTokenService.currentlyPlayingFetchOverride = { _ in (204, "") }
+        defer { SpotifyTokenService.currentlyPlayingFetchOverride = nil }
+
+        await store.loadCurrentlyPlaying()
+        XCTAssertNil(store.currentlyPlaying)
+        // Deliberate asymmetry: no auth-error UI state from this loader.
+        XCTAssertFalse(store.hasAuthError)
+        XCTAssertNil(store.error)
+    }
+
+    func testLoadCurrentlyPlaying401DoesNotSetHasAuthError() async throws {
+        // Pins the deliberate Dart asymmetry: unlike loadTopTracks/loadTopArtists,
+        // a 401 here must NOT trigger the auth-error UI state.
+        let service = BuddyActivityService(userDefaults: freshUserDefaults())
+        let store = SpotifyStore(buddyService: service)
+        await store.setBearer("tok")
+        SpotifyTokenService.currentlyPlayingFetchOverride = { _ in (401, "") }
+        defer { SpotifyTokenService.currentlyPlayingFetchOverride = nil }
+
+        await store.loadCurrentlyPlaying()
+        XCTAssertNil(store.currentlyPlaying)
+        XCTAssertFalse(store.hasAuthError, "loadCurrentlyPlaying must not trigger the auth-error state on failure")
+    }
+
+    func testLoadTopArtists401SetsHasAuthErrorUnlikeCurrentlyPlaying() async throws {
+        let service = BuddyActivityService(userDefaults: freshUserDefaults())
+        let store = SpotifyStore(buddyService: service)
+        await store.setBearer("tok")
+        BuddyActivityService.topContentFetchOverride = { _ in (401, "") }
+        defer { BuddyActivityService.topContentFetchOverride = nil }
+
+        await store.loadTopArtists()
+        XCTAssertTrue(store.hasAuthError, "loadTopArtists, unlike loadCurrentlyPlaying, must set the auth-error state")
+    }
+
+    func testRefreshProfileDataLoadsAllThreeConcurrently() async throws {
+        let service = BuddyActivityService(userDefaults: freshUserDefaults())
+        let store = SpotifyStore(buddyService: service)
+        await store.setBearer("tok")
+        SpotifyTokenService.currentlyPlayingFetchOverride = { _ in (204, "") }
+        BuddyActivityService.topContentFetchOverride = { request in
+            let body = try! JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any]
+            let variables = body["variables"] as! [String: Any]
+            if variables["topTracksInput"] != nil {
+                let responseJson: [String: Any] = ["data": ["me": ["profile": ["topTracks": ["items": [Any]()]]]]]
+                let data = try! JSONSerialization.data(withJSONObject: responseJson)
+                return (200, String(data: data, encoding: .utf8)!)
+            }
+            let responseJson: [String: Any] = ["data": ["me": ["profile": ["topArtists": ["items": [Any]()]]]]]
+            let data = try! JSONSerialization.data(withJSONObject: responseJson)
+            return (200, String(data: data, encoding: .utf8)!)
+        }
+        defer {
+            SpotifyTokenService.currentlyPlayingFetchOverride = nil
+            BuddyActivityService.topContentFetchOverride = nil
+        }
+
+        await store.refreshProfileData()
+        XCTAssertNil(store.currentlyPlaying)
+        XCTAssertEqual(store.topTracks, [Track]())
+        XCTAssertEqual(store.topArtists, [Artist]())
+    }
+
+    func testProfileLoadersDoNotBlockOnAConcurrentActivitiesFeedFetch() async throws {
+        // Proves the second-gate design: a slow buddylist fetch must not delay
+        // an unrelated profile-tab load. Mutation-testable claim: if
+        // loadTopArtists were accidentally routed through the SAME gate as
+        // loadFriendsActivities, this test's profile call would not resolve
+        // until the artificially slow activities fetch finishes, and the
+        // elapsed-time assertion below would fail.
+        let service = BuddyActivityService(userDefaults: freshUserDefaults())
+        let store = SpotifyStore(buddyService: service)
+        await store.setBearer("tok")
+        BuddyActivityService.buddyListFetchOverride = { _ in
+            try? await Task.sleep(for: .milliseconds(500))
+            return (200, "{\"friends\": []}")
+        }
+        BuddyActivityService.topContentFetchOverride = { _ in
+            let responseJson: [String: Any] = ["data": ["me": ["profile": ["topArtists": ["items": [Any]()]]]]]
+            let data = try! JSONSerialization.data(withJSONObject: responseJson)
+            return (200, String(data: data, encoding: .utf8)!)
+        }
+        defer {
+            BuddyActivityService.buddyListFetchOverride = nil
+            BuddyActivityService.topContentFetchOverride = nil
+        }
+
+        let slowActivitiesLoad = runInBackground { await store.loadFriendsActivities() }
+        let start = ContinuousClock.now
+        await store.loadTopArtists()
+        let elapsed = ContinuousClock.now - start
+        XCTAssertLessThan(elapsed, Duration.milliseconds(400), "profile load must not wait on the concurrent slow activities fetch")
+        await slowActivitiesLoad()
     }
 }

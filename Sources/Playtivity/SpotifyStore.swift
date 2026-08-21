@@ -1,13 +1,14 @@
 import Foundation
 import Observation
 
-/// Pure-Swift port of the activities-feed slice of `lib/providers/spotify_provider.dart`
-/// (`SpotifyProvider`): constructor priming, `setBearer`/`clearBearer`, `loadFriendsActivities`,
-/// this phase's narrowed `silentRefresh`, `reloadFriendsFromPersistedCache`, `fastInitialLoad`,
-/// `clearError`/`clearData`/`clearAuthError`, and the `updateWidget` stub. The profile/currently-
-/// playing loaders (`loadCurrentlyPlaying`, `loadTopTracks`, `loadTopArtists`) and the
-/// four-loader `refreshData`/`refreshProfileData`/`fullRefresh` are Phase 4's scope and are
-/// deliberately not ported here.
+/// Pure-Swift port of the activities-feed and profile-data slices of
+/// `lib/providers/spotify_provider.dart` (`SpotifyProvider`): constructor priming,
+/// `setBearer`/`clearBearer`, `loadFriendsActivities`, this phase's narrowed `silentRefresh`,
+/// `reloadFriendsFromPersistedCache`, `fastInitialLoad`, `clearError`/`clearData`/`clearAuthError`,
+/// the `updateWidget` stub, and (Task 4) the profile/currently-playing loaders
+/// (`loadCurrentlyPlaying`, `loadTopTracks`, `loadTopArtists`, `refreshProfileData`). Dart's
+/// `refreshData`/`fullRefresh` (the four-loader combo that also includes `loadFriendsActivities`)
+/// are a later task's scope and are deliberately not ported here.
 ///
 /// `@unchecked Sendable`: mirrors `BuddyActivityService`'s own reasoning, for the same mechanical
 /// cause. Constructor-time priming (below) fires a `Task { [weak self] in ... }` to mirror the
@@ -50,6 +51,12 @@ final class SpotifyStore: @unchecked Sendable {
     private(set) var authErrorMessage: String?
     private(set) var lastUpdated: Date?
     private(set) var isRefreshing = false
+
+    // MARK: - Profile data (Task 4)
+
+    private(set) var currentlyPlaying: Track?
+    private(set) var topTracks: [Track] = []
+    private(set) var topArtists: [Artist] = []
 
     // MARK: - Diagnostics passthrough (ported from ref_spotify_provider.dart:67-74)
 
@@ -101,6 +108,37 @@ final class SpotifyStore: @unchecked Sendable {
                 await operation()
             }
             gateTail = next
+            return next
+        }
+        await ticket.value
+    }
+
+    // MARK: - Concurrency: second, independent gate for profile-data mutations (Task 4)
+
+    // Structural duplicate of `gateLock`/`gateTail`/`serialized(_:)` above, deliberately NOT
+    // reusing that gate: `loadCurrentlyPlaying`/`loadTopTracks`/`loadTopArtists`/
+    // `refreshProfileData` touch disjoint state from the activities-feed methods (no
+    // `BuddyActivityService` buddylist-cache interaction for `loadCurrentlyPlaying`; a separate
+    // `getTopContent`/artist-details cache for the top-content work), and coupling them to the
+    // activities-feed gate would introduce real head-of-line blocking between unrelated concerns
+    // (a slow buddylist fetch delaying an unrelated profile-tab load), contradicting Dart's own
+    // explicit design (`refreshProfileData`'s doc comment there: it must not suppress concurrent
+    // friend-activity notifications). Every method that touches `buddyService.getTop*` routes
+    // through `serializedProfile(_:)` here instead of `serialized(_:)`, matching the
+    // "route every mutation through the gate" discipline, applied to this second, independent
+    // gate. See `serialized(_:)` above for the full FIFO-chaining rationale and the same
+    // cancellation limitation, which applies identically here.
+    private let profileGateLock = NSLock()
+    private var profileGateTail: Task<Void, Never>?
+
+    private func serializedProfile(_ operation: @escaping @Sendable () async -> Void) async {
+        let ticket: Task<Void, Never> = profileGateLock.withLock {
+            let previous = profileGateTail
+            let next = Task {
+                if let previous { _ = await previous.value }
+                await operation()
+            }
+            profileGateTail = next
             return next
         }
         await ticket.value
@@ -172,14 +210,31 @@ final class SpotifyStore: @unchecked Sendable {
             error.contains("Not authenticated")
     }
 
-    /// Ported from `_handleAuthenticationError` (lines 96-107). The Dart original also clears
-    /// `_topTracks`/`_topArtists`/`_currentlyPlaying`; those fields do not exist in this phase's
-    /// slice (Phase 4's scope), so only `friendsActivities` is cleared here.
+    /// Ported from `_handleAuthenticationError` (lines 96-107): clears every cached data field
+    /// this store owns (`friendsActivities` plus, since Task 4, `topTracks`/`topArtists`/
+    /// `currentlyPlaying`), regardless of which loader detected the auth failure, matching Dart
+    /// exactly.
+    ///
+    /// Called from both `serialized(_:)`-gated code (`performLoadFriendsActivities`) and, since
+    /// Task 4, `serializedProfile(_:)`-gated code (`performLoadTopTracks`/`performLoadTopArtists`)
+    /// -- so this method's writes are NOT mutually exclusive against each other the way writes
+    /// from within a single gate are: an activities-feed 401 and a profile 401 landing at
+    /// literally the same moment write `hasAuthError`/`authErrorMessage`/`self.error` from two
+    /// gates with no coordination between them. This is a deliberate, accepted consequence of the
+    /// two-gate split (see `serializedProfile(_:)`'s doc comment above for why the gates are kept
+    /// independent), not a new hazard introduced here: it is the same class of unsynchronized
+    /// cross-operation access this class's own top-of-file doc comment already discloses for
+    /// concurrent reads, now also possible for this one shared write path. `loadCurrentlyPlaying`
+    /// never calls this (it deliberately has no auth-error handling at all, see its own doc
+    /// comment), so it can only ever race the OTHER gate's call into this method, never itself.
     private func handleAuthenticationError(_ error: String) {
         logger.error("Authentication error detected in store: \(error)")
         hasAuthError = true
         authErrorMessage = error
         friendsActivities = []
+        topTracks = []
+        topArtists = []
+        currentlyPlaying = nil
         self.error = "Authentication expired. Please login again."
     }
 
@@ -281,8 +336,16 @@ final class SpotifyStore: @unchecked Sendable {
         }
     }
 
+    /// Since Task 4, also clears `topTracks`/`topArtists`/`currentlyPlaying`, matching Dart's
+    /// `clearData()` exactly (it clears all four cached-data fields together). Same cross-gate
+    /// write caveat as `handleAuthenticationError` above: this runs under `serialized(_:)`, not
+    /// `serializedProfile(_:)`, so it can race a concurrently-running profile operation's own
+    /// writes to these three fields; accepted for the same reason.
     private func performClearData() {
         friendsActivities = []
+        topTracks = []
+        topArtists = []
+        currentlyPlaying = nil
         isLoading = false
         isRefreshing = false
         isSkeletonLoading = false
@@ -407,5 +470,218 @@ final class SpotifyStore: @unchecked Sendable {
     /// route Phase 5's real implementation through `serialized(_:)` itself, `serialized(_:)` is
     /// not reentrant and doing so would deadlock.
     func updateWidget(currentUser: User?) async {
+    }
+
+    // MARK: - loadCurrentlyPlaying (Task 4, ported from ref_spotify_provider.dart:116-143)
+
+    /// Deliberately asymmetric, ported faithfully from Dart: unlike `loadTopTracks`/
+    /// `loadTopArtists` below, this never routes a failure through `isAuthenticationError`/
+    /// `handleAuthenticationError`, and never throws out of its own gated operation. This is
+    /// Dart's own deliberate choice for a frequently-polled endpoint, not a bug to fix. Routed
+    /// through `serializedProfile(_:)`, the second, independent gate (see that method's doc
+    /// comment): has no relationship to `BuddyActivityService` at all (a standalone
+    /// `api.spotify.com` call), so it never touches the activities-feed gate either.
+    func loadCurrentlyPlaying(showLoading: Bool = false) async {
+        await serializedProfile { [weak self] in
+            await self?.performLoadCurrentlyPlaying(showLoading: showLoading)
+        }
+    }
+
+    /// Ported from `loadCurrentlyPlaying` (lines 116-143). The Dart original's own inner call
+    /// (`_spotifyService.getCurrentlyPlaying`) never throws (it catches internally and returns
+    /// `null`); `Self.fetchCurrentlyPlaying` below mirrors that for every HTTP outcome (200 no
+    /// item, 204, any other status all resolve to `nil`, log only), so this `catch` only exists
+    /// for a genuine transport-level failure (matching the Dart `try`/`catch`'s own remaining
+    /// purpose), never an HTTP status.
+    private func performLoadCurrentlyPlaying(showLoading: Bool) async {
+        if showLoading {
+            isLoading = true
+            error = nil
+        }
+
+        if let token = bearerToken {
+            do {
+                currentlyPlaying = try await Self.fetchCurrentlyPlaying(bearerToken: token)
+            } catch {
+                logger.error("Failed to load currently playing: \(error)")
+                currentlyPlaying = nil
+                let errorMessage = "\(error)"
+                if !errorMessage.contains("No Bearer token available") {
+                    self.error = errorMessage
+                }
+            }
+        } else {
+            currentlyPlaying = nil
+        }
+
+        if showLoading { isLoading = false }
+        await updateWidget(currentUser: nil)
+    }
+
+    /// Fetches `GET https://api.spotify.com/v1/me/player/currently-playing` directly (confirmed
+    /// exact endpoint via `/tmp/ref_api_constants.dart`). No relationship to `BuddyActivityService`
+    /// at all, so this uses its own injectable seam (`SpotifyTokenService.currentlyPlayingFetchOverride`)
+    /// rather than that service's overrides. Headers mirror the Dart original's own header set
+    /// exactly (`/tmp/ref_spotify_service.dart:45-52`), not `getFriendActivity`'s WebPlayer-style
+    /// headers: this is Dart's `SpotifyService.getCurrentlyPlaying`, a different real HTTP client
+    /// than `SpotifyBuddyService`, with its own distinct header shape (`okhttp` user agent, an
+    /// explicit `Host` header) worth porting faithfully rather than normalizing away.
+    private static func fetchCurrentlyPlaying(bearerToken: String) async throws -> Track? {
+        let url = URL(string: "https://api.spotify.com/v1/me/player/currently-playing")!
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json, text/plain, */*", forHTTPHeaderField: "Accept")
+        request.setValue("gzip", forHTTPHeaderField: "Accept-Encoding")
+        request.setValue("Keep-Alive", forHTTPHeaderField: "Connection")
+        request.setValue("api.spotify.com", forHTTPHeaderField: "Host")
+        request.setValue("okhttp/4.9.2", forHTTPHeaderField: "User-Agent")
+
+        let (statusCode, body) = try await SpotifyTokenService.performCurrentlyPlayingRequest(request)
+
+        guard statusCode == 200 else {
+            if statusCode != 204 {
+                logger.warning("Failed to get currently playing: \(statusCode)")
+            }
+            return nil
+        }
+        guard let data = body.data(using: String.Encoding.utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let item = json["item"] as? [String: Any] else {
+            return nil
+        }
+        return Track.fromJson(item)
+    }
+
+    // MARK: - loadTopTracks (Task 4, ported from ref_spotify_provider.dart:145-172)
+
+    func loadTopTracks(timeRange: String = "medium_term", showLoading: Bool = false) async {
+        await serializedProfile { [weak self] in
+            await self?.performLoadTopTracks(timeRange: timeRange, showLoading: showLoading)
+        }
+    }
+
+    /// Ported from `loadTopTracks` (lines 145-172). Note the early-return asymmetry versus
+    /// `performLoadFriendsActivities`, faithfully preserved: the no-token branch here does NOT
+    /// reset `isLoading`, matching Dart exactly (its null check runs before the `showLoading`
+    /// block even touches `_isLoading`, so there is nothing to reset on that path).
+    private func performLoadTopTracks(timeRange: String, showLoading: Bool) async {
+        guard let token = bearerToken else {
+            error = "Not authenticated"
+            return
+        }
+
+        if showLoading {
+            isLoading = true
+            error = nil
+        }
+
+        do {
+            topTracks = try await buddyService.getTopTracks(bearerToken: token, timeRange: timeRange)
+        } catch {
+            let errorMessage = "\(error)"
+            if isAuthenticationError(errorMessage) {
+                handleAuthenticationError(errorMessage)
+            } else {
+                self.error = errorMessage
+            }
+        }
+
+        if showLoading { isLoading = false }
+    }
+
+    // MARK: - loadTopArtists (Task 4, ported from ref_spotify_provider.dart:174-210)
+
+    func loadTopArtists(timeRange: String = "medium_term", showLoading: Bool = false) async {
+        await serializedProfile { [weak self] in
+            await self?.performLoadTopArtists(timeRange: timeRange, showLoading: showLoading)
+        }
+    }
+
+    /// Ported from `loadTopArtists` (lines 174-210), same no-token early-return asymmetry as
+    /// `performLoadTopTracks` above.
+    ///
+    /// `onArtistDetailsUpdate` mirrors Dart's progressive-disclosure callback (it directly
+    /// mutates `_topArtists` and notifies on every incremental update), but `BuddyActivityService`
+    /// invokes it from its own detached background fan-out `Task`, entirely outside this method's
+    /// (and its enclosing `serializedProfile` operation's) own execution -- by the time the first
+    /// incremental update arrives, `performLoadTopArtists` has typically already returned. Per
+    /// Global Constraints ("every progressive artist-details update is its own `serialized(_:)`
+    /// call on the second gate, not a single unguarded property write mid-operation"), each
+    /// incremental update is queued as its own new `serializedProfile(_:)` operation rather than
+    /// writing `topArtists` directly from the synchronous callback. This is not a nested-gate
+    /// deadlock: `Task { }` here starts an independent, unstructured unit of work that this
+    /// callback does not await, so it does not block (or get blocked by) the `serializedProfile`
+    /// operation `performLoadTopArtists` itself is already running inside.
+    private func performLoadTopArtists(timeRange: String, showLoading: Bool) async {
+        guard let token = bearerToken else {
+            error = "Not authenticated"
+            return
+        }
+
+        if showLoading {
+            isLoading = true
+            error = nil
+        }
+
+        do {
+            let artists = try await buddyService.getTopArtistsWithDetails(
+                bearerToken: token,
+                timeRange: timeRange,
+                onArtistDetailsUpdate: { [weak self] updatedArtists in
+                    guard let self else { return }
+                    Task {
+                        await self.serializedProfile { [weak self] in
+                            self?.topArtists = updatedArtists
+                        }
+                    }
+                }
+            )
+            topArtists = artists
+        } catch {
+            let errorMessage = "\(error)"
+            if isAuthenticationError(errorMessage) {
+                handleAuthenticationError(errorMessage)
+            } else {
+                self.error = errorMessage
+            }
+        }
+
+        if showLoading { isLoading = false }
+    }
+
+    // MARK: - refreshProfileData (Task 4, ported from ref_spotify_provider.dart:331-345)
+
+    /// Loads only profile-related data (currently playing, top tracks, top artists), matching
+    /// Dart's own doc comment: does NOT fetch friend activity (the home screen owns that call via
+    /// the other gate), and runs the three loaders concurrently inside a SINGLE
+    /// `serializedProfile(_:)` call rather than three separate ones, matching Dart's
+    /// `Future.wait([...])` shape. Calling the three PUBLIC gated wrappers here (each of which
+    /// itself calls `serializedProfile(_:)`) would enqueue three more links behind this very
+    /// operation on the same gate and self-deadlock, the identical hazard
+    /// `performFastInitialLoad` already avoids on the other gate; instead this calls the three
+    /// loaders' PRIVATE, non-gated `performX` implementations directly, mirroring how
+    /// `silentRefresh()`/`fastInitialLoad()` do the same on `serialized(_:)`.
+    ///
+    /// `withTaskGroup(of: Void.self)` used here, not `async let`: a triple `async let` plus a
+    /// tuple `await` on all three (matching Dart's `Future.wait` most directly on paper) actually
+    /// FAILS to transpile on Skip's Kotlin target even in production (non-test) code -- confirmed
+    /// by a real `swift test` run: `Initializer type mismatch: expected 'Unit', actual
+    /// 'Task<Unit>'` on each `async let` line, plus `Cannot infer type for type parameter`/
+    /// `Unresolved reference 'value'` on the tuple-await line. This corrects the accumulated Skip
+    /// Lite quirks list's prior assumption that the `async let` failure was scoped to test files
+    /// only; it is not, at least not for this 3-way tuple-await shape (see the Global Constraints
+    /// section of the phase plan, corrected alongside this fix). `withTaskGroup` achieves the
+    /// same "run all three concurrently, wait for all to finish" shape without a tuple await and
+    /// transpiles cleanly (verified: `swift test` passes natively and on the Kotlin/JVM target).
+    func refreshProfileData(showLoading: Bool = false) async {
+        await serializedProfile { [weak self] in
+            guard let self else { return }
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { await self.performLoadCurrentlyPlaying(showLoading: showLoading) }
+                group.addTask { await self.performLoadTopTracks(timeRange: "medium_term", showLoading: showLoading) }
+                group.addTask { await self.performLoadTopArtists(timeRange: "medium_term", showLoading: showLoading) }
+            }
+            self.lastUpdated = Date()
+        }
     }
 }
