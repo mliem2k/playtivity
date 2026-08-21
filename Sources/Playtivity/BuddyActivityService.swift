@@ -67,6 +67,13 @@ final class BuddyActivityService: @unchecked Sendable {
     // 7 days: artist follower/monthly-listener counts don't change often enough to justify
     // re-fetching more frequently, matching the Dart original's `_loadArtistDetailsCache` cutoff.
     private static let artistDetailsCacheTtlSeconds: TimeInterval = 7.0 * 24 * 60 * 60
+    // 1 hour: a `failed` marker (new behavior, not ported from Dart, see `fetchMissingArtistDetails`'s
+    // doc comment) must expire on its own, much shorter, schedule than a success entry. Without
+    // this a single offline/5xx blip permanently pins the artist at the `-1` sentinel: the `failed`
+    // check runs before the success-TTL check and would otherwise `continue` forever, recoverable
+    // only by LRU eviction or clearing app data. An hour is enough to stop a hot retry loop without
+    // hammering a genuinely-broken id every fan-out.
+    private static let artistDetailsFailedTtlSeconds: TimeInterval = 60.0 * 60
 
     // Injectable seam for tests: `URLProtocol` does not transpile on Skip Lite (confirmed in
     // Phase 2), so a closure per real network boundary is the standard technique here, mirroring
@@ -347,8 +354,7 @@ final class BuddyActivityService: @unchecked Sendable {
     /// accepted for interface parity with the Dart original's public signature, but per the
     /// Global Constraints note it is never threaded into the request body: the real GraphQL schema
     /// only supports `SHORT_TERM`. Ported from `getTopTracks` (`/tmp/ref_spotify_buddy_service_full.dart`
-    /// lines 756-835), reading fields directly off each `items` element rather than through an
-    /// `item['data']` indirection layer (see `getTopContent`'s doc comment for why).
+    /// lines 756-835); see `makeTopTrack`'s doc comment for the per-item `data` envelope shape.
     func getTopTracks(bearerToken: String, timeRange: String = "medium_term", limit: Int = 20) async throws -> [Track] {
         let data = try await getTopContent(bearerToken: bearerToken, limit: limit)
         let items = Self.topContentItems(data, contentKey: "topTracks")
@@ -375,6 +381,14 @@ final class BuddyActivityService: @unchecked Sendable {
     /// after each artist's details arrive (from the network or the cache). Returns the basic list
     /// immediately; the enrichment happens fully in the background. Ported from
     /// `getTopArtistsWithDetails` (lines 927-940).
+    ///
+    /// The fan-out is fire-and-forget and deliberately outlives this call, so it is NOT covered by
+    /// `SpotifyStore`'s gate the way every other call into this service is (that gate only
+    /// serializes the awaited portion of a call, not a detached background `Task`). A second call
+    /// to this method (a pull-to-refresh moments later) must not start a second fan-out that mutates
+    /// the same unlocked `artistDetailsCache` concurrently with the first, so the new task is
+    /// chained after whatever fan-out is already running rather than replacing it outright; awaiting
+    /// the newest task (`waitUntilArtistDetailsFanOutComplete`) transitively awaits the whole chain.
     func getTopArtistsWithDetails(
         bearerToken: String,
         timeRange: String = "medium_term",
@@ -386,7 +400,9 @@ final class BuddyActivityService: @unchecked Sendable {
         // Same `[weak self]` shape as `persistenceReady`'s Task above: the closure only calls a
         // method on self, never mutates a captured var directly (the Skip Kotlin-transpile quirk
         // that rules out capturing a mutable `var` in a `@Sendable` closure doesn't apply here).
+        let previous = artistDetailsFanOutTask
         artistDetailsFanOutTask = Task { [weak self] in
+            await previous?.value
             await self?.fetchMissingArtistDetails(bearerToken: bearerToken, artists: artists, onUpdate: onArtistDetailsUpdate)
         }
 
@@ -394,16 +410,17 @@ final class BuddyActivityService: @unchecked Sendable {
     }
 
     /// Fetches the GraphQL `userTopContent` payload underlying both `getTopTracks` and
-    /// `getTopArtists`: a single request always asks for both `topTracksInput` and
-    /// `topArtistsInput` (the verified real endpoint shape has no `includeTopTracks`/
-    /// `includeTopArtists` toggle, unlike the Dart original's `getTopContent`), and each caller
-    /// reads only the slice it needs from the shared response. `limit` is applied to both input
-    /// blocks; splitting it into separate tracks/artists limits (as Dart's internal defaults of
-    /// 4/10 do) is not worth the extra parameter for a value the other caller never reads. Ported
-    /// from `getTopContent` (lines 669-753), but throws on failure (auth errors distinguishable,
-    /// matching `getFriendActivity`'s pattern) instead of Dart's catch-and-return-null: this port's
-    /// public methods propagate failures to the caller rather than silently degrading to `[]`,
-    /// confirmed by `testGetTopArtistsAuthErrorThrowsOn401`.
+    /// `getTopArtists`: a single request always asks for both `topTracksInput`/`topArtistsInput`
+    /// and their `includeTopTracks`/`includeTopArtists` gates, both hardcoded `true` (Dart lines
+    /// 699-723), since these are persisted-query variables and the stored query almost certainly
+    /// declares them as non-nullable `Boolean!`, so omitting them would be a malformed request, not
+    /// a safe default. Each caller reads only the slice it needs from the shared response. `limit`
+    /// is applied to both input blocks; splitting it into separate tracks/artists limits (as Dart's
+    /// internal defaults of 4/10 do) is not worth the extra parameter for a value the other caller
+    /// never reads. Ported from `getTopContent` (lines 669-753), but throws on failure (auth errors
+    /// distinguishable, matching `getFriendActivity`'s pattern) instead of Dart's
+    /// catch-and-return-null: this port's public methods propagate failures to the caller rather
+    /// than silently degrading to `[]`, confirmed by `testGetTopArtistsAuthErrorThrowsOn401`.
     private func getTopContent(bearerToken: String, limit: Int) async throws -> [String: Any] {
         try await ApiRetryService.retryApiCall({
             let url = URL(string: Self.topContentUrl)!
@@ -421,12 +438,14 @@ final class BuddyActivityService: @unchecked Sendable {
             let requestBody: [String: Any] = [
                 "operationName": "userTopContent",
                 "variables": [
+                    "includeTopTracks": true,
                     "topTracksInput": [
                         "offset": 0,
                         "limit": limit,
                         "sortBy": "AFFINITY",
                         "timeRange": "SHORT_TERM",
                     ],
+                    "includeTopArtists": true,
                     "topArtistsInput": [
                         "offset": 0,
                         "limit": limit,
@@ -455,6 +474,12 @@ final class BuddyActivityService: @unchecked Sendable {
             guard let data = body.data(using: String.Encoding.utf8),
                   let decoded = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 throw BuddyActivityServiceError(message: "Failed to parse top content response")
+            }
+            // A 200 response can still carry GraphQL-level errors (e.g. a malformed persisted-query
+            // variable), which would otherwise silently degrade to an empty tracks/artists list with
+            // nothing in the logs to diagnose it. Log only, don't throw, matching Dart (lines 740-744).
+            if let graphqlErrors = decoded["errors"] as? [Any], !graphqlErrors.isEmpty {
+                logger.warning("GraphQL errors in top content response: \(graphqlErrors)")
             }
             return decoded
         }, operation: "Get Top Content")
@@ -486,9 +511,13 @@ final class BuddyActivityService: @unchecked Sendable {
     /// Builds a `Track` directly from one `topTracks.items` element. Ported from `getTopTracks`'s
     /// inline parsing loop (lines 778-827), field-by-field like `makeTrack` above rather than
     /// through `Track.fromJson`, since this live GraphQL shape (`albumOfTrack`, `artists.items`,
-    /// `duration.totalMilliseconds`) differs from both shapes `Track.fromJson` handles.
+    /// `duration.totalMilliseconds`) differs from both shapes `Track.fromJson` handles. Each raw
+    /// `items` element wraps its real fields one level down under a `data` key (Dart line 779:
+    /// `final trackData = item['data'];`); unwrap it here, tolerating a flat (unwrapped) shape too
+    /// so the plan brief's own simplified test fixtures (which omit the envelope) still parse.
     private static func makeTopTrack(from itemAny: Any) -> Track? {
-        guard let trackData = itemAny as? [String: Any] else { return nil }
+        guard let raw = itemAny as? [String: Any] else { return nil }
+        let trackData = (raw["data"] as? [String: Any]) ?? raw
         let albumData = (trackData["albumOfTrack"] as? [String: Any]) ?? [:]
         let artistItems = (trackData["artists"] as? [String: Any])?["items"] as? [Any] ?? []
         let artistNames: [String] = artistItems.map { element in
@@ -519,9 +548,11 @@ final class BuddyActivityService: @unchecked Sendable {
     /// Builds an `Artist` directly from one `topArtists.items` element, always with the `-1`
     /// not-yet-fetched stats sentinel (see `getTopArtists`'s doc comment). Ported from
     /// `getTopArtists`'s inline parsing loop (lines 865-914), minus the cache lookup this port
-    /// deliberately doesn't perform here.
+    /// deliberately doesn't perform here. Same `data`-envelope unwrap as `makeTopTrack` (Dart line
+    /// 866: `final artistData = item['data'];`), same flat-shape tolerance.
     private static func makeTopArtist(from itemAny: Any) -> Artist? {
-        guard let artistData = itemAny as? [String: Any] else { return nil }
+        guard let raw = itemAny as? [String: Any] else { return nil }
+        let artistData = (raw["data"] as? [String: Any]) ?? raw
         let avatarSources = ((artistData["visuals"] as? [String: Any])?["avatarImage"] as? [String: Any])?["sources"] as? [Any] ?? []
         let imageUrl = bestImageUrl(from: avatarSources, preferredHeight: 320)
         let artistUri = (artistData["uri"] as? String) ?? ""
@@ -569,8 +600,9 @@ final class BuddyActivityService: @unchecked Sendable {
 
     /// Iterates `artists` sequentially (never all at once, to avoid a burst of concurrent
     /// requests), checking `artistDetailsCache` first (including a `failed` entry, which skips
-    /// re-querying a known-bad id entirely) before each network call, and invoking `onUpdate` with
-    /// the updated full list after each successful network fetch or valid cache hit. Ported from
+    /// re-querying a known-bad id until `artistDetailsFailedTtlSeconds` elapses, its own much
+    /// shorter TTL, not forever) before each network call, and invoking `onUpdate` with the updated
+    /// full list after each successful network fetch or valid cache hit. Ported from
     /// `_fetchMissingArtistDetails` (lines 943-1009), including the Dart original's "ensure at
     /// least one notification fires even if all fetches failed" fallback (lines 999-1000).
     ///
@@ -595,12 +627,16 @@ final class BuddyActivityService: @unchecked Sendable {
 
         for artistId in missingIds {
             if let cached = artistDetailsCache.get(artistId) {
-                if (cached["failed"] as? Bool) == true {
-                    continue
-                }
                 let fetchedAt = Self.int64Value(from: cached["fetchedAt"]) ?? 0
                 let ageMs = nowMs - fetchedAt
-                if ageMs < Int64(Self.artistDetailsCacheTtlSeconds * 1000) {
+                let isFailed = (cached["failed"] as? Bool) == true
+                if isFailed {
+                    if ageMs < Int64(Self.artistDetailsFailedTtlSeconds * 1000) {
+                        continue
+                    }
+                    // Failed marker has aged past its own (much shorter) TTL: fall through and
+                    // retry from the network, same as an expired success entry below.
+                } else if ageMs < Int64(Self.artistDetailsCacheTtlSeconds * 1000) {
                     let followers = Self.intValue(from: cached["followers"]) ?? -1
                     let monthlyListeners = Self.intValue(from: cached["monthlyListeners"]) ?? -1
                     if let idx = updatedArtists.firstIndex(where: { $0.id == artistId }) {
@@ -612,7 +648,8 @@ final class BuddyActivityService: @unchecked Sendable {
                     }
                     continue
                 }
-                // Cache entry is stale: fall through and re-fetch from the network.
+                // Cache entry is stale (or a `failed` marker past its own TTL): fall through and
+                // re-fetch from the network.
             }
 
             do {
@@ -657,7 +694,7 @@ final class BuddyActivityService: @unchecked Sendable {
     /// a generic exception otherwise).
     private func fetchArtistDetails(bearerToken: String, artistId: String) async throws -> (followers: Int, monthlyListeners: Int) {
         try await ApiRetryService.retryApiCall({
-            let variablesJson: [String: Any] = ["uri": "spotify:artist:\(artistId)", "locale": ""]
+            let variablesJson: [String: Any] = ["uri": "spotify:artist:\(artistId)", "locale": "", "includePrerelease": true]
             let extensionsJson: [String: Any] = [
                 "persistedQuery": [
                     "version": 1,
