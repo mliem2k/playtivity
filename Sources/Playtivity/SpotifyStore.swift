@@ -37,6 +37,23 @@ import Observation
 /// reading `friendsActivities` on one thread while a serialized operation is mid-write on
 /// another); that is the same characteristic any mutable class instance shared across threads has
 /// in Swift unless explicitly actor-isolated, not a new hazard this store introduces.
+///
+/// **Corrected during Task 4's review-fix round**: the paragraph above describes ONE gate. Since
+/// Task 4 there are TWO independent gates (`serialized(_:)` for the activities feed,
+/// `serializedProfile(_:)` for profile data, see that method's own doc comment for why they are
+/// kept separate). Each gate still guarantees full serialization of the OPERATIONS routed through
+/// it (no two buddylist fetches race each other; no two profile fetches race each other), but the
+/// two gates have zero mutual exclusion with each other. A small, explicit set of fields is
+/// written from BOTH gates (`friendsActivities`, `topTracks`, `topArtists`, `currentlyPlaying`,
+/// `hasAuthError`, `authErrorMessage`, `error`, plus `bearerToken` itself, which every staleness
+/// check below reads), so those specific writes are additionally protected by `sharedFieldWriteLock`
+/// (declared next to `profileGateLock` below), which is the only thing preventing torn/corrupted
+/// concurrent writes to them from the two gates. `sharedFieldWriteLock` is a plain mutual-exclusion
+/// lock, not a substitute for either gate: it is held only across the synchronous write
+/// statements themselves, never across an `await`, and it says nothing about ordering, only
+/// memory safety. Ordering (discarding a stale result that lands after the session that produced
+/// it is no longer current) is handled separately, per write site, by re-checking `bearerToken`
+/// against the token each loader captured at the start of its own operation.
 @Observable
 final class SpotifyStore: @unchecked Sendable {
     private let buddyService: BuddyActivityService
@@ -117,17 +134,27 @@ final class SpotifyStore: @unchecked Sendable {
 
     // Structural duplicate of `gateLock`/`gateTail`/`serialized(_:)` above, deliberately NOT
     // reusing that gate: `loadCurrentlyPlaying`/`loadTopTracks`/`loadTopArtists`/
-    // `refreshProfileData` touch disjoint state from the activities-feed methods (no
-    // `BuddyActivityService` buddylist-cache interaction for `loadCurrentlyPlaying`; a separate
-    // `getTopContent`/artist-details cache for the top-content work), and coupling them to the
-    // activities-feed gate would introduce real head-of-line blocking between unrelated concerns
-    // (a slow buddylist fetch delaying an unrelated profile-tab load), contradicting Dart's own
-    // explicit design (`refreshProfileData`'s doc comment there: it must not suppress concurrent
-    // friend-activity notifications). Every method that touches `buddyService.getTop*` routes
-    // through `serializedProfile(_:)` here instead of `serialized(_:)`, matching the
-    // "route every mutation through the gate" discipline, applied to this second, independent
-    // gate. See `serialized(_:)` above for the full FIFO-chaining rationale and the same
-    // cancellation limitation, which applies identically here.
+    // `refreshProfileData` each need their OWN operations (a `getTopContent` fetch racing another
+    // `getTopContent` fetch, or a buddylist fetch racing another buddylist fetch) serialized
+    // against themselves, and coupling this gate to the activities-feed gate would introduce real
+    // head-of-line blocking between unrelated concerns (a slow buddylist fetch delaying an
+    // unrelated profile-tab load), contradicting Dart's own explicit design (`refreshProfileData`'s
+    // doc comment there: it must not suppress concurrent friend-activity notifications). Every
+    // method that touches `buddyService.getTop*` routes through `serializedProfile(_:)` here
+    // instead of `serialized(_:)`, matching the "route every mutation through the gate"
+    // discipline, applied to this second, independent gate. See `serialized(_:)` above for the
+    // full FIFO-chaining rationale and the same cancellation limitation, which applies identically
+    // here.
+    //
+    // **Corrected during Task 4's review-fix round**: this gate does NOT mean the two gates touch
+    // disjoint state, a prior version of this comment claimed that and it was wrong.
+    // `friendsActivities`/`topTracks`/`topArtists`/`currentlyPlaying`/`hasAuthError`/
+    // `authErrorMessage`/`error` (plus `bearerToken`) are written from BOTH gates (activities-feed
+    // auth failures and profile auth failures both clear all four cached-data fields, matching
+    // Dart; `clearBearer()`/`clearData()` on gate A clear the same fields a profile loader on gate
+    // B might be about to write). What the two gates actually guarantee independently is
+    // OPERATION-level serialization within themselves; the shared FIELDS additionally need
+    // `sharedFieldWriteLock` below, since the two gates have no mutual exclusion with each other.
     private let profileGateLock = NSLock()
     private var profileGateTail: Task<Void, Never>?
 
@@ -143,6 +170,33 @@ final class SpotifyStore: @unchecked Sendable {
         }
         await ticket.value
     }
+
+    // MARK: - Concurrency: lock for fields written from both gates (Task 4 review-fix round)
+
+    // `friendsActivities`, `topTracks`, `topArtists`, `currentlyPlaying`, `hasAuthError`,
+    // `authErrorMessage`, `error`, and `bearerToken` are each written from operations on BOTH
+    // `serialized(_:)` and `serializedProfile(_:)` (see the two gates' own doc comments above for
+    // which operations and why). The two gates provide zero mutual exclusion with each other, so
+    // without an additional lock two concurrent writes to the same field from the two different
+    // gates would be a genuine data race (undefined behavior on Swift's memory model, not just a
+    // logic bug). `sharedFieldWriteLock` is that additional lock: acquire it only around the
+    // synchronous write statement(s) to one or more of these fields, NEVER across an `await`
+    // (an `NSLock` is not reentrant and this codebase's `serialized(_:)`/`serializedProfile(_:)`
+    // chains already run each operation on its own `Task`, so holding this lock across an `await`
+    // would risk a different operation on the SAME gate deadlocking against it). Every write site
+    // to these fields in this file must go through this lock; see each write site's own comment
+    // for confirmation.
+    //
+    // This lock only prevents torn/corrupted writes (memory safety). It says nothing about WHICH
+    // write should win when two land close together, an old queued write can still legitimately
+    // overwrite a newer one purely by lock-acquisition order. That ordering problem (a stale
+    // result from a since-ended session landing after that session was cleared) is handled
+    // separately: every loader captures the bearer token it started with, and re-checks
+    // `bearerToken == capturedToken` INSIDE this same locked section immediately before writing
+    // its result, discarding the result instead of writing it if the session has since changed.
+    // See `performLoadFriendsActivities`/`performLoadTopTracks`/`performLoadTopArtists`/
+    // `performLoadCurrentlyPlaying`'s own final write-back blocks.
+    private let sharedFieldWriteLock = NSLock()
 
     /// Constructor-time priming: mirrors the Dart constructor's
     /// `_buddyService.persistenceReady.then((_) { ... })` (lines 20-31), primed from any
@@ -164,8 +218,13 @@ final class SpotifyStore: @unchecked Sendable {
             guard let self else { return }
             await self.buddyService.waitUntilPersistenceReady()
             let cached = self.buddyService.cachedActivities
-            if let cached, !cached.isEmpty, self.friendsActivities.isEmpty {
-                self.friendsActivities = cached
+            // `friendsActivities` is one of the fields shared with gate B (see
+            // `sharedFieldWriteLock`'s doc comment); lock the write even though it is very
+            // unlikely a profile operation lands in the same instant as construction.
+            self.sharedFieldWriteLock.withLock {
+                if let cached, !cached.isEmpty, self.friendsActivities.isEmpty {
+                    self.friendsActivities = cached
+                }
             }
         }
     }
@@ -176,7 +235,13 @@ final class SpotifyStore: @unchecked Sendable {
     /// synchronous write here raced the async gate chain.
     func setBearer(_ token: String) async {
         await serialized { [weak self] in
-            self?.bearerToken = token
+            guard let self else { return }
+            // `bearerToken` is read (unlocked) by loaders on both gates for the staleness check
+            // described on `sharedFieldWriteLock`; write it under that same lock so a concurrent
+            // staleness check on the other gate never observes a torn value.
+            self.sharedFieldWriteLock.withLock {
+                self.bearerToken = token
+            }
         }
     }
 
@@ -192,7 +257,9 @@ final class SpotifyStore: @unchecked Sendable {
     func clearBearer() async {
         await serialized { [weak self] in
             guard let self else { return }
-            self.bearerToken = nil
+            self.sharedFieldWriteLock.withLock {
+                self.bearerToken = nil
+            }
             self.performClearData()
             self.buddyService.clearActivityCache()
         }
@@ -211,23 +278,26 @@ final class SpotifyStore: @unchecked Sendable {
     }
 
     /// Ported from `_handleAuthenticationError` (lines 96-107): clears every cached data field
-    /// this store owns (`friendsActivities` plus, since Task 4, `topTracks`/`topArtists`/
-    /// `currentlyPlaying`), regardless of which loader detected the auth failure, matching Dart
-    /// exactly.
+    /// this store owns (`friendsActivities`, `topTracks`, `topArtists`, `currentlyPlaying`, all
+    /// four together, matching Dart exactly), regardless of which loader detected the auth
+    /// failure, plus sets `hasAuthError`/`authErrorMessage`/`error`, 7 fields total.
     ///
-    /// Called from both `serialized(_:)`-gated code (`performLoadFriendsActivities`) and, since
-    /// Task 4, `serializedProfile(_:)`-gated code (`performLoadTopTracks`/`performLoadTopArtists`)
-    /// -- so this method's writes are NOT mutually exclusive against each other the way writes
-    /// from within a single gate are: an activities-feed 401 and a profile 401 landing at
-    /// literally the same moment write `hasAuthError`/`authErrorMessage`/`self.error` from two
-    /// gates with no coordination between them. This is a deliberate, accepted consequence of the
-    /// two-gate split (see `serializedProfile(_:)`'s doc comment above for why the gates are kept
-    /// independent), not a new hazard introduced here: it is the same class of unsynchronized
-    /// cross-operation access this class's own top-of-file doc comment already discloses for
-    /// concurrent reads, now also possible for this one shared write path. `loadCurrentlyPlaying`
-    /// never calls this (it deliberately has no auth-error handling at all, see its own doc
-    /// comment), so it can only ever race the OTHER gate's call into this method, never itself.
-    private func handleAuthenticationError(_ error: String) {
+    /// **Corrected during Task 4's review-fix round**: this method's writes are genuinely racy
+    /// against each other when called from the two different gates (an activities-feed 401 and a
+    /// profile 401 landing at the same moment), and that is NOT a harmless "unguarded read"
+    /// characteristic, unsynchronized concurrent WRITES to the same field from two threads are
+    /// undefined behavior on Swift's memory model, a materially worse hazard than a stale read.
+    /// The `loadCurrentlyPlaying` "exemption" this comment previously claimed was also wrong:
+    /// that loader never calls this method, but it directly writes `currentlyPlaying`, one of the
+    /// exact fields this method also writes, so it races this method's writes from the OTHER gate
+    /// just the same.
+    ///
+    /// This is why this method does NOT acquire `sharedFieldWriteLock` itself: it must be called
+    /// with that lock ALREADY held by the caller (every call site in this file wraps its call in
+    /// `sharedFieldWriteLock.withLock { ... }` alongside that operation's own staleness check), so
+    /// this method composes inside the caller's locked section instead of deadlocking against it
+    /// (`NSLock` is not reentrant).
+    private func writeAuthenticationErrorLocked(_ error: String) {
         logger.error("Authentication error detected in store: \(error)")
         hasAuthError = true
         authErrorMessage = error
@@ -243,8 +313,11 @@ final class SpotifyStore: @unchecked Sendable {
     /// chain.
     func clearAuthError() async {
         await serialized { [weak self] in
-            self?.hasAuthError = false
-            self?.authErrorMessage = nil
+            guard let self else { return }
+            self.sharedFieldWriteLock.withLock {
+                self.hasAuthError = false
+                self.authErrorMessage = nil
+            }
         }
     }
 
@@ -259,9 +332,20 @@ final class SpotifyStore: @unchecked Sendable {
     /// The Dart original wraps this whole body in an outer try/catch (lines 232-282); nothing in
     /// this Swift port's call chain (property reads/writes plus the inner do/catch around the
     /// fetch below) can actually throw, so there is nothing for an outer catch to ever handle.
+    ///
+    /// **Task 4 review-fix round**: `token` is captured once at the top (already the established
+    /// shape) and reused as the staleness anchor for the final write-back below: if `bearerToken`
+    /// no longer equals `token` by the time the fetch resolves (a `clearBearer()`/`setBearer()` on
+    /// gate A, or the token changing for any other reason, happened while this fetch was in
+    /// flight), the fetch result is discarded instead of written, since it belongs to a session
+    /// that is no longer current. Every write into one of the 7 fields shared with gate B
+    /// (`sharedFieldWriteLock`'s doc comment) is deferred into local variables during the
+    /// do/catch, then applied together inside one `sharedFieldWriteLock.withLock { }` block guarded
+    /// by that same staleness check, so this method's outcome, success, auth failure, or plain
+    /// failure, is written atomically and only for the still-current session.
     private func performLoadFriendsActivities(showLoading: Bool, showSkeleton: Bool) async {
         guard let token = bearerToken else {
-            error = "Not authenticated"
+            sharedFieldWriteLock.withLock { error = "Not authenticated" }
             if showLoading { isLoading = false }
             if showSkeleton { isSkeletonLoading = false }
             return
@@ -269,15 +353,17 @@ final class SpotifyStore: @unchecked Sendable {
 
         if showLoading {
             isLoading = true
-            error = nil
+            sharedFieldWriteLock.withLock { error = nil }
         } else if showSkeleton {
             isSkeletonLoading = true
-            error = nil
+            sharedFieldWriteLock.withLock { error = nil }
         }
 
         var activities: [Activity] = []
         var fetchSucceeded = false
         var authFailed = false
+        var caughtAuthErrorMessage: String?
+        var caughtErrorMessage: String?
 
         do {
             activities = try await buddyService.getFriendActivity(bearerToken: token)
@@ -288,33 +374,46 @@ final class SpotifyStore: @unchecked Sendable {
             if isAuthenticationError(errorMessage) {
                 authFailed = true
                 logger.info("Authentication error detected, may need re-authentication")
-                handleAuthenticationError(errorMessage)
+                caughtAuthErrorMessage = errorMessage
             } else {
-                self.error = "Failed to load friend activities: \(errorMessage)"
+                caughtErrorMessage = "Failed to load friend activities: \(errorMessage)"
             }
         }
 
         // The home widget renders from the buddy service's accumulated cache, so the in-app list
         // must never show fewer friends than that cache. Prefer the live result when it is at
         // least as large; otherwise keep the accumulated cache (or the list already on screen if
-        // it is larger).
+        // it is larger). `buddyService.cachedActivities` is this service's own instance state, not
+        // one of the 7 shared fields, so reading it here (outside the lock) is fine.
         let cached = buddyService.cachedActivities
-        let accumulated: [Activity]
-        if let cached, !cached.isEmpty {
-            accumulated = cached
-        } else {
-            accumulated = friendsActivities
-        }
 
-        if fetchSucceeded && !activities.isEmpty {
-            friendsActivities = activities.count >= accumulated.count ? activities : accumulated
-            lastUpdated = Date()
-        } else if !authFailed {
-            // Empty success or transient (non-auth) failure: never drop to zero cards. Spotify's
-            // buddylist intermittently returns an empty feed even when friends are active, so an
-            // empty result is not reliably "nothing to show". Keep the friends already on screen.
-            if !accumulated.isEmpty {
-                friendsActivities = accumulated
+        sharedFieldWriteLock.withLock {
+            guard bearerToken == token else { return }
+
+            if let caughtAuthErrorMessage {
+                writeAuthenticationErrorLocked(caughtAuthErrorMessage)
+            } else if let caughtErrorMessage {
+                self.error = caughtErrorMessage
+            }
+
+            let accumulated: [Activity]
+            if let cached, !cached.isEmpty {
+                accumulated = cached
+            } else {
+                accumulated = friendsActivities
+            }
+
+            if fetchSucceeded && !activities.isEmpty {
+                friendsActivities = activities.count >= accumulated.count ? activities : accumulated
+                lastUpdated = Date()
+            } else if !authFailed {
+                // Empty success or transient (non-auth) failure: never drop to zero cards.
+                // Spotify's buddylist intermittently returns an empty feed even when friends are
+                // active, so an empty result is not reliably "nothing to show". Keep the friends
+                // already on screen.
+                if !accumulated.isEmpty {
+                    friendsActivities = accumulated
+                }
             }
         }
 
@@ -332,27 +431,37 @@ final class SpotifyStore: @unchecked Sendable {
     /// synchronous write here raced the async gate chain.
     func clearError() async {
         await serialized { [weak self] in
-            self?.error = nil
+            guard let self else { return }
+            self.sharedFieldWriteLock.withLock {
+                self.error = nil
+            }
         }
     }
 
     /// Since Task 4, also clears `topTracks`/`topArtists`/`currentlyPlaying`, matching Dart's
-    /// `clearData()` exactly (it clears all four cached-data fields together). Same cross-gate
-    /// write caveat as `handleAuthenticationError` above: this runs under `serialized(_:)`, not
-    /// `serializedProfile(_:)`, so it can race a concurrently-running profile operation's own
-    /// writes to these three fields; accepted for the same reason.
+    /// `clearData()` exactly (it clears all four cached-data fields together).
+    ///
+    /// **Corrected during Task 4's review-fix round**: this runs under `serialized(_:)`, not
+    /// `serializedProfile(_:)`, so a concurrently-running profile operation's own write to one of
+    /// these fields is a genuine data race, not a merely-accepted characteristic; the 7 fields
+    /// shared with gate B (`friendsActivities`/`topTracks`/`topArtists`/`currentlyPlaying`/
+    /// `error`/`hasAuthError`/`authErrorMessage`) are written here under `sharedFieldWriteLock`.
+    /// `isLoading`/`isRefreshing`/`isSkeletonLoading`/`lastUpdated` are not in the shared set (only
+    /// gate A ever writes them) and stay unlocked.
     private func performClearData() {
-        friendsActivities = []
-        topTracks = []
-        topArtists = []
-        currentlyPlaying = nil
+        sharedFieldWriteLock.withLock {
+            friendsActivities = []
+            topTracks = []
+            topArtists = []
+            currentlyPlaying = nil
+            error = nil
+            hasAuthError = false
+            authErrorMessage = nil
+        }
         isLoading = false
         isRefreshing = false
         isSkeletonLoading = false
-        error = nil
         lastUpdated = nil
-        hasAuthError = false
-        authErrorMessage = nil
     }
 
     /// `async`, routed through `serialized(_:)`: see this class's own doc comment for why a plain
@@ -403,7 +512,13 @@ final class SpotifyStore: @unchecked Sendable {
         // makes fresh disk data appear "recently fetched" for up to 4.5 minutes after a resume.
         buddyService.forceRefresh()
         if let cached = buddyService.cachedActivities, !cached.isEmpty {
-            friendsActivities = cached
+            // `friendsActivities` is shared with gate B; lock the write (see
+            // `sharedFieldWriteLock`'s doc comment). This method has no bearer token of its own to
+            // stage a staleness check against (it reads persisted disk data, not a live fetch tied
+            // to a session), so only Part A (the lock) applies here, not Part B (the token check).
+            sharedFieldWriteLock.withLock {
+                friendsActivities = cached
+            }
             lastUpdated = Date()
         }
     }
@@ -444,7 +559,11 @@ final class SpotifyStore: @unchecked Sendable {
         // alone, exactly as the Dart original's own callers must.
         if friendsActivities.isEmpty {
             if let stale = buddyService.cachedActivities, !stale.isEmpty {
-                friendsActivities = stale
+                // Shared field, lock the write; no token to stage a staleness check against, same
+                // reasoning as `performReloadFriendsFromPersistedCache` above.
+                sharedFieldWriteLock.withLock {
+                    friendsActivities = stale
+                }
             } else {
                 isSkeletonLoading = true
             }
@@ -476,11 +595,14 @@ final class SpotifyStore: @unchecked Sendable {
 
     /// Deliberately asymmetric, ported faithfully from Dart: unlike `loadTopTracks`/
     /// `loadTopArtists` below, this never routes a failure through `isAuthenticationError`/
-    /// `handleAuthenticationError`, and never throws out of its own gated operation. This is
+    /// `writeAuthenticationErrorLocked`, and never throws out of its own gated operation. This is
     /// Dart's own deliberate choice for a frequently-polled endpoint, not a bug to fix. Routed
     /// through `serializedProfile(_:)`, the second, independent gate (see that method's doc
     /// comment): has no relationship to `BuddyActivityService` at all (a standalone
-    /// `api.spotify.com` call), so it never touches the activities-feed gate either.
+    /// `api.spotify.com` call), so it never touches the activities-feed gate either. It DOES still
+    /// write `currentlyPlaying`, one of the fields shared with gate A (see `sharedFieldWriteLock`'s
+    /// doc comment), so its own writes are locked and staleness-checked the same as the other
+    /// three loaders, even though it never calls `writeAuthenticationErrorLocked` itself.
     func loadCurrentlyPlaying(showLoading: Bool = false) async {
         await serializedProfile { [weak self] in
             await self?.performLoadCurrentlyPlaying(showLoading: showLoading)
@@ -493,25 +615,47 @@ final class SpotifyStore: @unchecked Sendable {
     /// item, 204, any other status all resolve to `nil`, log only), so this `catch` only exists
     /// for a genuine transport-level failure (matching the Dart `try`/`catch`'s own remaining
     /// purpose), never an HTTP status.
+    ///
+    /// **Task 4 review-fix round**: same staleness-guarded, locked write-back shape as
+    /// `performLoadTopTracks`/`performLoadTopArtists` below. `currentlyPlaying` legitimately can
+    /// BE `nil` on a successful fetch (nothing playing), so a plain `Track?` local is not enough
+    /// to distinguish "fetch happened, result is nil" from "fetch never ran/threw"; `didFetch`
+    /// makes that explicit.
     private func performLoadCurrentlyPlaying(showLoading: Bool) async {
         if showLoading {
             isLoading = true
-            error = nil
+            sharedFieldWriteLock.withLock { error = nil }
         }
 
         if let token = bearerToken {
+            var didFetch = false
+            var fetchedTrack: Track?
+            var caughtErrorMessage: String?
+
             do {
-                currentlyPlaying = try await Self.fetchCurrentlyPlaying(bearerToken: token)
+                fetchedTrack = try await Self.fetchCurrentlyPlaying(bearerToken: token)
+                didFetch = true
             } catch {
                 logger.error("Failed to load currently playing: \(error)")
-                currentlyPlaying = nil
                 let errorMessage = "\(error)"
                 if !errorMessage.contains("No Bearer token available") {
-                    self.error = errorMessage
+                    caughtErrorMessage = errorMessage
+                }
+            }
+
+            sharedFieldWriteLock.withLock {
+                guard bearerToken == token else { return }
+                if didFetch {
+                    currentlyPlaying = fetchedTrack
+                } else {
+                    currentlyPlaying = nil
+                    if let caughtErrorMessage {
+                        self.error = caughtErrorMessage
+                    }
                 }
             }
         } else {
-            currentlyPlaying = nil
+            sharedFieldWriteLock.withLock { currentlyPlaying = nil }
         }
 
         if showLoading { isLoading = false }
@@ -564,25 +708,47 @@ final class SpotifyStore: @unchecked Sendable {
     /// `performLoadFriendsActivities`, faithfully preserved: the no-token branch here does NOT
     /// reset `isLoading`, matching Dart exactly (its null check runs before the `showLoading`
     /// block even touches `_isLoading`, so there is nothing to reset on that path).
+    ///
+    /// **Task 4 review-fix round**: `token` is captured once at the top and reused as the
+    /// staleness anchor: the fetch result (success, auth failure, or plain failure) is only
+    /// written if `bearerToken` still equals `token` by the time the fetch resolves, discarding it
+    /// otherwise (the session that started this fetch is no longer current). See
+    /// `sharedFieldWriteLock`'s doc comment for why this check runs inside the same locked block
+    /// as the write, not before it.
     private func performLoadTopTracks(timeRange: String, showLoading: Bool) async {
         guard let token = bearerToken else {
-            error = "Not authenticated"
+            sharedFieldWriteLock.withLock { error = "Not authenticated" }
             return
         }
 
         if showLoading {
             isLoading = true
-            error = nil
+            sharedFieldWriteLock.withLock { error = nil }
         }
 
+        var fetchedTracks: [Track]?
+        var caughtAuthErrorMessage: String?
+        var caughtErrorMessage: String?
+
         do {
-            topTracks = try await buddyService.getTopTracks(bearerToken: token, timeRange: timeRange)
+            fetchedTracks = try await buddyService.getTopTracks(bearerToken: token, timeRange: timeRange)
         } catch {
             let errorMessage = "\(error)"
             if isAuthenticationError(errorMessage) {
-                handleAuthenticationError(errorMessage)
+                caughtAuthErrorMessage = errorMessage
             } else {
-                self.error = errorMessage
+                caughtErrorMessage = errorMessage
+            }
+        }
+
+        sharedFieldWriteLock.withLock {
+            guard bearerToken == token else { return }
+            if let caughtAuthErrorMessage {
+                writeAuthenticationErrorLocked(caughtAuthErrorMessage)
+            } else if let caughtErrorMessage {
+                self.error = caughtErrorMessage
+            } else if let fetchedTracks {
+                topTracks = fetchedTracks
             }
         }
 
@@ -598,7 +764,8 @@ final class SpotifyStore: @unchecked Sendable {
     }
 
     /// Ported from `loadTopArtists` (lines 174-210), same no-token early-return asymmetry as
-    /// `performLoadTopTracks` above.
+    /// `performLoadTopTracks` above, and the same staleness-anchor/locked-write-back shape (see
+    /// that method's doc comment).
     ///
     /// `onArtistDetailsUpdate` mirrors Dart's progressive-disclosure callback (it directly
     /// mutates `_topArtists` and notifies on every incremental update), but `BuddyActivityService`
@@ -611,17 +778,25 @@ final class SpotifyStore: @unchecked Sendable {
     /// writing `topArtists` directly from the synchronous callback. This is not a nested-gate
     /// deadlock: `Task { }` here starts an independent, unstructured unit of work that this
     /// callback does not await, so it does not block (or get blocked by) the `serializedProfile`
-    /// operation `performLoadTopArtists` itself is already running inside.
+    /// operation `performLoadTopArtists` itself is already running inside. `token` is captured by
+    /// the closure (a `let String`, safe to capture by value) and re-checked under
+    /// `sharedFieldWriteLock` the same way the final write-back below does, since a progressive
+    /// update can land well after this method itself has returned, potentially after the session
+    /// that started the fan-out is no longer current.
     private func performLoadTopArtists(timeRange: String, showLoading: Bool) async {
         guard let token = bearerToken else {
-            error = "Not authenticated"
+            sharedFieldWriteLock.withLock { error = "Not authenticated" }
             return
         }
 
         if showLoading {
             isLoading = true
-            error = nil
+            sharedFieldWriteLock.withLock { error = nil }
         }
+
+        var fetchedArtists: [Artist]?
+        var caughtAuthErrorMessage: String?
+        var caughtErrorMessage: String?
 
         do {
             let artists = try await buddyService.getTopArtistsWithDetails(
@@ -631,18 +806,33 @@ final class SpotifyStore: @unchecked Sendable {
                     guard let self else { return }
                     Task {
                         await self.serializedProfile { [weak self] in
-                            self?.topArtists = updatedArtists
+                            guard let self else { return }
+                            self.sharedFieldWriteLock.withLock {
+                                guard self.bearerToken == token else { return }
+                                self.topArtists = updatedArtists
+                            }
                         }
                     }
                 }
             )
-            topArtists = artists
+            fetchedArtists = artists
         } catch {
             let errorMessage = "\(error)"
             if isAuthenticationError(errorMessage) {
-                handleAuthenticationError(errorMessage)
+                caughtAuthErrorMessage = errorMessage
             } else {
-                self.error = errorMessage
+                caughtErrorMessage = errorMessage
+            }
+        }
+
+        sharedFieldWriteLock.withLock {
+            guard bearerToken == token else { return }
+            if let caughtAuthErrorMessage {
+                writeAuthenticationErrorLocked(caughtAuthErrorMessage)
+            } else if let caughtErrorMessage {
+                self.error = caughtErrorMessage
+            } else if let fetchedArtists {
+                topArtists = fetchedArtists
             }
         }
 
@@ -653,34 +843,40 @@ final class SpotifyStore: @unchecked Sendable {
 
     /// Loads only profile-related data (currently playing, top tracks, top artists), matching
     /// Dart's own doc comment: does NOT fetch friend activity (the home screen owns that call via
-    /// the other gate), and runs the three loaders concurrently inside a SINGLE
-    /// `serializedProfile(_:)` call rather than three separate ones, matching Dart's
-    /// `Future.wait([...])` shape. Calling the three PUBLIC gated wrappers here (each of which
-    /// itself calls `serializedProfile(_:)`) would enqueue three more links behind this very
-    /// operation on the same gate and self-deadlock, the identical hazard
-    /// `performFastInitialLoad` already avoids on the other gate; instead this calls the three
-    /// loaders' PRIVATE, non-gated `performX` implementations directly, mirroring how
-    /// `silentRefresh()`/`fastInitialLoad()` do the same on `serialized(_:)`.
+    /// the other gate), and runs the three loaders sequentially (see the correction below for why
+    /// not concurrently) inside a SINGLE `serializedProfile(_:)` call rather than three separate
+    /// ones. Calling the three PUBLIC gated wrappers here (each of which itself calls
+    /// `serializedProfile(_:)`) would enqueue three more links behind this very operation on the
+    /// same gate and self-deadlock, the identical hazard `performFastInitialLoad` already avoids
+    /// on the other gate; instead this calls the three loaders' PRIVATE, non-gated `performX`
+    /// implementations directly, mirroring how `silentRefresh()`/`fastInitialLoad()` do the same
+    /// on `serialized(_:)`.
     ///
-    /// `withTaskGroup(of: Void.self)` used here, not `async let`: a triple `async let` plus a
-    /// tuple `await` on all three (matching Dart's `Future.wait` most directly on paper) actually
-    /// FAILS to transpile on Skip's Kotlin target even in production (non-test) code -- confirmed
-    /// by a real `swift test` run: `Initializer type mismatch: expected 'Unit', actual
-    /// 'Task<Unit>'` on each `async let` line, plus `Cannot infer type for type parameter`/
-    /// `Unresolved reference 'value'` on the tuple-await line. This corrects the accumulated Skip
-    /// Lite quirks list's prior assumption that the `async let` failure was scoped to test files
-    /// only; it is not, at least not for this 3-way tuple-await shape (see the Global Constraints
-    /// section of the phase plan, corrected alongside this fix). `withTaskGroup` achieves the
-    /// same "run all three concurrently, wait for all to finish" shape without a tuple await and
-    /// transpiles cleanly (verified: `swift test` passes natively and on the Kotlin/JVM target).
+    /// **Corrected during Task 4's review-fix round**: this previously ran the three loaders via
+    /// `withTaskGroup(of: Void.self)` for genuine concurrency, matching Dart's `Future.wait` shape
+    /// on paper. That was wrong on two counts. First, it is not actually Dart parity: Dart's
+    /// `Future.wait` runs on a single-threaded event loop with no true parallelism, each future
+    /// only interleaves at its own `await` points, so it never races another future's writes.
+    /// `withTaskGroup`'s tasks run genuinely concurrently on real threads. Second, and more
+    /// seriously, that genuine concurrency defeated `serializedProfile(_:)`'s own purpose from
+    /// INSIDE the gate: all three loaders write `error`/`isLoading` directly, and two of them can
+    /// call `writeAuthenticationErrorLocked` (now lock-protected, but still logically racing each
+    /// other for which one's outcome wins), so three loaders genuinely running in parallel inside
+    /// one gated operation reintroduced the exact "two writers, no ordering" hazard the gate exists
+    /// to prevent, just one level deeper.
+    ///
+    /// Fix: await the three loaders sequentially instead. This is simpler, does not need
+    /// `withTaskGroup` at all, and costs nothing in this design: all three are already behind a
+    /// single gate slot (no other caller is unblocked between one loader finishing and the next
+    /// starting, since the whole sequence runs inside one `serializedProfile { }` operation), so
+    /// sequential execution has no user-visible latency cost relative to true parallelism, only the
+    /// removal of the intra-gate race.
     func refreshProfileData(showLoading: Bool = false) async {
         await serializedProfile { [weak self] in
             guard let self else { return }
-            await withTaskGroup(of: Void.self) { group in
-                group.addTask { await self.performLoadCurrentlyPlaying(showLoading: showLoading) }
-                group.addTask { await self.performLoadTopTracks(timeRange: "medium_term", showLoading: showLoading) }
-                group.addTask { await self.performLoadTopArtists(timeRange: "medium_term", showLoading: showLoading) }
-            }
+            await self.performLoadCurrentlyPlaying(showLoading: showLoading)
+            await self.performLoadTopTracks(timeRange: "medium_term", showLoading: showLoading)
+            await self.performLoadTopArtists(timeRange: "medium_term", showLoading: showLoading)
             self.lastUpdated = Date()
         }
     }

@@ -590,32 +590,60 @@ final class SpotifyStoreTests: XCTestCase {
         XCTAssertTrue(store.hasAuthError, "loadTopArtists, unlike loadCurrentlyPlaying, must set the auth-error state")
     }
 
-    func testRefreshProfileDataLoadsAllThreeConcurrently() async throws {
+    func testRefreshProfileDataLoadsAllThreeWithoutDeadlocking() async throws {
+        // Renamed from ...LoadsAllThreeConcurrently: after the review-fix round,
+        // refreshProfileData awaits its three loaders SEQUENTIALLY inside one
+        // serializedProfile{} block (concurrency inside the gate was itself the Critical 1
+        // finding), so this test proves the sequence completes without deadlocking, not
+        // concurrency, and carries no timing assertion.
+        //
+        // Discriminates the two topContentFetchOverride calls by ORDER, not by request shape:
+        // getTopContent always sets both topTracksInput and topArtistsInput on every request
+        // (BuddyActivityService's own design), so a `variables["topTracksInput"] != nil` check
+        // is always true and can't tell the two calls apart. Since refreshProfileData is now
+        // sequential, call order is deterministic: performLoadTopTracks's getTopTracks fires
+        // first, performLoadTopArtists's getTopArtistsWithDetails fires second. The second
+        // response carries a genuinely non-empty artist so this test can tell "topArtists was
+        // actually parsed" apart from "topArtists is empty because of a shape mismatch".
         let service = BuddyActivityService(userDefaults: freshUserDefaults())
         let store = SpotifyStore(buddyService: service)
         await store.setBearer("tok")
         SpotifyTokenService.currentlyPlayingFetchOverride = { _ in (204, "") }
-        BuddyActivityService.topContentFetchOverride = { request in
-            let body = try! JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any]
-            let variables = body["variables"] as! [String: Any]
-            if variables["topTracksInput"] != nil {
+        BuddyActivityService.artistDetailsFetchOverride = { _ in
+            (200, "{\"data\":{\"artist\":{\"stats\":{\"followers\":10,\"monthlyListeners\":5}}}}")
+        }
+        var topContentCallCount = 0
+        BuddyActivityService.topContentFetchOverride = { _ in
+            topContentCallCount += 1
+            if topContentCallCount == 1 {
                 let responseJson: [String: Any] = ["data": ["me": ["profile": ["topTracks": ["items": [Any]()]]]]]
                 let data = try! JSONSerialization.data(withJSONObject: responseJson)
                 return (200, String(data: data, encoding: .utf8)!)
             }
-            let responseJson: [String: Any] = ["data": ["me": ["profile": ["topArtists": ["items": [Any]()]]]]]
+            let artistItem: [String: Any] = [
+                "data": [
+                    "uri": "spotify:artist:a1",
+                    "profile": ["name": "Artist One"],
+                    "visuals": ["avatarImage": ["sources": [Any]()]],
+                ],
+            ]
+            let responseJson: [String: Any] = ["data": ["me": ["profile": ["topArtists": ["items": [artistItem]]]]]]
             let data = try! JSONSerialization.data(withJSONObject: responseJson)
             return (200, String(data: data, encoding: .utf8)!)
         }
         defer {
             SpotifyTokenService.currentlyPlayingFetchOverride = nil
+            BuddyActivityService.artistDetailsFetchOverride = nil
             BuddyActivityService.topContentFetchOverride = nil
         }
 
         await store.refreshProfileData()
+        await service.waitUntilArtistDetailsFanOutComplete()
+
         XCTAssertNil(store.currentlyPlaying)
         XCTAssertEqual(store.topTracks, [Track]())
-        XCTAssertEqual(store.topArtists, [Artist]())
+        XCTAssertEqual(store.topArtists.map { $0.id }, ["a1"], "the second topContentFetchOverride call must have been genuinely parsed, not just an empty shape-mismatch fallback")
+        XCTAssertEqual(topContentCallCount, 2, "exactly one getTopTracks call and one getTopArtists call, in sequence")
     }
 
     func testProfileLoadersDoNotBlockOnAConcurrentActivitiesFeedFetch() async throws {
