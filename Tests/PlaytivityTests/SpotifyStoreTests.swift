@@ -590,6 +590,37 @@ final class SpotifyStoreTests: XCTestCase {
         XCTAssertTrue(store.hasAuthError, "loadTopArtists, unlike loadCurrentlyPlaying, must set the auth-error state")
     }
 
+    // MARK: - Critical 2 Part B regression: stale write-back after a mid-flight session change
+
+    func testLoadTopTracksDiscardsStaleResultAfterBearerTokenChangesMidFlight() async throws {
+        // Pins the review-round-1 Part B fix: a fetch already in flight when the session changes
+        // underneath it (clearBearer here, on the OTHER gate, which is exactly why this race is
+        // reachable at all: the two gates never block each other) must discard its result instead
+        // of overwriting the freshly-cleared state. Non-vacuity verified by hand: temporarily
+        // removing performLoadTopTracks's `guard bearerToken == token` re-check made this test
+        // fail (topTracks ended up non-empty with the stale track); restoring the guard makes it
+        // pass again. See the task report for the exact before/after output.
+        let service = BuddyActivityService(userDefaults: freshUserDefaults())
+        let store = SpotifyStore(buddyService: service)
+        await store.setBearer("tok")
+        BuddyActivityService.topContentFetchOverride = { _ in
+            try? await Task.sleep(for: .milliseconds(200))
+            let responseJson: [String: Any] = ["data": ["me": ["profile": ["topTracks": ["items": [
+                ["uri": "spotify:track:stale1", "name": "Stale Track"],
+            ]]]]]]
+            let data = try! JSONSerialization.data(withJSONObject: responseJson)
+            return (200, String(data: data, encoding: .utf8)!)
+        }
+        defer { BuddyActivityService.topContentFetchOverride = nil }
+
+        let waitForLoad = runInBackground { await store.loadTopTracks() }
+        try await Task.sleep(for: .milliseconds(50)) // ensure the fetch is in flight
+        await store.clearBearer()
+        await waitForLoad()
+
+        XCTAssertEqual(store.topTracks, [Track](), "a fetch result for a since-cleared session must be discarded, not overwrite the clear")
+    }
+
     func testRefreshProfileDataLoadsAllThreeWithoutDeadlocking() async throws {
         // Renamed from ...LoadsAllThreeConcurrently: after the review-fix round,
         // refreshProfileData awaits its three loaders SEQUENTIALLY inside one

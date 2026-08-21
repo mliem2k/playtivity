@@ -236,9 +236,12 @@ final class SpotifyStore: @unchecked Sendable {
     func setBearer(_ token: String) async {
         await serialized { [weak self] in
             guard let self else { return }
-            // `bearerToken` is read (unlocked) by loaders on both gates for the staleness check
-            // described on `sharedFieldWriteLock`; write it under that same lock so a concurrent
-            // staleness check on the other gate never observes a torn value.
+            // Every loader's staleness RE-CHECK (`guard bearerToken == token`, see
+            // `sharedFieldWriteLock`'s doc comment) reads `bearerToken` from inside
+            // `sharedFieldWriteLock`, so write it under that same lock here so that read is never
+            // torn. (The initial `guard let token = bearerToken` snapshot each loader captures at
+            // its own start is a separate, deliberately unlocked read: it is just the starting
+            // point for the staleness comparison, not the check itself.)
             self.sharedFieldWriteLock.withLock {
                 self.bearerToken = token
             }
