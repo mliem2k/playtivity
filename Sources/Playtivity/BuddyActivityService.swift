@@ -1,6 +1,11 @@
 import Foundation
 
-private struct BuddyActivityServiceError: Error, CustomStringConvertible {
+// Internal (not `private`) rather than the file-scoped visibility every other error type in this
+// file historically used: `testGetTopArtistsAuthErrorThrowsOn401` needs to catch this type by name
+// and read `.message` directly (via `@testable import`, which only unlocks `internal`+
+// declarations), unlike the older buddy-list tests, which only ever asserted on the error's string
+// description.
+struct BuddyActivityServiceError: Error, CustomStringConvertible {
     let message: String
     var description: String { message }
 }
@@ -51,12 +56,32 @@ final class BuddyActivityService: @unchecked Sendable {
     private static let activeCacheDurationSeconds: TimeInterval = 30
     private static let quietCacheDurationSeconds: TimeInterval = 5.0 * 60
 
+    // MARK: - Top content / artist details (Phase 4)
+
+    private static let topContentUrl = "https://api-partner.spotify.com/pathfinder/v2/query"
+    private static let artistDetailsUrl = "https://api-partner.spotify.com/pathfinder/v1/query"
+    private static let topContentSha256Hash = "feb6d55177e2cbce2ac59214f9493f1ef2e4368eec01b3d4c3468fa1b97336e2"
+    private static let artistDetailsSha256Hash = "d66221ea13998b2f81883c5187d174c8646e4041d67f5b1e103bc262d447e3a0"
+    private static let artistDetailsCacheKey = "artist_details_cache"
+    private static let artistDetailsCacheMaxSize = 200
+    // 7 days: artist follower/monthly-listener counts don't change often enough to justify
+    // re-fetching more frequently, matching the Dart original's `_loadArtistDetailsCache` cutoff.
+    private static let artistDetailsCacheTtlSeconds: TimeInterval = 7.0 * 24 * 60 * 60
+
     // Injectable seam for tests: `URLProtocol` does not transpile on Skip Lite (confirmed in
     // Phase 2), so a closure per real network boundary is the standard technique here, mirroring
     // `SpotifyTokenService`'s override closures. `nonisolated(unsafe)` because Swift 6 rejects a
     // plain mutable static var as unsynchronized global state; production code only reads this,
     // only tests write it, matching the established, reviewed precedent.
     nonisolated(unsafe) static var buddyListFetchOverride: ((URLRequest) async throws -> (statusCode: Int, body: String))?
+
+    // Same rationale as `buddyListFetchOverride` above, one closure per real network boundary:
+    // `getTopContent` (shared by `getTopTracks`/`getTopArtists`) POSTs to the GraphQL endpoint,
+    // and artist-details enrichment GETs a separate query-string endpoint, so each needs its own
+    // seam rather than reusing `buddyListFetchOverride` (which would make a test's override
+    // ambiguous about which endpoint it is stubbing).
+    nonisolated(unsafe) static var topContentFetchOverride: ((URLRequest) async throws -> (statusCode: Int, body: String))?
+    nonisolated(unsafe) static var artistDetailsFetchOverride: ((URLRequest) async throws -> (statusCode: Int, body: String))?
 
     // MARK: - Diagnostics (ported from the Dart original's static fields on the singleton; the
     // Activities screen header reads these for its mismatch-count badge and long-press debug
@@ -82,8 +107,27 @@ final class BuddyActivityService: @unchecked Sendable {
     private var cachedBuddyActivitiesStorage: [Activity]?
     private var lastBuddyListFetch: Date?
 
+    // Artist-details enrichment cache, keyed by artist id. Loaded synchronously in `init` (unlike
+    // `persistenceReady` below, a plain `UserDefaults.string(forKey:)` read has no async I/O, so
+    // there is no need for the lazy-`Task` workaround the buddy-list persistence load uses to
+    // dodge Swift's "self used before all stored properties are initialized" ordering rule).
+    private let artistDetailsCache: LRUCache<String, [String: Any]>
+    // Handle to the most recently spawned background enrichment fan-out (see
+    // `getTopArtistsWithDetails`), so tests can await its completion deterministically instead of
+    // sleeping a fixed duration. Mirrors `waitUntilPersistenceReady()`'s already-proven
+    // `Task<Void, Never>.value` access pattern below.
+    private var artistDetailsFanOutTask: Task<Void, Never>?
+
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
+        self.artistDetailsCache = Self.loadArtistDetailsCache(from: userDefaults)
+    }
+
+    /// Lets a test await the background artist-details fan-out spawned by the most recent
+    /// `getTopArtistsWithDetails` call, instead of sleeping a fixed duration. A no-op if no
+    /// fan-out has been started yet.
+    func waitUntilArtistDetailsFanOutComplete() async {
+        await artistDetailsFanOutTask?.value
     }
 
     /// Completes when the persisted buddy list JSON has been loaded from disk. Deliberate
@@ -295,6 +339,412 @@ final class BuddyActivityService: @unchecked Sendable {
         let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
         let body = String(data: data, encoding: String.Encoding.utf8) ?? ""
         return (statusCode, body)
+    }
+
+    // MARK: - Top content (tracks / artists)
+
+    /// Gets the user's top tracks via the shared GraphQL `userTopContent` query. `timeRange` is
+    /// accepted for interface parity with the Dart original's public signature, but per the
+    /// Global Constraints note it is never threaded into the request body: the real GraphQL schema
+    /// only supports `SHORT_TERM`. Ported from `getTopTracks` (`/tmp/ref_spotify_buddy_service_full.dart`
+    /// lines 756-835), reading fields directly off each `items` element rather than through an
+    /// `item['data']` indirection layer (see `getTopContent`'s doc comment for why).
+    func getTopTracks(bearerToken: String, timeRange: String = "medium_term", limit: Int = 20) async throws -> [Track] {
+        let data = try await getTopContent(bearerToken: bearerToken, limit: limit)
+        let items = Self.topContentItems(data, contentKey: "topTracks")
+        return items.compactMap { Self.makeTopTrack(from: $0) }
+    }
+
+    /// Gets the user's basic top-artists list (no follower/monthly-listener stats; every returned
+    /// `Artist` carries the `-1` not-yet-fetched sentinel). Callers that need enriched stats use
+    /// `getTopArtistsWithDetails` instead, which fetches this list first and then fans the
+    /// per-artist detail lookups out in the background. Ported from `getTopArtists` (lines
+    /// 838-924), deliberately not porting that method's own `_artistDetailsCache` lookup: this
+    /// port's `getTopArtists` is unconditionally cache-blind, matching the plan brief's explicit
+    /// "(basic list, `-1` sentinel stats)" interface note. Only `getTopArtistsWithDetails`'s
+    /// background fan-out consults the cache.
+    func getTopArtists(bearerToken: String, timeRange: String = "medium_term", limit: Int = 20) async throws -> [Artist] {
+        let data = try await getTopContent(bearerToken: bearerToken, limit: limit)
+        let items = Self.topContentItems(data, contentKey: "topArtists")
+        return items.compactMap { Self.makeTopArtist(from: $0) }
+    }
+
+    /// Gets the basic top-artists list, then spawns a background fan-out that fetches each
+    /// artist's missing follower/monthly-listener stats one at a time (never all at once, to avoid
+    /// a burst of concurrent requests), invoking `onArtistDetailsUpdate` with the updated full list
+    /// after each artist's details arrive (from the network or the cache). Returns the basic list
+    /// immediately; the enrichment happens fully in the background. Ported from
+    /// `getTopArtistsWithDetails` (lines 927-940).
+    func getTopArtistsWithDetails(
+        bearerToken: String,
+        timeRange: String = "medium_term",
+        limit: Int = 20,
+        onArtistDetailsUpdate: (@Sendable ([Artist]) -> Void)? = nil
+    ) async throws -> [Artist] {
+        let artists = try await getTopArtists(bearerToken: bearerToken, timeRange: timeRange, limit: limit)
+
+        // Same `[weak self]` shape as `persistenceReady`'s Task above: the closure only calls a
+        // method on self, never mutates a captured var directly (the Skip Kotlin-transpile quirk
+        // that rules out capturing a mutable `var` in a `@Sendable` closure doesn't apply here).
+        artistDetailsFanOutTask = Task { [weak self] in
+            await self?.fetchMissingArtistDetails(bearerToken: bearerToken, artists: artists, onUpdate: onArtistDetailsUpdate)
+        }
+
+        return artists
+    }
+
+    /// Fetches the GraphQL `userTopContent` payload underlying both `getTopTracks` and
+    /// `getTopArtists`: a single request always asks for both `topTracksInput` and
+    /// `topArtistsInput` (the verified real endpoint shape has no `includeTopTracks`/
+    /// `includeTopArtists` toggle, unlike the Dart original's `getTopContent`), and each caller
+    /// reads only the slice it needs from the shared response. `limit` is applied to both input
+    /// blocks; splitting it into separate tracks/artists limits (as Dart's internal defaults of
+    /// 4/10 do) is not worth the extra parameter for a value the other caller never reads. Ported
+    /// from `getTopContent` (lines 669-753), but throws on failure (auth errors distinguishable,
+    /// matching `getFriendActivity`'s pattern) instead of Dart's catch-and-return-null: this port's
+    /// public methods propagate failures to the caller rather than silently degrading to `[]`,
+    /// confirmed by `testGetTopArtistsAuthErrorThrowsOn401`.
+    private func getTopContent(bearerToken: String, limit: Int) async throws -> [String: Any] {
+        try await ApiRetryService.retryApiCall({
+            let url = URL(string: Self.topContentUrl)!
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+            request.setValue("WebPlayer", forHTTPHeaderField: "App-Platform")
+            request.setValue("application/json", forHTTPHeaderField: "accept")
+            request.setValue("en", forHTTPHeaderField: "accept-language")
+            request.setValue("application/json;charset=UTF-8", forHTTPHeaderField: "content-type")
+            request.setValue("https://open.spotify.com", forHTTPHeaderField: "origin")
+            request.setValue("https://open.spotify.com/", forHTTPHeaderField: "referer")
+            request.setValue(SpotifyTokenService.userAgent, forHTTPHeaderField: "User-Agent")
+
+            let requestBody: [String: Any] = [
+                "operationName": "userTopContent",
+                "variables": [
+                    "topTracksInput": [
+                        "offset": 0,
+                        "limit": limit,
+                        "sortBy": "AFFINITY",
+                        "timeRange": "SHORT_TERM",
+                    ],
+                    "topArtistsInput": [
+                        "offset": 0,
+                        "limit": limit,
+                        "sortBy": "AFFINITY",
+                        "timeRange": "SHORT_TERM",
+                    ],
+                ],
+                "extensions": [
+                    "persistedQuery": [
+                        "version": 1,
+                        "sha256Hash": Self.topContentSha256Hash,
+                    ],
+                ],
+            ]
+            request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+
+            let (statusCode, body) = try await Self.performTopContentRequest(request)
+
+            if statusCode == 401 || statusCode == 403 {
+                throw BuddyActivityServiceError(message: "Authentication error: \(statusCode)")
+            }
+            if statusCode != 200 {
+                throw BuddyActivityServiceError(message: "Failed to fetch top content: \(statusCode)")
+            }
+
+            guard let data = body.data(using: String.Encoding.utf8),
+                  let decoded = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw BuddyActivityServiceError(message: "Failed to parse top content response")
+            }
+            return decoded
+        }, operation: "Get Top Content")
+    }
+
+    private static func performTopContentRequest(_ request: URLRequest) async throws -> (statusCode: Int, body: String) {
+        if let override = topContentFetchOverride {
+            return try await override(request)
+        }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let body = String(data: data, encoding: String.Encoding.utf8) ?? ""
+        return (statusCode, body)
+    }
+
+    // Navigates `data["data"]["me"]["profile"][contentKey]["items"]`, returning `[]` on any shape
+    // mismatch (matches Dart's `as List? ?? []` fallback chain).
+    private static func topContentItems(_ data: [String: Any], contentKey: String) -> [Any] {
+        guard let dataField = data["data"] as? [String: Any],
+              let me = dataField["me"] as? [String: Any],
+              let profile = me["profile"] as? [String: Any],
+              let content = profile[contentKey] as? [String: Any],
+              let items = content["items"] as? [Any] else {
+            return []
+        }
+        return items
+    }
+
+    /// Builds a `Track` directly from one `topTracks.items` element. Ported from `getTopTracks`'s
+    /// inline parsing loop (lines 778-827), field-by-field like `makeTrack` above rather than
+    /// through `Track.fromJson`, since this live GraphQL shape (`albumOfTrack`, `artists.items`,
+    /// `duration.totalMilliseconds`) differs from both shapes `Track.fromJson` handles.
+    private static func makeTopTrack(from itemAny: Any) -> Track? {
+        guard let trackData = itemAny as? [String: Any] else { return nil }
+        let albumData = (trackData["albumOfTrack"] as? [String: Any]) ?? [:]
+        let artistItems = (trackData["artists"] as? [String: Any])?["items"] as? [Any] ?? []
+        let artistNames: [String] = artistItems.map { element in
+            guard let artistDict = element as? [String: Any],
+                  let profile = artistDict["profile"] as? [String: Any],
+                  let name = profile["name"] as? String else {
+                return "Unknown Artist"
+            }
+            return name
+        }
+        let coverArt = (albumData["coverArt"] as? [String: Any])?["sources"] as? [Any] ?? []
+        let imageUrl = bestImageUrl(from: coverArt, preferredHeight: 300)
+        let trackUri = (trackData["uri"] as? String) ?? ""
+        let durationMs = intValue(from: (trackData["duration"] as? [String: Any])?["totalMilliseconds"]) ?? 0
+
+        return Track(
+            id: lastUriSegment(trackUri),
+            name: (trackData["name"] as? String) ?? "Unknown Track",
+            artists: artistNames,
+            album: (albumData["name"] as? String) ?? "Unknown Album",
+            albumUri: albumData["uri"] as? String,
+            imageUrl: imageUrl,
+            durationMs: durationMs,
+            uri: trackUri
+        )
+    }
+
+    /// Builds an `Artist` directly from one `topArtists.items` element, always with the `-1`
+    /// not-yet-fetched stats sentinel (see `getTopArtists`'s doc comment). Ported from
+    /// `getTopArtists`'s inline parsing loop (lines 865-914), minus the cache lookup this port
+    /// deliberately doesn't perform here.
+    private static func makeTopArtist(from itemAny: Any) -> Artist? {
+        guard let artistData = itemAny as? [String: Any] else { return nil }
+        let avatarSources = ((artistData["visuals"] as? [String: Any])?["avatarImage"] as? [String: Any])?["sources"] as? [Any] ?? []
+        let imageUrl = bestImageUrl(from: avatarSources, preferredHeight: 320)
+        let artistUri = (artistData["uri"] as? String) ?? ""
+        let name = (artistData["profile"] as? [String: Any])?["name"] as? String ?? "Unknown Artist"
+
+        return Artist(
+            id: lastUriSegment(artistUri),
+            name: name,
+            imageUrl: imageUrl,
+            followers: -1,
+            monthlyListeners: -1,
+            uri: artistUri
+        )
+    }
+
+    // Shared by `makeTopTrack`/`makeTopArtist`: prefers an image at exactly `preferredHeight`,
+    // falls back to the highest-resolution image found, falls back to the first image in the
+    // list. Ported from the identical inline logic duplicated in `getTopTracks` (lines 792-813)
+    // and `getTopArtists` (lines 871-892) in the Dart original.
+    private static func bestImageUrl(from sources: [Any], preferredHeight: Int) -> String? {
+        var preferredUrl: String?
+        var maxHeightUrl: String?
+        var maxHeight = 0
+        for sourceAny in sources {
+            guard let source = sourceAny as? [String: Any] else { continue }
+            let height = intValue(from: source["height"])
+            let url = source["url"] as? String
+            if let height, height == preferredHeight, preferredUrl == nil {
+                preferredUrl = url
+            }
+            if let height, height > maxHeight {
+                maxHeight = height
+                maxHeightUrl = url
+            }
+        }
+        if let preferredUrl { return preferredUrl }
+        if let maxHeightUrl { return maxHeightUrl }
+        if let first = sources.first as? [String: Any] {
+            return first["url"] as? String
+        }
+        return nil
+    }
+
+    // MARK: - Artist details enrichment
+
+    /// Iterates `artists` sequentially (never all at once, to avoid a burst of concurrent
+    /// requests), checking `artistDetailsCache` first (including a `failed` entry, which skips
+    /// re-querying a known-bad id entirely) before each network call, and invoking `onUpdate` with
+    /// the updated full list after each successful network fetch or valid cache hit. Ported from
+    /// `_fetchMissingArtistDetails` (lines 943-1009), including the Dart original's "ensure at
+    /// least one notification fires even if all fetches failed" fallback (lines 999-1000).
+    ///
+    /// Deliberate deviation from Dart: staleness (the 7-day TTL) is checked here, at read time, on
+    /// every lookup. The Dart original only ever filters stale entries once, when loading the
+    /// cache from disk at startup (`_loadArtistDetailsCache`); an entry already in the in-memory
+    /// `LRUCache` is treated as valid forever for the rest of that process's lifetime. Checking at
+    /// read time here means a long-running instance re-fetches an artist whose cached details have
+    /// aged past 7 days, which the Dart original would not do until its next cold start.
+    private func fetchMissingArtistDetails(
+        bearerToken: String,
+        artists: [Artist],
+        onUpdate: (@Sendable ([Artist]) -> Void)?
+    ) async {
+        let missingIds = artists.filter { $0.monthlyListeners == -1 }.map { $0.id }
+        guard !missingIds.isEmpty else { return }
+
+        var updatedArtists = artists
+        var notified = false
+        var cacheModified = false
+        let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
+
+        for artistId in missingIds {
+            if let cached = artistDetailsCache.get(artistId) {
+                if (cached["failed"] as? Bool) == true {
+                    continue
+                }
+                let fetchedAt = Self.int64Value(from: cached["fetchedAt"]) ?? 0
+                let ageMs = nowMs - fetchedAt
+                if ageMs < Int64(Self.artistDetailsCacheTtlSeconds * 1000) {
+                    let followers = Self.intValue(from: cached["followers"]) ?? -1
+                    let monthlyListeners = Self.intValue(from: cached["monthlyListeners"]) ?? -1
+                    if let idx = updatedArtists.firstIndex(where: { $0.id == artistId }) {
+                        updatedArtists[idx] = Self.withStats(updatedArtists[idx], followers: followers, monthlyListeners: monthlyListeners)
+                        if let onUpdate {
+                            onUpdate(updatedArtists)
+                            notified = true
+                        }
+                    }
+                    continue
+                }
+                // Cache entry is stale: fall through and re-fetch from the network.
+            }
+
+            do {
+                let details = try await fetchArtistDetails(bearerToken: bearerToken, artistId: artistId)
+                artistDetailsCache.put(artistId, [
+                    "followers": details.followers,
+                    "monthlyListeners": details.monthlyListeners,
+                    "fetchedAt": nowMs,
+                ])
+                cacheModified = true
+                if let idx = updatedArtists.firstIndex(where: { $0.id == artistId }) {
+                    updatedArtists[idx] = Self.withStats(updatedArtists[idx], followers: details.followers, monthlyListeners: details.monthlyListeners)
+                    if let onUpdate {
+                        onUpdate(updatedArtists)
+                        notified = true
+                    }
+                }
+            } catch {
+                logger.warning("Failed to fetch details for artist \(artistId): \(error)")
+                artistDetailsCache.put(artistId, ["failed": true, "fetchedAt": nowMs])
+                cacheModified = true
+            }
+        }
+
+        if !notified, let onUpdate {
+            onUpdate(updatedArtists)
+        }
+
+        if cacheModified {
+            saveArtistDetailsCache()
+        }
+    }
+
+    private static func withStats(_ artist: Artist, followers: Int, monthlyListeners: Int) -> Artist {
+        Artist(id: artist.id, name: artist.name, imageUrl: artist.imageUrl, followers: followers, monthlyListeners: monthlyListeners, uri: artist.uri)
+    }
+
+    /// Fetches one artist's follower/monthly-listener stats via the api-partner pathfinder GET
+    /// endpoint (query-string `variables`/`extensions`, not a POST body). Ported from
+    /// `_getArtistDetails` (lines 1013-1055); checks 401/403 before 200 like every other network
+    /// call in this file, which Dart's version does not (it only checks for a bare 200 and throws
+    /// a generic exception otherwise).
+    private func fetchArtistDetails(bearerToken: String, artistId: String) async throws -> (followers: Int, monthlyListeners: Int) {
+        try await ApiRetryService.retryApiCall({
+            let variablesJson: [String: Any] = ["uri": "spotify:artist:\(artistId)", "locale": ""]
+            let extensionsJson: [String: Any] = [
+                "persistedQuery": [
+                    "version": 1,
+                    "sha256Hash": Self.artistDetailsSha256Hash,
+                ],
+            ]
+            let variablesString = String(data: try JSONSerialization.data(withJSONObject: variablesJson), encoding: String.Encoding.utf8) ?? "{}"
+            let extensionsString = String(data: try JSONSerialization.data(withJSONObject: extensionsJson), encoding: String.Encoding.utf8) ?? "{}"
+
+            var components = URLComponents(string: Self.artistDetailsUrl)!
+            components.queryItems = [
+                URLQueryItem(name: "operationName", value: "queryArtistOverview"),
+                URLQueryItem(name: "variables", value: variablesString),
+                URLQueryItem(name: "extensions", value: extensionsString),
+            ]
+            var request = URLRequest(url: components.url!)
+            request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+            request.setValue("WebPlayer", forHTTPHeaderField: "App-Platform")
+            request.setValue("application/json", forHTTPHeaderField: "accept")
+            request.setValue("https://open.spotify.com", forHTTPHeaderField: "origin")
+            request.setValue("https://open.spotify.com/", forHTTPHeaderField: "referer")
+            request.setValue(SpotifyTokenService.userAgent, forHTTPHeaderField: "User-Agent")
+
+            let (statusCode, body) = try await Self.performArtistDetailsRequest(request)
+
+            if statusCode == 401 || statusCode == 403 {
+                throw BuddyActivityServiceError(message: "Authentication error: \(statusCode)")
+            }
+            if statusCode != 200 {
+                throw BuddyActivityServiceError(message: "queryArtistOverview failed: \(statusCode)")
+            }
+
+            guard let data = body.data(using: String.Encoding.utf8),
+                  let decoded = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw BuddyActivityServiceError(message: "Failed to parse artist details response")
+            }
+            let artistField = decoded["data"] as? [String: Any]
+            let stats = (artistField?["artist"] as? [String: Any])?["stats"] as? [String: Any]
+            let followers = Self.intValue(from: stats?["followers"]) ?? 0
+            let monthlyListeners = Self.intValue(from: stats?["monthlyListeners"]) ?? 0
+            return (followers: followers, monthlyListeners: monthlyListeners)
+        }, operation: "Get Artist Details")
+    }
+
+    private static func performArtistDetailsRequest(_ request: URLRequest) async throws -> (statusCode: Int, body: String) {
+        if let override = artistDetailsFetchOverride {
+            return try await override(request)
+        }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let body = String(data: data, encoding: String.Encoding.utf8) ?? ""
+        return (statusCode, body)
+    }
+
+    // MARK: - Artist details cache persistence
+
+    /// Loads the artist-details cache from `UserDefaults`, called synchronously from `init` (see
+    /// that property's doc comment for why this can be synchronous while buddy-list persistence
+    /// cannot). Unlike the Dart original's `_loadArtistDetailsCache` (lines 1058-1087), stale and
+    /// `failed` entries are NOT filtered out here: `failed` entries must survive a restart to keep
+    /// skipping a known-bad id (their entire purpose), and staleness is checked at read time
+    /// instead (see `fetchMissingArtistDetails`'s doc comment).
+    private static func loadArtistDetailsCache(from userDefaults: UserDefaults) -> LRUCache<String, [String: Any]> {
+        let cache = LRUCache<String, [String: Any]>(maxSize: artistDetailsCacheMaxSize)
+        guard let raw = userDefaults.string(forKey: artistDetailsCacheKey),
+              let data = raw.data(using: String.Encoding.utf8),
+              let decoded = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return cache
+        }
+        for (artistId, value) in decoded {
+            if let details = value as? [String: Any] {
+                cache.put(artistId, details)
+            }
+        }
+        return cache
+    }
+
+    /// Saves the artist-details cache to `UserDefaults` (fire-and-forget-free: `UserDefaults`
+    /// writes are synchronous, matching `saveBuddyListRaw`'s reasoning above). Ported from
+    /// `_saveArtistDetailsCache` (lines 1090-1099).
+    private func saveArtistDetailsCache() {
+        guard let data = try? JSONSerialization.data(withJSONObject: artistDetailsCache.snapshot),
+              let encoded = String(data: data, encoding: String.Encoding.utf8) else {
+            logger.warning("Failed to save artist details cache: could not encode JSON")
+            return
+        }
+        userDefaults.set(encoded, forKey: Self.artistDetailsCacheKey)
     }
 
     // MARK: - Persistence

@@ -2,16 +2,38 @@ import Foundation
 import XCTest
 @testable import Playtivity
 
+/// Thread-safe recorder for `onArtistDetailsUpdate` callback invocations from inside a
+/// `@Sendable` closure passed to `getTopArtistsWithDetails` (a plain captured `var` doesn't
+/// compile under Swift 6 strict concurrency once the closure crosses the `Task { }` boundary
+/// inside `BuddyActivityService`). Same `NSLock`-backed idiom as `DebouncedRefreshServiceTests`'s
+/// `Counter` and `SpotifyStoreTests`'s own `Counter`.
+private final class ArtistUpdateRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var invocations: [[Artist]] = []
+
+    func record(_ artists: [Artist]) {
+        lock.withLock { invocations.append(artists) }
+    }
+
+    var all: [[Artist]] {
+        lock.withLock { invocations }
+    }
+}
+
 final class BuddyActivityServiceTests: XCTestCase {
     override func setUp() {
         super.setUp()
         BuddyActivityService.buddyListFetchOverride = nil
+        BuddyActivityService.topContentFetchOverride = nil
+        BuddyActivityService.artistDetailsFetchOverride = nil
         ApiRetryService.sleepOverride = { _ in } // skip real backoff delays in retry tests
         resetDiagnostics()
     }
 
     override func tearDown() {
         BuddyActivityService.buddyListFetchOverride = nil
+        BuddyActivityService.topContentFetchOverride = nil
+        BuddyActivityService.artistDetailsFetchOverride = nil
         ApiRetryService.sleepOverride = nil
         resetDiagnostics()
         super.tearDown()
@@ -934,6 +956,201 @@ final class BuddyActivityServiceTests: XCTestCase {
         service.forceRefresh()
         XCTAssertNotNil(service.cachedActivities, "forceRefresh must not clear existing activities")
         XCTAssertTrue(service.shouldRefreshBuddyList())
+    }
+
+    // MARK: - getTopTracks / getTopArtists / getTopArtistsWithDetails
+
+    func testGetTopTracksParsesUserTopContentGraphQLResponse() async throws {
+        let service = BuddyActivityService(userDefaults: freshUserDefaults())
+        BuddyActivityService.topContentFetchOverride = { request in
+            // Assert the request shape is correct, not just that a response comes back.
+            XCTAssertEqual(request.url?.absoluteString, "https://api-partner.spotify.com/pathfinder/v2/query")
+            XCTAssertEqual(request.httpMethod, "POST")
+            let bodyData = request.httpBody ?? Data()
+            let body = try! JSONSerialization.jsonObject(with: bodyData) as! [String: Any]
+            XCTAssertEqual(body["operationName"] as? String, "userTopContent")
+            let variables = body["variables"] as! [String: Any]
+            let topTracksInput = variables["topTracksInput"] as! [String: Any]
+            XCTAssertEqual(topTracksInput["timeRange"] as? String, "SHORT_TERM")
+            let extensions = body["extensions"] as! [String: Any]
+            let persistedQuery = extensions["persistedQuery"] as! [String: Any]
+            XCTAssertEqual(persistedQuery["sha256Hash"] as? String, "feb6d55177e2cbce2ac59214f9493f1ef2e4368eec01b3d4c3468fa1b97336e2")
+
+            let responseJson: [String: Any] = [
+                "data": ["me": ["profile": ["topTracks": ["items": [
+                    ["uri": "spotify:track:t1", "name": "Song A"],
+                ]]]]],
+            ]
+            let data = try! JSONSerialization.data(withJSONObject: responseJson)
+            return (200, String(data: data, encoding: .utf8)!)
+        }
+        defer { BuddyActivityService.topContentFetchOverride = nil }
+
+        let tracks = try await service.getTopTracks(bearerToken: "tok")
+        XCTAssertEqual(tracks.count, 1)
+        XCTAssertEqual(tracks[0].uri, "spotify:track:t1")
+    }
+
+    func testGetTopArtistsHardcodesShortTermRegardlessOfCallerIntent() async throws {
+        // Pins the Global Constraints requirement: timeRange must always be
+        // SHORT_TERM in the request body, even though the public method
+        // signature accepts a timeRange parameter for interface parity.
+        let service = BuddyActivityService(userDefaults: freshUserDefaults())
+        var capturedTimeRange: String?
+        BuddyActivityService.topContentFetchOverride = { request in
+            let body = try! JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any]
+            let variables = body["variables"] as! [String: Any]
+            let topArtistsInput = variables["topArtistsInput"] as! [String: Any]
+            capturedTimeRange = topArtistsInput["timeRange"] as? String
+            // `[Any]()` rather than a bare `[]` literal: nested three-plus levels deep inside
+            // dictionary literals assigned to `[String: Any]`, Kotlin cannot infer an empty array
+            // literal's element type on transpile ("Cannot infer type for type parameter 'V'"),
+            // even though the exact same shape resolves fine in Swift.
+            let responseJson: [String: Any] = ["data": ["me": ["profile": ["topArtists": ["items": [Any]()]]]]]
+            let data = try! JSONSerialization.data(withJSONObject: responseJson)
+            return (200, String(data: data, encoding: .utf8)!)
+        }
+        defer { BuddyActivityService.topContentFetchOverride = nil }
+
+        _ = try await service.getTopArtists(bearerToken: "tok")
+        XCTAssertEqual(capturedTimeRange, "SHORT_TERM")
+    }
+
+    func testGetTopArtistsAuthErrorThrowsOn401() async throws {
+        let service = BuddyActivityService(userDefaults: freshUserDefaults())
+        BuddyActivityService.topContentFetchOverride = { _ in (401, "") }
+        defer { BuddyActivityService.topContentFetchOverride = nil }
+
+        do {
+            _ = try await service.getTopArtists(bearerToken: "tok")
+            XCTFail("expected throw")
+        } catch let error as BuddyActivityServiceError {
+            XCTAssertTrue(error.message.contains("Authentication error"))
+        }
+    }
+
+    func testGetTopArtistsBasicListHasNegativeOneStatsSentinel() async throws {
+        let service = BuddyActivityService(userDefaults: freshUserDefaults())
+        BuddyActivityService.topContentFetchOverride = { _ in
+            let responseJson: [String: Any] = ["data": ["me": ["profile": ["topArtists": ["items": [
+                ["uri": "spotify:artist:a1", "profile": ["name": "Artist One"]],
+            ]]]]]]
+            let data = try! JSONSerialization.data(withJSONObject: responseJson)
+            return (200, String(data: data, encoding: .utf8)!)
+        }
+        defer { BuddyActivityService.topContentFetchOverride = nil }
+
+        let artists = try await service.getTopArtists(bearerToken: "tok")
+        XCTAssertEqual(artists.count, 1)
+        XCTAssertEqual(artists[0].followers, -1)
+        XCTAssertEqual(artists[0].monthlyListeners, -1)
+    }
+
+    func testGetTopArtistsWithDetailsFetchesEnrichmentAndInvokesCallbackProgressively() async throws {
+        let service = BuddyActivityService(userDefaults: freshUserDefaults())
+        BuddyActivityService.topContentFetchOverride = { _ in
+            let responseJson: [String: Any] = ["data": ["me": ["profile": ["topArtists": ["items": [
+                ["uri": "spotify:artist:a1", "profile": ["name": "Artist One"]],
+            ]]]]]]
+            let data = try! JSONSerialization.data(withJSONObject: responseJson)
+            return (200, String(data: data, encoding: .utf8)!)
+        }
+        var detailsRequestCount = 0
+        BuddyActivityService.artistDetailsFetchOverride = { request in
+            detailsRequestCount += 1
+            XCTAssertTrue(request.url!.absoluteString.contains("queryArtistOverview"))
+            let responseJson: [String: Any] = ["data": ["artist": ["stats": ["followers": 500, "monthlyListeners": 200]]]]
+            let data = try! JSONSerialization.data(withJSONObject: responseJson)
+            return (200, String(data: data, encoding: .utf8)!)
+        }
+        defer {
+            BuddyActivityService.topContentFetchOverride = nil
+            BuddyActivityService.artistDetailsFetchOverride = nil
+        }
+
+        let recorder = ArtistUpdateRecorder()
+        let artists = try await service.getTopArtistsWithDetails(bearerToken: "tok") { updated in
+            recorder.record(updated)
+        }
+        // Initial return still carries the -1 sentinel; details arrive asynchronously after.
+        XCTAssertEqual(artists[0].followers, -1)
+        // Deterministically wait for the fire-and-forget fan-out to finish (rather than sleeping a
+        // fixed duration) before asserting the progressive callback actually fired with enriched
+        // data. Non-vacuous: deleting the fan-out call entirely would leave the recorder empty and
+        // this wait would return immediately (nil task), so the assertions below would still fail
+        // as expected rather than hanging.
+        await service.waitUntilArtistDetailsFanOutComplete()
+        XCTAssertEqual(detailsRequestCount, 1)
+        XCTAssertFalse(recorder.all.isEmpty)
+        XCTAssertEqual(recorder.all.last?.first?.followers, 500)
+        XCTAssertEqual(recorder.all.last?.first?.monthlyListeners, 200)
+    }
+
+    func testArtistDetailsCacheAvoidsRefetchingWithinSevenDays() async throws {
+        let service = BuddyActivityService(userDefaults: freshUserDefaults())
+        BuddyActivityService.topContentFetchOverride = { _ in
+            let responseJson: [String: Any] = ["data": ["me": ["profile": ["topArtists": ["items": [
+                ["uri": "spotify:artist:a1", "profile": ["name": "Artist One"]],
+            ]]]]]]
+            let data = try! JSONSerialization.data(withJSONObject: responseJson)
+            return (200, String(data: data, encoding: .utf8)!)
+        }
+        var detailsRequestCount = 0
+        BuddyActivityService.artistDetailsFetchOverride = { _ in
+            detailsRequestCount += 1
+            let responseJson: [String: Any] = ["data": ["artist": ["stats": ["followers": 500, "monthlyListeners": 200]]]]
+            let data = try! JSONSerialization.data(withJSONObject: responseJson)
+            return (200, String(data: data, encoding: .utf8)!)
+        }
+        defer {
+            BuddyActivityService.topContentFetchOverride = nil
+            BuddyActivityService.artistDetailsFetchOverride = nil
+        }
+
+        _ = try await service.getTopArtistsWithDetails(bearerToken: "tok")
+        await service.waitUntilArtistDetailsFanOutComplete()
+        XCTAssertEqual(detailsRequestCount, 1)
+
+        // Second call for the same artist id, within the 7-day TTL: must serve
+        // from cache, not re-fetch. This is the actual behavior under test,
+        // not just "the method runs twice without crashing".
+        _ = try await service.getTopArtistsWithDetails(bearerToken: "tok")
+        await service.waitUntilArtistDetailsFanOutComplete()
+        XCTAssertEqual(detailsRequestCount, 1, "second call within TTL must not re-fetch artist details")
+    }
+
+    func testArtistDetailsFailedCacheEntrySkipsRefetchingAndLeavesSentinelStats() async throws {
+        // A network failure on the details endpoint must write a `failed: true` cache entry, and a
+        // later fan-out over the same artist id must skip the network call entirely rather than
+        // retrying forever.
+        let service = BuddyActivityService(userDefaults: freshUserDefaults())
+        BuddyActivityService.topContentFetchOverride = { _ in
+            let responseJson: [String: Any] = ["data": ["me": ["profile": ["topArtists": ["items": [
+                ["uri": "spotify:artist:bad1", "profile": ["name": "Bad Artist"]],
+            ]]]]]]
+            let data = try! JSONSerialization.data(withJSONObject: responseJson)
+            return (200, String(data: data, encoding: .utf8)!)
+        }
+        var detailsRequestCount = 0
+        BuddyActivityService.artistDetailsFetchOverride = { _ in
+            detailsRequestCount += 1
+            return (500, "")
+        }
+        defer {
+            BuddyActivityService.topContentFetchOverride = nil
+            BuddyActivityService.artistDetailsFetchOverride = nil
+        }
+
+        _ = try await service.getTopArtistsWithDetails(bearerToken: "tok")
+        await service.waitUntilArtistDetailsFanOutComplete()
+        // A persistent non-auth failure (500) is retried by ApiRetryService.retryApiCall's default
+        // maxRetries: 3, so the first call makes 4 attempts (1 initial + 3 retries) before the
+        // fan-out gives up and caches the `failed` marker.
+        XCTAssertEqual(detailsRequestCount, 4)
+
+        _ = try await service.getTopArtistsWithDetails(bearerToken: "tok")
+        await service.waitUntilArtistDetailsFanOutComplete()
+        XCTAssertEqual(detailsRequestCount, 4, "a known-bad artist id must not be re-queried")
     }
 
     // MARK: - Test fixtures

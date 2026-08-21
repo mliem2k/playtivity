@@ -56,6 +56,11 @@ final class LRUCache<Key: Hashable, Value> {
 
     var count: Int { storage.count }
 
+    /// A snapshot of every key-value pair currently in the cache (in no particular order), for
+    /// callers that need to persist or enumerate the full contents (e.g. `BuddyActivityService`'s
+    /// artist-details cache, saved to `UserDefaults`).
+    var snapshot: [Key: Value] { storage }
+
     private func touch(_ key: Key) {
         order.removeAll { $0 == key }
         order.append(key)
