@@ -50,14 +50,40 @@ extension Color {
         return Color(red: Double(c.r) / 255.0, green: Double(c.g) / 255.0, blue: Double(c.b) / 255.0)
     }
 
-    static let appBackground = Color.hex("121212")
-    static let appSurfaceRaised = Color.hex("181818")
-    static let appSurfaceElevated = Color.hex("282828")
-    static let appPrimary = Color.hex("1DB954")
-    static let appPrimaryActive = Color.hex("1ED760")
-    static let appTextPrimary = Color.hex("FFFFFF")
-    static let appTextSecondary = Color.hex("A7A7A7")
-    static let appTextSubdued = Color.hex("535353")
-    static let appErrorRed = Color.hex("E91429")
-    static let appDividerColor = Color.hex("282828")
+    // Named hex constants, not private: these are the actual source of
+    // truth the ten static properties below are built from, and tests
+    // reference these same constants directly (rather than a hand-retyped
+    // copy of the literals) so a typo here is caught by the test suite
+    // instead of silently passing it.
+    static let appBackgroundHex = "121212"
+    static let appSurfaceRaisedHex = "181818"
+    static let appSurfaceElevatedHex = "282828"
+    static let appPrimaryHex = "1DB954"
+    static let appPrimaryActiveHex = "1ED760"
+    static let appTextPrimaryHex = "FFFFFF"
+    static let appTextSecondaryHex = "A7A7A7"
+    static let appTextSubduedHex = "535353"
+    static let appErrorRedHex = "E91429"
+    // Deliberately equal to appSurfaceElevatedHex, matching the Dart original.
+    static let appDividerColorHex = "282828"
+
+    // NOTE: `Color.` is required on the constant references below, not just
+    // on `hex(...)` itself. Skip transpiles a `static let` extension
+    // property on a foreign type (Color lives in SkipUI) into a Kotlin
+    // top-level extension property on Color.Companion, backed by a
+    // top-level `private val` whose initializer has NO implicit receiver.
+    // A bare reference to a sibling constant (e.g. `appBackgroundHex`
+    // instead of `Color.appBackgroundHex`) resolves fine in Swift (implicit
+    // Self) and in Kotlin function bodies (which do carry an implicit
+    // Color.Companion receiver), but fails as "Unresolved reference" here.
+    static let appBackground = Color.hex(Color.appBackgroundHex)
+    static let appSurfaceRaised = Color.hex(Color.appSurfaceRaisedHex)
+    static let appSurfaceElevated = Color.hex(Color.appSurfaceElevatedHex)
+    static let appPrimary = Color.hex(Color.appPrimaryHex)
+    static let appPrimaryActive = Color.hex(Color.appPrimaryActiveHex)
+    static let appTextPrimary = Color.hex(Color.appTextPrimaryHex)
+    static let appTextSecondary = Color.hex(Color.appTextSecondaryHex)
+    static let appTextSubdued = Color.hex(Color.appTextSubduedHex)
+    static let appErrorRed = Color.hex(Color.appErrorRedHex)
+    static let appDividerColor = Color.hex(Color.appDividerColorHex)
 }
