@@ -2,7 +2,7 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import { forwardRef, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useImperativeHandle, useRef } from "react";
 import { Linking, Pressable, RefreshControl, ScrollView, type ScrollViewInstance, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ArtistTile, CurrentlyPlayingCard, TrackTile } from "@/components/Tiles";
@@ -16,12 +16,14 @@ import type { ScrollTop } from "./ActivitiesScreen";
 
 const TABS = ["Top Songs", "Top Artists"] as const;
 
-/** Gradient header, mini player, and a pinned Top Songs / Top Artists tab bar. */
-export const ProfileScreen = forwardRef<ScrollTop>(function ProfileScreen(_, ref) {
+/**
+ * Gradient header, mini player and a pinned Top Songs / Top Artists tab bar. Each tab is its own page of the
+ * main pager, so a swipe on the profile moves between the tabs first and only then on to Activities.
+ */
+export const ProfileScreen = forwardRef<ScrollTop, { tab: 0 | 1; onTab: (tab: 0 | 1) => void }>(function ProfileScreen({ tab, onTab }, ref) {
   const scroll = useRef<ScrollViewInstance>(null);
   useImperativeHandle(ref, () => ({ scrollToTop: () => scroll.current?.scrollTo({ y: 0, animated: true }) }));
   const user = useAuth((s) => s.user);
-  const [tab, setTab] = useState(0);
   const { data, isLoading, isRefetching, refetch, error } = useTop();
   const playing = useCurrentlyPlaying().data;
   const listeners = useArtistListeners(data?.artists).data;
@@ -95,7 +97,7 @@ export const ProfileScreen = forwardRef<ScrollTop>(function ProfileScreen(_, ref
         <View style={{ backgroundColor: colors.background }}>
           <View style={{ flexDirection: "row" }}>
             {TABS.map((label, i) => (
-              <Pressable key={label} onPress={() => setTab(i)} style={{ flex: 1, height: 48, alignItems: "center", justifyContent: "center" }}>
+              <Pressable key={label} onPress={() => onTab(i as 0 | 1)} style={{ flex: 1, height: 48, alignItems: "center", justifyContent: "center" }}>
                 <Text className={tab === i ? "font-mont-sb text-white" : "font-mont text-muted"} style={{ fontSize: 13 }}>{label}</Text>
                 {tab === i ? <View style={{ position: "absolute", bottom: 0, height: 2, width: 72, backgroundColor: colors.primary }} /> : null}
               </Pressable>
