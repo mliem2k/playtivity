@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 const fs = require('fs');
 const path = require('path');
@@ -8,7 +8,7 @@ const crypto = require('crypto');
 class NightlyReleaser {
     constructor() {
         this.projectRoot = path.join(__dirname, '..');
-        this.pubspecPath = path.join(this.projectRoot, 'pubspec.yaml');
+        this.pubspecPath = path.join(this.projectRoot, 'version.yml');
         this.nightlyDir = path.join(this.projectRoot, 'nightly');
         this.releasesDir = path.join(this.projectRoot, 'releases');
         this.keystorePath = path.join(this.projectRoot, 'release-key.jks');
@@ -100,7 +100,7 @@ class NightlyReleaser {
             const content = fs.readFileSync(this.pubspecPath, 'utf8');
             return content;
         } catch (error) {
-            throw new Error(`Failed to read pubspec.yaml: ${error.message}`);
+            throw new Error(`Failed to read version.yml: ${error.message}`);
         }
     }
 
@@ -108,14 +108,14 @@ class NightlyReleaser {
         try {
             fs.writeFileSync(this.pubspecPath, content, 'utf8');
         } catch (error) {
-            throw new Error(`Failed to write pubspec.yaml: ${error.message}`);
+            throw new Error(`Failed to write version.yml: ${error.message}`);
         }
     }
 
     parseVersion(versionLine) {
         const match = versionLine.match(/version:\s*(.+)/);
         if (!match) {
-            throw new Error('Invalid version format in pubspec.yaml');
+            throw new Error('Invalid version format in version.yml');
         }
 
         const fullVersion = match[1].trim();
@@ -138,7 +138,7 @@ class NightlyReleaser {
             }
         }
         
-        throw new Error('Version line not found in pubspec.yaml');
+        throw new Error('Version line not found in version.yml');
     }
 
     createReleaseVersion(incrementType = 'patch', customVersion = null) {
@@ -170,7 +170,7 @@ class NightlyReleaser {
         }
 
         if (versionLineIndex === -1) {
-            throw new Error('Version line not found in pubspec.yaml');
+            throw new Error('Version line not found in version.yml');
         }
 
         // Extract base version from nightly version if it exists
@@ -360,7 +360,7 @@ class NightlyReleaser {
     copyReleaseFiles(version, nightlyBuild) {
         this.log('Copying release files to releases directory', 'release');
         
-        const apkPath = path.join(this.projectRoot, 'build', 'app', 'outputs', 'flutter-apk', 'app-release.apk');
+        const apkPath = path.join(this.projectRoot, 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk');
         const bundlePath = path.join(this.projectRoot, 'build', 'app', 'outputs', 'bundle', 'release', 'app-release.aab');
         
         const releaseInfo = {
@@ -462,16 +462,16 @@ Download the APK below. Enable "Install from unknown sources" in Android setting
         }
         const apkPath = path.join(this.releasesDir, apkFile.name);
 
-        // Commit the pubspec.yaml version bump.
+        // Commit the version.yml version bump.
         try {
-            execSync('git add pubspec.yaml', { cwd: this.projectRoot, stdio: 'pipe' });
+            execSync('git add version.yml', { cwd: this.projectRoot, stdio: 'pipe' });
             execSync(
                 `git commit -m "chore: bump version to ${releaseVersion.fullVersion}"`,
                 { cwd: this.projectRoot, stdio: 'pipe' }
             );
-            this.log(`Committed pubspec.yaml at ${releaseVersion.fullVersion}`, 'success');
+            this.log(`Committed version.yml at ${releaseVersion.fullVersion}`, 'success');
         } catch (e) {
-            this.log(`pubspec.yaml commit skipped (${e.message.trim().split('\n')[0]})`, 'warning');
+            this.log(`version.yml commit skipped (${e.message.trim().split('\n')[0]})`, 'warning');
         }
 
         // Publish to GitHub. The commit must be pushed before this step so the
@@ -557,7 +557,7 @@ Download the APK below. Enable "Install from unknown sources" in Android setting
             // Generate release notes
             const releaseNotesPath = this.generateReleaseNotes(releaseVersion, releaseInfo, selectedBuild);
 
-            // Commit pubspec.yaml version bump and publish to GitHub
+            // Commit version.yml version bump and publish to GitHub
             this.commitAndPublish(releaseVersion, releaseInfo, releaseNotesPath);
 
             // Success summary
@@ -591,7 +591,7 @@ function showHelp() {
     console.log(`
 Playtivity Nightly Release Promoter
 
-Usage: node nightly-release.js [options]
+Usage: bun nightly-release.js [options]
 
 Options:
   --build-id <id>           - Specific nightly build ID to promote (YYYYMMDD-HHMMSS)
@@ -602,12 +602,12 @@ Options:
   --help, -h               - Show this help message
 
 Examples:
-  node nightly-release.js                           # Promote latest nightly as patch
-  node nightly-release.js --list                    # List available nightly builds
-  node nightly-release.js --build-id 20250614-143022 # Promote specific nightly
-  node nightly-release.js --increment minor         # Promote as minor version
-  node nightly-release.js --version 1.0.0           # Promote with custom version
-  node nightly-release.js --no-bundle              # APK only, no AAB
+  bun nightly-release.js                           # Promote latest nightly as patch
+  bun nightly-release.js --list                    # List available nightly builds
+  bun nightly-release.js --build-id 20250614-143022 # Promote specific nightly
+  bun nightly-release.js --increment minor         # Promote as minor version
+  bun nightly-release.js --version 1.0.0           # Promote with custom version
+  bun nightly-release.js --no-bundle              # APK only, no AAB
 
 About Nightly Release Promotion:
   - Promotes tested nightly builds to official releases
@@ -618,7 +618,7 @@ About Nightly Release Promotion:
 
 The script will:
   - List available nightly builds for selection
-  - Create new release version in pubspec.yaml
+  - Create new release version in version.yml
   - Build signed release APK and AAB
   - Generate checksums and detailed release notes
   - Organize files in releases/ folder with nightly source info

@@ -1,9 +1,9 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Tests buddylist API fetch + JSON parsing against the live endpoint.
 // Mirrors parseFriendsJson logic from lib/services/spotify_buddy_service.dart.
 //
 // Usage:
-//   node scripts/test_buddylist_parse.js [bearer_token]
+//   bun scripts/test_buddylist_parse.js [bearer_token]
 //   (reads SPOTIFY_BEARER from .env if no arg provided)
 
 const https = require('https');

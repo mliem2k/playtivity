@@ -3,9 +3,9 @@
 
   # Playtivity - Spotify Friends Activity App
 
-  A Flutter app that shows your friends' Spotify activities in real-time.
+  An Expo (React Native, TypeScript, NativeWind) app that shows your friends' Spotify activities in real-time.
 
-  <img src="https://img.shields.io/badge/Flutter-3.8+-blue?logo=flutter" alt="Flutter Version"/>
+  <img src="https://img.shields.io/badge/Expo-58-blue?logo=expo" alt="Expo"/>
   <img src="https://img.shields.io/badge/Platform-Android-green" alt="Platform Support"/>
   <img src="https://img.shields.io/badge/License-MIT-yellow" alt="License"/>
 
@@ -64,8 +64,8 @@ The app uses Spotify's web login flow to extract the `sp_dc` cookie, which is us
 ```bash
 git clone <repository-url>
 cd playtivity
-flutter pub get
-flutter run
+bun install
+bunx expo run:android
 ```
 
 ## Platform Support

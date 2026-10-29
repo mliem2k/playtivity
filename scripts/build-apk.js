@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 const fs = require('fs');
 const path = require('path');
@@ -7,9 +7,9 @@ const { execSync } = require('child_process');
 class APKBuilder {
     constructor() {
         this.projectRoot = path.join(__dirname, '..');
-        this.pubspecPath = path.join(this.projectRoot, 'pubspec.yaml');
+        this.pubspecPath = path.join(this.projectRoot, 'version.yml');
         this.outputDir = path.join(this.projectRoot, 'builds');
-        this.apkPath = path.join(this.projectRoot, 'build', 'app', 'outputs', 'flutter-apk', 'app-release.apk');
+        this.apkPath = path.join(this.projectRoot, 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk');
     }
 
     log(message, type = 'info') {
@@ -37,7 +37,7 @@ class APKBuilder {
             const content = fs.readFileSync(this.pubspecPath, 'utf8');
             return content;
         } catch (error) {
-            throw new Error(`Failed to read pubspec.yaml: ${error.message}`);
+            throw new Error(`Failed to read version.yml: ${error.message}`);
         }
     }
 
@@ -45,7 +45,7 @@ class APKBuilder {
         try {
             fs.writeFileSync(this.pubspecPath, content, 'utf8');
         } catch (error) {
-            throw new Error(`Failed to write pubspec.yaml: ${error.message}`);
+            throw new Error(`Failed to write version.yml: ${error.message}`);
         }
     }
 
@@ -53,7 +53,7 @@ class APKBuilder {
         // Extract version like "0.0.1+1" from "version: 0.0.1+1"
         const match = versionLine.match(/version:\s*(.+)/);
         if (!match) {
-            throw new Error('Invalid version format in pubspec.yaml');
+            throw new Error('Invalid version format in version.yml');
         }
 
         const fullVersion = match[1].trim();
@@ -67,7 +67,7 @@ class APKBuilder {
     }
 
     incrementVersion(incrementType = 'build') {
-        this.log('Reading current version from pubspec.yaml');
+        this.log('Reading current version from version.yml');
         
         const content = this.readPubspec();
         const lines = content.split('\n');
@@ -85,7 +85,7 @@ class APKBuilder {
         }
 
         if (versionLineIndex === -1) {
-            throw new Error('Version line not found in pubspec.yaml');
+            throw new Error('Version line not found in version.yml');
         }
 
         this.log(`Current version: ${currentVersion.fullVersion}`);
@@ -271,7 +271,7 @@ function showHelp() {
     console.log(`
 Playtivity APK Builder
 
-Usage: node build-apk.js [increment-type]
+Usage: bun build-apk.js [increment-type]
 
 Increment Types:
   build (default) - Increment build number only (0.0.1+1 → 0.0.1+2)
@@ -280,14 +280,14 @@ Increment Types:
   major          - Increment major version (1.2.3+4 → 2.0.0+1)
 
 Examples:
-  node build-apk.js           # Increment build number
-  node build-apk.js build     # Same as above
-  node build-apk.js patch     # Increment patch version
-  node build-apk.js minor     # Increment minor version
-  node build-apk.js major     # Increment major version
+  bun build-apk.js           # Increment build number
+  bun build-apk.js build     # Same as above
+  bun build-apk.js patch     # Increment patch version
+  bun build-apk.js minor     # Increment minor version
+  bun build-apk.js major     # Increment major version
 
 The script will:
-  - Automatically increment the version in pubspec.yaml
+  - Automatically increment the version in version.yml
   - Clean and build the APK
   - Copy the APK to builds/ folder with timestamp
   - Create a "latest" APK for easy installation

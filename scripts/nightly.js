@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 const fs = require('fs');
 const path = require('path');
@@ -8,9 +8,9 @@ const crypto = require('crypto');
 class NightlyBuilder {
     constructor() {
         this.projectRoot = path.join(__dirname, '..');
-        this.pubspecPath = path.join(this.projectRoot, 'pubspec.yaml');
+        this.pubspecPath = path.join(this.projectRoot, 'version.yml');
         this.outputDir = path.join(this.projectRoot, 'nightly');
-        this.apkPath = path.join(this.projectRoot, 'build', 'app', 'outputs', 'flutter-apk', 'app-release.apk');
+        this.apkPath = path.join(this.projectRoot, 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk');
         this.keystorePath = path.join(this.projectRoot, 'release-key.jks');
         this.keystoreBase64Path = path.join(this.projectRoot, 'keystore.base64.txt');
         this.githubRepo = this.detectGitHubRepo();
@@ -96,7 +96,7 @@ After installation, authenticate with: gh auth login
     parseVersion(versionLine) {
         const match = versionLine.match(/version:\s*(.+)/);
         if (!match) {
-            throw new Error('Invalid version format in pubspec.yaml');
+            throw new Error('Invalid version format in version.yml');
         }
 
         const fullVersion = match[1].trim();
@@ -135,7 +135,7 @@ After installation, authenticate with: gh auth login
         }
 
         if (!currentVersion) {
-            throw new Error('Version line not found in pubspec.yaml');
+            throw new Error('Version line not found in version.yml');
         }
 
         this.log(`Current version: ${currentVersion.fullVersion}`);
@@ -200,23 +200,12 @@ After installation, authenticate with: gh auth login
 
     getBuildEnvironment() {
         const env = {};
-        
         try {
-            let flutterCmd = 'flutter';
-            try {
-                execSync('fvm --version', { stdio: 'pipe' });
-                flutterCmd = 'fvm flutter';
-            } catch {}
-            
-            const flutterVersion = execSync(`${flutterCmd} --version --machine`, { encoding: 'utf8' });
-            const flutterInfo = JSON.parse(flutterVersion);
-            env.flutterVersion = flutterInfo.frameworkVersion || 'unknown';
-            env.dartVersion = flutterInfo.dartSdkVersion || 'unknown';
+            env.expoVersion = JSON.parse(fs.readFileSync(path.join(this.projectRoot, 'node_modules', 'expo', 'package.json'), 'utf8')).version;
         } catch {
-            env.flutterVersion = 'unknown';
-            env.dartVersion = 'unknown';
+            env.expoVersion = 'unknown';
         }
-
+        env.bunVersion = Bun.version;
         return env;
     }
 
@@ -266,42 +255,21 @@ After installation, authenticate with: gh auth login
     buildNightlyAPK() {
         this.log('Starting nightly APK build', 'build');
 
-        // Must set signing env vars before gradle runs, otherwise the APK
-        // falls back to the debug key and conflicts with release-signed installs.
+        // Signing env vars must be set before gradle runs, otherwise the APK falls back to the
+        // debug key and conflicts with release-signed installs.
         this.setupSigningForBuild();
 
-        let flutterCommand = 'flutter';
         try {
-            execSync('fvm --version', { stdio: 'pipe' });
-            flutterCommand = 'fvm flutter';
-            this.log('Using FVM for Flutter commands');
-        } catch {
-            this.log('Using system Flutter');
-        }
-
-        try {
-            // Smart dependency management
-            const pubspecLockModified = this.isPubspecLockModified();
-            if (pubspecLockModified) {
-                this.runCommand(`${flutterCommand} pub get`, 'Getting dependencies');
-            } else {
-                this.log('Dependencies up to date, skipping pub get', 'info');
+            if (process.env.PLAYTIVITY_BUILDER) {
+                this.buildOnRemote(process.env.PLAYTIVITY_BUILDER);
+                return true;
             }
-
-            // Smart clean - only when necessary
-            if (this.shouldCleanBuild()) {
-                this.runCommand(`${flutterCommand} clean`, 'Cleaning build');
-            }
-
-            // Build APK with optimizations
-            const buildCmd = [
-                `${flutterCommand} build apk`,
-                '--release',
-                '--target-platform android-arm64',
-                '--no-tree-shake-icons'
-            ].join(' ');
-
-            this.runCommand(buildCmd, 'Building APK');
+            this.runCommand('bun install --frozen-lockfile', 'Installing dependencies');
+            // Prebuild regenerates android/ from app.config.js, which reads version.yml, so the
+            // nightly version written above is what lands in versionName and versionCode.
+            const clean = this.shouldCleanBuild() ? ' --clean' : '';
+            this.runCommand(`bunx expo prebuild --platform android --no-install${clean}`, 'Generating Android project');
+            this.runCommand('cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a', 'Building APK');
             return true;
         } catch (error) {
             this.log(`Build failed: ${error.message}`, 'error');
@@ -309,18 +277,45 @@ After installation, authenticate with: gh auth login
         }
     }
 
-    isPubspecLockModified() {
-        try {
-            const status = execSync('git status pubspec.lock --porcelain', { encoding: 'utf8' });
-            return status.trim().length > 0;
-        } catch {
-            return true; // Safe default
-        }
+    // Builds on a Windows machine reachable over ssh (PLAYTIVITY_BUILDER=<ssh host>), then signs
+    // here, so the release keystore never leaves this machine.
+    buildOnRemote(host) {
+        const remoteDir = 'C:/b/pt';
+        const apkOut = this.apkPath;
+        const tracked = execSync('git ls-files -z --cached --others --exclude-standard', { cwd: this.projectRoot, maxBuffer: 64 * 1024 * 1024 })
+            .toString('utf8').split('\0')
+            .filter((p) => p && !/^(landing|releases|nightly|builds|screenshots|docs)\//.test(p) && !/jks|keystore/.test(p));
+        const listFile = path.join(this.outputDir, '.sync-files');
+        fs.mkdirSync(this.outputDir, { recursive: true });
+        fs.writeFileSync(listFile, tracked.join('\n'));
+
+        this.runCommand(`ssh ${host} "if not exist C:\\b\\pt mkdir C:\\b\\pt"`, `Preparing ${host}`);
+        this.runCommand(`COPYFILE_DISABLE=1 tar -c -T "${listFile}" -f - | ssh ${host} "tar -x -C ${remoteDir} -f -"`, `Syncing source to ${host}`);
+        this.runCommand(`scp -q scripts/builder/build-android.ps1 ${host}:C:/b/build-android.ps1`, 'Copying build script');
+        this.runCommand(`ssh ${host} "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\b\\build-android.ps1"`, `Building on ${host}`);
+
+        fs.mkdirSync(path.dirname(apkOut), { recursive: true });
+        this.runCommand(`scp -q ${host}:${remoteDir}/android/app/build/outputs/apk/release/app-release.apk "${apkOut}"`, 'Fetching APK');
+        this.signApk(apkOut);
+    }
+
+    signApk(apk) {
+        const sdk = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT || '/opt/homebrew/share/android-commandlinetools';
+        const tools = path.join(sdk, 'build-tools');
+        const latest = fs.readdirSync(tools).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).pop();
+        const apksigner = path.join(tools, latest, 'apksigner');
+        const signed = `${apk}.signed`;
+        this.runCommand(
+            `"${apksigner}" sign --ks "${process.env.ANDROID_KEYSTORE_PATH}" --ks-key-alias "${process.env.ANDROID_KEY_ALIAS}" ` +
+            `--ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD --out "${signed}" "${apk}"`,
+            'Signing APK with the release key'
+        );
+        this.runCommand(`"${apksigner}" verify "${signed}"`, 'Verifying signature');
+        fs.renameSync(signed, apk);
     }
 
     shouldCleanBuild() {
-        const buildDir = path.join(this.projectRoot, 'build');
-        return !fs.existsSync(buildDir) || 
+        return !fs.existsSync(path.join(this.projectRoot, 'android')) ||
                process.env.FORCE_CLEAN === 'true' ||
                process.argv.includes('--clean');
     }
@@ -497,7 +492,7 @@ After installation, authenticate with: gh auth login
 **Base Version**: \`${baseVersion}\`
 **Commit**: \`${git.commitShort}\` — ${git.commitMessage}
 **Branch**: \`${git.branch}\`
-**Flutter**: ${environment.flutterVersion} / Dart ${environment.dartVersion}
+**Expo**: ${environment.expoVersion} / Bun ${environment.bunVersion}
 
 **APK**: ${apk.fileName} (${apk.size} MB)
 **SHA256**: \`${apk.checksum}\`
@@ -646,7 +641,7 @@ function showHelp() {
     console.log(`
 Playtivity Nightly Builder & Releaser
 
-Usage: node nightly.js [options]
+Usage: bun nightly.js [options]
 
 Options:
   --skip-github         Skip GitHub release (local build only)
@@ -656,14 +651,14 @@ Options:
   --help, -h            Show this help
 
 Examples:
-  node nightly.js                    # Build and release to GitHub
-  node nightly.js --skip-github      # Local build only
-  node nightly.js --stable           # Create stable release
-  node nightly.js --keep 10          # Keep 10 old builds
-  node nightly.js --clean            # Force clean rebuild
+  bun nightly.js                    # Build and release to GitHub
+  bun nightly.js --skip-github      # Local build only
+  bun nightly.js --stable           # Create stable release
+  bun nightly.js --keep 10          # Keep 10 old builds
+  bun nightly.js --clean            # Force clean rebuild
 
 Requirements:
-  - Flutter SDK installed
+  - Android SDK and JDK 17 installed
   - GitHub CLI (gh) installed and authenticated
   - Git repository with GitHub remote
 
