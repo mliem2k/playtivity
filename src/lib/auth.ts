@@ -39,7 +39,9 @@ export const useAuth = create<AuthState>((set, get) => ({
   init: async () => {
     if (isSample) return set({ ready: true, spDc: "sample", token: "sample", user: sampleUser });
     await refreshSecrets();
-    const spDc = await SecureStore.getItemAsync(KEY);
+    // Debug only: lets a dev build sign in from the environment, for screenshots and manual tests.
+    // The variable is read at bundle time and __DEV__ is false in release builds, so it never ships.
+    const spDc = (__DEV__ && process.env.EXPO_PUBLIC_DEV_SP_DC) || (await SecureStore.getItemAsync(KEY));
     set({ spDc });
     if (spDc && (await get().refreshToken())) {
       const user = await loadUser(get().token!, spDc);
