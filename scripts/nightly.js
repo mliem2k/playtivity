@@ -264,6 +264,13 @@ After installation, authenticate with: gh auth login
                 this.buildOnRemote(process.env.PLAYTIVITY_BUILDER);
                 return true;
             }
+            // Same ccache speed-up as the remote builder, when it is installed here.
+            try {
+                execSync('ccache --version', { stdio: 'pipe' });
+                process.env.CMAKE_C_COMPILER_LAUNCHER = 'ccache';
+                process.env.CMAKE_CXX_COMPILER_LAUNCHER = 'ccache';
+                process.env.CCACHE_SLOPPINESS = 'pch_defines,time_macros';
+            } catch {}
             this.runCommand('bun install --frozen-lockfile', 'Installing dependencies');
             // Prebuild regenerates android/ from app.config.js, which reads version.yml, so the
             // nightly version written above is what lands in versionName and versionCode.
