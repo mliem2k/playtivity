@@ -1,6 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { requestWidgetUpdate } from "react-native-android-widget";
+import { claimRedraw } from "@/widget/drawn";
 import { FriendActivityWidget } from "@/widget/FriendActivityWidget";
+import { widgetSignature } from "@/widget/logic";
 import { saveActivities } from "./cache";
 import { isSample, sampleActivities, sampleListeners, sampleNowPlaying, sampleTop } from "./sample";
 import { useAuth } from "./auth";
@@ -33,7 +35,10 @@ export function useActivities() {
       const merged = mergeActivities(qc.getQueryData<Activity[]>(["activities"]) ?? [], parseFriends(body));
       if (merged.length) {
         saveActivities(merged);
-        requestWidgetUpdate({ widgetName: "FriendActivity", renderWidget: () => <FriendActivityWidget activities={merged} /> }).catch(() => {});
+        // Only repaint the widget when what it shows changed; identical repaints make it blink.
+        claimRedraw(widgetSignature(merged)).then((changed) => {
+          if (changed) requestWidgetUpdate({ widgetName: "FriendActivity", renderWidget: () => <FriendActivityWidget activities={merged} /> }).catch(() => {});
+        });
       }
       return merged;
     },

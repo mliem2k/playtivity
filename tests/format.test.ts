@@ -33,3 +33,17 @@ test("widget wording and ordering match the Flutter widget", () => {
   expect(widgetTimeText(act("a", now, true), now)).toBe("Listening now");
   expect(sortForWidget([act("old", 1), act("new", 5), act("live", 2, true)]).map((a) => a.user.id)).toEqual(["live", "new", "old"]);
 });
+
+import { widgetSignature } from "../src/widget/logic";
+
+test("the widget only repaints when what it shows changes", () => {
+  const list = [act("a", now - 7 * 60_000), act("b", now - 3 * 3_600_000)];
+  // The same content half a minute later is the same picture.
+  expect(widgetSignature(list, now + 30_000)).toBe(widgetSignature(list, now));
+  // "7m ago" and "8m ago" share a five minute bucket, so no repaint.
+  expect(widgetSignature(list, now + 60_000)).toBe(widgetSignature(list, now));
+  // Eight minutes on it crosses a bucket and repaints.
+  expect(widgetSignature(list, now + 8 * 60_000)).not.toBe(widgetSignature(list, now));
+  // A new listener or a stopped listener changes the picture.
+  expect(widgetSignature([...list, act("c", now - 1000, true)], now)).not.toBe(widgetSignature(list, now));
+});
