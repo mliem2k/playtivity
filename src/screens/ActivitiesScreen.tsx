@@ -7,7 +7,7 @@ import { useAuth } from "@/lib/auth";
 import { useActivities } from "@/lib/queries";
 import { colors } from "@/theme";
 
-export type ScrollTop = { scrollToTop: () => void };
+export type ScrollTop = { scrollToTop: () => void; scrollTo?: (y: number) => void };
 
 /** The "Friend Activity" feed: 52px header, pinned progress line, divider separated rows. */
 export const ActivitiesScreen = forwardRef<ScrollTop>(function ActivitiesScreen(_, ref) {
