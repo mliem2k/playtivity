@@ -39,12 +39,13 @@ module.exports = {
               label: "Playtivity",
               description: "See what your friends are listening to",
               minWidth: "220dp",
-              minHeight: "150dp",
+              minHeight: "110dp",
               targetCellWidth: 3,
               targetCellHeight: 2,
               maxResizeWidth: "700dp",
               maxResizeHeight: "700dp",
               resizeMode: "horizontal|vertical",
+              previewImage: "./assets/widget/preview.png",
               updatePeriodMillis: 1800000,
             },
           ],
@@ -58,7 +59,10 @@ module.exports = {
             // widget library) creates by reflection, which crashed the app on launch.
             extraProguardRules: [
               "-keep class * extends androidx.room.RoomDatabase { *; }",
-              "-keep class androidx.work.impl.WorkDatabase_Impl { *; }",
+              // WorkManager runs the widget's headless task and instantiates its workers and input
+              // mergers by reflection; shrunk, it fails and the widget never draws.
+              "-keep class androidx.work.** { *; }",
+              "-keep class com.reactnativeandroidwidget.** { *; }",
             ].join("\n"),
           },
         },
