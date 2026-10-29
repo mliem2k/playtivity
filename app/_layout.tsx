@@ -4,6 +4,7 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
 import { ActivityIndicator, LogBox, View } from "react-native";
+import { UpdateBanner } from "@/components/UpdateBanner";
 import { useAuth } from "@/lib/auth";
 import { usePrefs } from "@/lib/prefs";
 import { colors } from "@/theme";
@@ -30,6 +31,8 @@ export default function Root() {
   return (
     <QueryClientProvider client={client}>
       <StatusBar style="light" />
+      {/* Above every screen, so a download started from Settings is visible there too. */}
+      <UpdateBanner />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
         <Stack.Protected guard={!!spDc}>
           <Stack.Screen name="index" />

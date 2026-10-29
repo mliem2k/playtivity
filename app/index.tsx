@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import PagerView from "react-native-pager-view";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { UpdateBanner } from "@/components/UpdateBanner";
 import { useAuth } from "@/lib/auth";
 import { hapticSelect } from "@/lib/haptics";
 import { useUpdate } from "@/lib/updateStore";
@@ -35,7 +34,6 @@ export default function Main() {
 
   return (
     <View className="flex-1 bg-bg">
-      <UpdateBanner />
       <PagerView ref={pager} style={{ flex: 1 }} initialPage={0} onPageSelected={(e) => setIndex(e.nativeEvent.position)}>
         <View key="activities" style={{ flex: 1 }}><ActivitiesScreen ref={pages[0]} /></View>
         <View key="songs" style={{ flex: 1 }}><ProfileScreen ref={pages[1]} tab={0} onTab={(t) => pager.current?.setPage(1 + t)} /></View>

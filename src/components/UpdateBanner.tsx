@@ -1,5 +1,6 @@
 import { MaterialIcons } from "@expo/vector-icons";
-import { Pressable, Text, View } from "react-native";
+import { useEffect } from "react";
+import { AppState, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useUpdate } from "@/lib/updateStore";
 import { colors } from "@/theme";
@@ -7,6 +8,15 @@ import { colors } from "@/theme";
 /** Top banner like the Flutter one: orange for a nightly, green for a release, with download progress. */
 export function UpdateBanner() {
   const { info, phase, progress, error, install, dismiss } = useUpdate();
+
+  // Coming back from the system installer (finished or cancelled) puts the banner back to a plain offer.
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active" && useUpdate.getState().phase === "installing") useUpdate.setState({ phase: "idle", progress: 0 });
+    });
+    return () => sub.remove();
+  }, []);
+
   if (!info) return null;
   const busy = phase === "downloading";
   const label =
