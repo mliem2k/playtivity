@@ -1,60 +1,39 @@
-import CookieManager from "@preeternal/react-native-cookie-manager";
+import { MaterialIcons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { router } from "expo-router";
-import { useRef, useState } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { WebView, type WebViewNavigation } from "react-native-webview";
-import { useAuth } from "@/lib/auth";
-import { UA } from "@/lib/spotify";
+import { colors } from "@/theme";
+import { runUpdateCheck } from "@/lib/updateUi";
 
-const LOGIN = "https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F";
-const BLOCKED = ["/login", "/auth", "/challenge", "/error"];
-const eligible = (url: string) => url.includes("open.spotify.com") && !BLOCKED.some((b) => url.includes(b));
-
+/** Landing screen: logo, tagline and a green stadium button that opens the Spotify web login. */
 export default function Login() {
-  const signIn = useAuth((s) => s.signIn);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const done = useRef(false);
-
-  // sp_dc is httpOnly, so it is read from the native cookie store. The SPA may commit it a moment
-  // after navigation, hence the bounded retry.
-  const capture = async () => {
-    for (let i = 0; i < 8 && !done.current; i++) {
-      const cookies = await CookieManager.get("https://open.spotify.com", true);
-      const spDc = cookies.sp_dc?.value;
-      if (spDc) {
-        done.current = true;
-        setBusy(true);
-        if (await signIn(spDc)) router.replace("/(tabs)");
-        else {
-          done.current = false;
-          setBusy(false);
-          setError("Spotify rejected the session. Try again.");
-        }
-        return;
-      }
-      await new Promise((r) => setTimeout(r, 1000));
-    }
-  };
-
-  const onNav = (n: WebViewNavigation) => {
-    if (!n.loading && eligible(n.url)) capture();
-  };
-
   return (
-    <SafeAreaView className="flex-1 bg-bg">
-      {busy ? (
-        <View className="flex-1 items-center justify-center gap-3">
-          <ActivityIndicator color="#1DB954" />
-          <Text className="text-muted">Signing in</Text>
+    <SafeAreaView className="flex-1" style={{ backgroundColor: colors.login }}>
+      <View style={{ alignItems: "flex-end", padding: 8 }}>
+        <Pressable onPress={runUpdateCheck} style={{ padding: 8 }} accessibilityLabel="Check for Updates">
+          <MaterialIcons name="system-update" size={24} color={colors.textSecondary} />
+        </Pressable>
+      </View>
+      <View style={{ flex: 1, paddingHorizontal: 32 }}>
+        <View style={{ flex: 2 }} />
+        <View style={{ alignItems: "center" }}>
+          <Image source={require("../assets/images/playtivity_logo.png")} style={{ width: 120, height: 120, borderRadius: 20 }} contentFit="contain" />
         </View>
-      ) : (
-        <>
-          {error ? <Text className="p-3 text-danger">{error}</Text> : null}
-          <WebView source={{ uri: LOGIN }} userAgent={UA} onNavigationStateChange={onNav} sharedCookiesEnabled thirdPartyCookiesEnabled />
-        </>
-      )}
+        <Text className="mt-8 text-center font-mont-xb text-white" style={{ fontSize: 32, letterSpacing: -0.5 }}>Playtivity</Text>
+        <Text className="mt-3 text-center font-mont text-muted" style={{ fontSize: 16 }}>See what your friends are listening to</Text>
+        <View style={{ flex: 3 }} />
+        <Pressable
+          onPress={() => router.push("/login-webview")}
+          className="flex-row items-center justify-center rounded-full bg-primary"
+          style={{ height: 56, gap: 10 }}
+        >
+          <Image source={require("../assets/images/playtivity_logo_button_icon.png")} style={{ width: 20, height: 20 }} tintColor={colors.onPrimary} />
+          <Text className="font-mont-b" style={{ fontSize: 16, color: colors.onPrimary }}>Log in with Spotify</Text>
+        </Pressable>
+        <Text className="mt-6 text-center font-mont" style={{ fontSize: 12, color: colors.textSubdued }}>Playtivity uses your Spotify account</Text>
+        <View style={{ flex: 1 }} />
+      </View>
     </SafeAreaView>
   );
 }

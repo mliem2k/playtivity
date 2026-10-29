@@ -1,10 +1,11 @@
 import "../global.css";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Redirect, Stack } from "expo-router";
+import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { useAuth } from "@/lib/auth";
+import { colors } from "@/theme";
 
 const client = new QueryClient();
 
@@ -17,18 +18,23 @@ export default function Root() {
   if (!ready)
     return (
       <View className="flex-1 items-center justify-center bg-bg">
-        <ActivityIndicator color="#1DB954" />
+        <ActivityIndicator color={colors.primary} />
       </View>
     );
 
   return (
     <QueryClientProvider client={client}>
       <StatusBar style="light" />
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: "#121212" } }}>
-        <Stack.Screen name="login" />
-        <Stack.Screen name="(tabs)" />
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
+        <Stack.Protected guard={!!spDc}>
+          <Stack.Screen name="index" />
+          <Stack.Screen name="settings" />
+        </Stack.Protected>
+        <Stack.Protected guard={!spDc}>
+          <Stack.Screen name="login" options={{ contentStyle: { backgroundColor: colors.login } }} />
+          <Stack.Screen name="login-webview" />
+        </Stack.Protected>
       </Stack>
-      <Redirect href={spDc ? "/(tabs)" : "/login"} />
     </QueryClientProvider>
   );
 }

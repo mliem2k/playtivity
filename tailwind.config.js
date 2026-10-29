@@ -4,6 +4,13 @@ module.exports = {
   presets: [require("nativewind/preset")],
   theme: {
     extend: {
+      fontFamily: {
+        mont: ["Montserrat-Regular"],
+        "mont-md": ["Montserrat-Medium"],
+        "mont-sb": ["Montserrat-SemiBold"],
+        "mont-b": ["Montserrat-Bold"],
+        "mont-xb": ["Montserrat-ExtraBold"],
+      },
       colors: {
         bg: "#121212",
         raised: "#181818",

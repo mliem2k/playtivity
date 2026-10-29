@@ -5,16 +5,18 @@ export const UA =
 const SPCLIENT = "https://guc-spclient.spotify.com";
 const PARTNER = "https://api-partner.spotify.com/pathfinder/v2/query";
 const TOP_HASH = "feb6d55177e2cbce2ac59214f9493f1ef2e4368eec01b3d4c3468fa1b97336e2";
+const ARTIST_URL = "https://api-partner.spotify.com/pathfinder/v1/query";
+const ARTIST_HASH = "d66221ea13998b2f81883c5187d174c8646e4041d67f5b1e103bc262d447e3a0";
 const SECRETS_URL = "https://github.com/xyloflake/spot-secrets-go/blob/main/secrets/secretDict.json?raw=true";
 export const PLAYING_MS = 5 * 60 * 1000;
 
 export class AuthError extends Error {}
 
-export type User = { id: string; displayName: string; imageUrl?: string };
-export type Track = { name: string; artists: string[]; album: string; imageUrl?: string; uri: string };
+export type User = { id: string; displayName: string; imageUrl?: string; followers?: number; country?: string; email?: string };
+export type Track = { name: string; artists: string[]; album: string; imageUrl?: string; uri: string; durationMs?: number };
 export type Playlist = { name: string; imageUrl?: string; trackCount: number; uri: string; ownerName: string };
 export type Activity = { user: User; track?: Track; playlist?: Playlist; timestamp: number; playing: boolean };
-export type Artist = { name: string; imageUrl?: string; uri: string };
+export type Artist = { name: string; imageUrl?: string; uri: string; monthlyListeners?: number };
 
 const webHeaders = (token: string) => ({
   Authorization: `Bearer ${token}`,
@@ -88,7 +90,7 @@ export async function fetchProfile(token: string): Promise<User | null> {
   const r = await fetch(`${SPCLIENT}/user-profile-view/v3/profile/${id}`, { headers: webHeaders(token) });
   if (!r.ok) return null;
   const j = await r.json();
-  return { id, displayName: j.name ?? id, imageUrl: j.image_url ?? undefined };
+  return { id, displayName: j.name ?? id, imageUrl: j.image_url ?? undefined, followers: Number(j.followers_count) || 0 };
 }
 
 async function retry<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
@@ -201,6 +203,7 @@ export async function fetchTop(token: string, limit = 20): Promise<{ tracks: Tra
       album: t.albumOfTrack?.name ?? "Unknown Album",
       imageUrl: bestImage(t.albumOfTrack?.coverArt?.sources, 300),
       uri: t.uri ?? "",
+      durationMs: t.duration?.totalMilliseconds ?? 0,
     };
   });
   const artists: Artist[] = (profile?.topArtists?.items ?? []).map((i: any) => {
@@ -216,3 +219,55 @@ export const spotifyUrl = (uri: string) => {
 };
 
 export { lastSegment };
+
+/** What the signed in user is playing right now, or null when nothing is (HTTP 204) or on any failure. */
+export async function fetchCurrentlyPlaying(token: string): Promise<Track | null> {
+  const r = await fetch("https://api.spotify.com/v1/me/player/currently-playing", {
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/json, text/plain, */*", "User-Agent": "okhttp/4.9.2" },
+  });
+  if (r.status !== 200) return null;
+  const item = (await r.json().catch(() => null))?.item;
+  if (!item) return null;
+  return {
+    name: item.name ?? "",
+    artists: (item.artists ?? []).map((a: any) => a.name).filter(Boolean),
+    album: item.album?.name ?? "",
+    imageUrl: item.album?.images?.[0]?.url,
+    uri: item.uri ?? "",
+    durationMs: item.duration_ms ?? 0,
+  };
+}
+
+/** Monthly listeners for one artist id; -1 when the lookup fails so the tile hides the line. */
+export async function fetchArtistListeners(token: string, artistId: string): Promise<number> {
+  try {
+    const qs = new URLSearchParams({
+      operationName: "queryArtistOverview",
+      variables: JSON.stringify({ uri: `spotify:artist:${artistId}`, locale: "", includePrerelease: true }),
+      extensions: JSON.stringify({ persistedQuery: { version: 1, sha256Hash: ARTIST_HASH } }),
+    });
+    const j = await retry(async () => {
+      const r = await fetch(`${ARTIST_URL}?${qs}`, { headers: webHeaders(token) });
+      check(r.status, "artist details");
+      return r.json();
+    });
+    return Number(j?.data?.artist?.stats?.monthlyListeners) || 0;
+  } catch {
+    return -1;
+  }
+}
+
+/** Email and country from the account settings endpoint; needs only the sp_dc cookie and is not rate limited. */
+export async function fetchAccountProfile(spDc: string): Promise<{ email: string; country: string } | null> {
+  try {
+    const r = await fetch("https://www.spotify.com/api/account-settings/v1/profile", {
+      headers: { Cookie: `sp_dc=${spDc}`, "User-Agent": UA, Accept: "application/json", Referer: "https://www.spotify.com/account/overview/" },
+      credentials: "omit",
+    });
+    if (r.status !== 200) return null;
+    const p = (await r.json())?.profile;
+    return p ? { email: p.email ?? "", country: p.country ?? "" } : null;
+  } catch {
+    return null;
+  }
+}

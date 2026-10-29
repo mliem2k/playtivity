@@ -290,6 +290,9 @@ After installation, authenticate with: gh auth login
         fs.writeFileSync(listFile, tracked.join('\n'));
 
         this.runCommand(`ssh ${host} "if not exist C:\\b\\pt mkdir C:\\b\\pt"`, `Preparing ${host}`);
+        // Source folders are replaced, not merged: a route or module deleted here must not survive there.
+        const remoteWin = 'C:\\b\\pt';
+        this.runCommand(`ssh ${host} "for %d in (app src tests plugins) do if exist ${remoteWin}\\%d rmdir /s /q ${remoteWin}\\%d"`, `Clearing stale sources on ${host}`);
         this.runCommand(`COPYFILE_DISABLE=1 tar -c -T "${listFile}" -f - | ssh ${host} "tar -x -C ${remoteDir} -f -"`, `Syncing source to ${host}`);
         this.runCommand(`scp -q scripts/builder/build-android.ps1 ${host}:C:/b/build-android.ps1`, 'Copying build script');
         this.runCommand(`ssh ${host} "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\b\\build-android.ps1"`, `Building on ${host}`);
