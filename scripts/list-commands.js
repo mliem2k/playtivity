@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 const { execSync } = require('child_process');
 
@@ -9,44 +9,44 @@ Available Commands:
 ═══════════════════
 
 📱 Development Builds (Testing)
-  npm run build           # Quick build (increment build number)
-  npm run build:patch     # Patch version increment
-  npm run build:minor     # Minor version increment  
-  npm run build:major     # Major version increment
+  bun run build           # Quick build (increment build number)
+  bun run build:patch     # Patch version increment
+  bun run build:minor     # Minor version increment  
+  bun run build:major     # Major version increment
 
 🏗️ Release Builds (Production)
-  npm run release         # Standard release (patch increment)
-  npm run release:patch   # Patch version release
-  npm run release:minor   # Minor version release
-  npm run release:major   # Major version release
-  npm run release:apk-only # APK only, skip AAB bundle
+  bun run release         # Standard release (patch increment)
+  bun run release:patch   # Patch version release
+  bun run release:minor   # Minor version release
+  bun run release:major   # Major version release
+  bun run release:apk-only # APK only, skip AAB bundle
 
 🌙 Nightly Builds (Development)
-  npm run nightly         # Create nightly build
-  npm run nightly:keep-10 # Keep 10 old nightly builds
+  bun run nightly         # Create nightly build
+  bun run nightly:keep-10 # Keep 10 old nightly builds
 
 ⬆️ Nightly Promotion (Nightly → Release)
-  npm run nightly:promote       # Promote latest nightly (patch)
-  npm run nightly:promote-patch # Promote with patch increment
-  npm run nightly:promote-minor # Promote with minor increment
-  npm run nightly:promote-major # Promote with major increment
+  bun run nightly:promote       # Promote latest nightly (patch)
+  bun run nightly:promote-patch # Promote with patch increment
+  bun run nightly:promote-minor # Promote with minor increment
+  bun run nightly:promote-major # Promote with major increment
 
 🐙 GitHub Releases
-  npm run nightly:github        # Upload latest nightly to GitHub
-  npm run nightly:github-stable # Upload as stable release
+  bun run nightly:github        # Upload latest nightly to GitHub
+  bun run nightly:github-stable # Upload as stable release
 
 ❓ Help Commands
-  npm run help                  # Development build help
-  npm run help:release          # Release build help
-  npm run help:nightly          # Nightly build help
-  npm run help:nightly-promote  # Nightly promotion help
-  npm run help:nightly-github   # GitHub release help
+  bun run help                  # Development build help
+  bun run help:release          # Release build help
+  bun run help:nightly          # Nightly build help
+  bun run help:nightly-promote  # Nightly promotion help
+  bun run help:nightly-github   # GitHub release help
 
 Direct Script Usage:
-  node scripts/build-apk.js [increment-type]
-  node scripts/release-apk.js [increment-type] [--no-bundle]
-  node scripts/nightly.js [--keep-builds N]
-  node scripts/nightly-release.js [increment-type] [--build-id ID]
+  bun scripts/build-apk.js [increment-type]
+  bun scripts/release-apk.js [increment-type] [--no-bundle]
+  bun scripts/nightly.js [--keep-builds N]
+  bun scripts/nightly-release.js [increment-type] [--build-id ID]
 
 Build Outputs:
   builds/     - Development builds
@@ -79,4 +79,4 @@ try {
     // Ignore errors when not in project directory
 }
 
-console.log('\n💡 Quick Start: npm run build (for development) or npm run release (for production)\n');
+console.log('\n💡 Quick Start: bun run build (for development) or bun run release (for production)\n');

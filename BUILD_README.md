@@ -6,46 +6,46 @@ This directory contains Node.js scripts to build and release Playtivity APK file
 
 ```bash
 # List all available commands
-npm run list
+bun run list
 
 # Quick development build
-npm run build
+bun run build
 
 # Production release
-npm run release
+bun run release
 
 # Latest development with nightly branding
-npm run nightly
+bun run nightly
 ```
 
 ### Development Builds (Testing)
 ```bash
 # Quick development build (increment build number only)
-node build-apk.js          # or: npm run build
+bun build-apk.js          # or: bun run build
 ```
 
 ### Release Builds (Distribution)
 ```bash
 # Production release (increment patch version, signed APK + AAB)
-node release-apk.js         # or: npm run release
+bun release-apk.js         # or: bun run release
 ```
 
 ### Nightly Builds (Latest Development)
 ```bash
 # Latest development build with nightly branding
-node nightly-apk.js         # or: npm run nightly
+bun nightly-apk.js         # or: bun run nightly
 ```
 
 ### Nightly Release Promotion
 ```bash
 # Promote tested nightly build to official release
-node nightly-release.js     # or: npm run nightly:promote
+bun nightly-release.js     # or: bun run nightly:promote
 ```
 
 ### Nightly GitHub Release
 ```bash
 # Create GitHub release from nightly build
-node nightly-github-release.js  # or: npm run nightly:github
+bun nightly-github-release.js  # or: bun run nightly:github
 ```
 
 ## 📱 Build Types Comparison
@@ -65,29 +65,29 @@ node nightly-github-release.js  # or: npm run nightly:github
 ### Node.js
 ```bash
 # Quick build (increment build number: 0.0.1+1 → 0.0.1+2)
-node build-apk.js
+bun build-apk.js
 
 # Increment version parts
-node build-apk.js patch     # 0.0.1+5 → 0.0.2+1
-node build-apk.js minor     # 0.1.2+3 → 0.2.0+1  
-node build-apk.js major     # 1.2.3+4 → 2.0.0+1
+bun build-apk.js patch     # 0.0.1+5 → 0.0.2+1
+bun build-apk.js minor     # 0.1.2+3 → 0.2.0+1  
+bun build-apk.js major     # 1.2.3+4 → 2.0.0+1
 ```
 
 ### NPM Scripts
 ```bash
-npm run build         # Default build
-npm run build:patch   # Patch version
-npm run build:minor   # Minor version  
-npm run build:major   # Major version
-npm run help          # Show help
+bun run build         # Default build
+bun run build:patch   # Patch version
+bun run build:minor   # Minor version  
+bun run build:major   # Major version
+bun run help          # Show help
 ```
 
 ### NPM Scripts
 ```bash
-npm run build              # Default build
-npm run build:patch        # Patch version
-npm run build:minor        # Minor version
-npm run build:major        # Major version
+bun run build              # Default build
+bun run build:patch        # Patch version
+bun run build:minor        # Minor version
+bun run build:major        # Major version
 ```
 
 ### PowerShell
@@ -101,24 +101,24 @@ npm run build:major        # Major version
 ### Node.js
 ```bash
 # Standard release (increment patch: 0.0.1 → 0.0.2)
-node release-apk.js
+bun release-apk.js
 
 # Different version increments
-node release-apk.js minor           # 0.1.0 → 0.2.0
-node release-apk.js major           # 1.0.0 → 2.0.0
-node release-apk.js none            # Don't increment version
+bun release-apk.js minor           # 0.1.0 → 0.2.0
+bun release-apk.js major           # 1.0.0 → 2.0.0
+bun release-apk.js none            # Don't increment version
 
 # APK-only release (skip AAB bundle)
-node release-apk.js --no-bundle
+bun release-apk.js --no-bundle
 ```
 
 ### NPM Scripts
 ```bash
-npm run release             # Standard release
-npm run release:patch       # Patch version
-npm run release:minor       # Minor version  
-npm run release:major       # Major version
-npm run release:apk-only    # APK only, no AAB
+bun run release             # Standard release
+bun run release:patch       # Patch version
+bun run release:minor       # Minor version  
+bun run release:major       # Major version
+bun run release:apk-only    # APK only, no AAB
 ```
 
 ### PowerShell
@@ -135,16 +135,16 @@ npm run release:apk-only    # APK only, no AAB
 ### Node.js
 ```bash
 # Create nightly build from latest development code
-node nightly-apk.js
+bun nightly-apk.js
 
 # Keep more old nightly builds
-node nightly-apk.js --keep-builds 10
+bun nightly-apk.js --keep-builds 10
 ```
 
 ### NPM Scripts
 ```bash
-npm run nightly             # Standard nightly build
-npm run nightly:keep-10     # Keep 10 old builds
+bun run nightly             # Standard nightly build
+bun run nightly:keep-10     # Keep 10 old builds
 ```
 
 ### Nightly Build Features
@@ -163,26 +163,26 @@ After testing a nightly build and confirming it's stable, you can promote it to 
 ### Node.js
 ```bash
 # Promote latest nightly to release (patch increment)
-node nightly-release.js
+bun nightly-release.js
 
 # Promote with version increment type
-node nightly-release.js patch     # 0.0.1-nightly-... → 0.0.2+1
-node nightly-release.js minor     # 0.1.0-nightly-... → 0.2.0+1
-node nightly-release.js major     # 1.0.0-nightly-... → 2.0.0+1
+bun nightly-release.js patch     # 0.0.1-nightly-... → 0.0.2+1
+bun nightly-release.js minor     # 0.1.0-nightly-... → 0.2.0+1
+bun nightly-release.js major     # 1.0.0-nightly-... → 2.0.0+1
 
 # Promote specific nightly build
-node nightly-release.js --build-id 20250614-143022
+bun nightly-release.js --build-id 20250614-143022
 
 # Custom version for release
-node nightly-release.js --version 1.5.0
+bun nightly-release.js --version 1.5.0
 ```
 
 ### NPM Scripts
 ```bash
-npm run nightly:promote              # Promote latest (patch increment)
-npm run nightly:promote-patch        # Patch increment
-npm run nightly:promote-minor        # Minor increment
-npm run nightly:promote-major        # Major increment
+bun run nightly:promote              # Promote latest (patch increment)
+bun run nightly:promote-patch        # Patch increment
+bun run nightly:promote-minor        # Minor increment
+bun run nightly:promote-major        # Major increment
 ```
 
 ### PowerShell
@@ -215,47 +215,47 @@ npm run nightly:promote-major        # Major increment
 ### Standard Development Cycle
 ```bash
 # 1. Quick testing during development
-npm run build                    # Create development builds for testing
+bun run build                    # Create development builds for testing
 
 # 2. Ready for release
-npm run release                  # Create official release when stable
+bun run release                  # Create official release when stable
 ```
 
 ### Nightly Development Cycle
 ```bash
 # 1. Create nightly with latest development code
-npm run nightly                  # Build with nightly branding + git tracking
+bun run nightly                  # Build with nightly branding + git tracking
 
 # 2. Test the nightly build thoroughly
 # (Install and test the APK from nightly/ folder)
 
 # 3. If nightly is stable, promote to official release
-npm run nightly:promote          # Convert tested nightly to official release
+bun run nightly:promote          # Convert tested nightly to official release
 ```
 
 ### Nightly GitHub Release Cycle
 ```bash
 # 1. Create nightly with latest development code
-npm run nightly                  # Build with nightly branding + git tracking
+bun run nightly                  # Build with nightly branding + git tracking
 
 # 2. Share nightly build on GitHub for community testing
-npm run nightly:github           # Upload to GitHub releases as prerelease
+bun run nightly:github           # Upload to GitHub releases as prerelease
 
 # 3. (Optional) After community testing, promote to official release
-npm run nightly:promote          # Convert tested nightly to official release
+bun run nightly:promote          # Convert tested nightly to official release
 ```
 
 ### Recommended Workflow
-1. **Daily Development**: Use `npm run build` for rapid testing
-2. **Weekly Nightly**: Use `npm run nightly` to test latest development code
-3. **Monthly Releases**: Use `npm run release` or promote tested nightly builds
-4. **Emergency Fixes**: Use `npm run release patch` for quick bug fixes
+1. **Daily Development**: Use `bun run build` for rapid testing
+2. **Weekly Nightly**: Use `bun run nightly` to test latest development code
+3. **Monthly Releases**: Use `bun run release` or promote tested nightly builds
+4. **Emergency Fixes**: Use `bun run release patch` for quick bug fixes
 
 ### GitHub Release Workflow
-1. **Create Nightly**: Use `npm run nightly` to build with git tracking
-2. **Share for Testing**: Use `npm run nightly:github` to upload to GitHub
+1. **Create Nightly**: Use `bun run nightly` to build with git tracking
+2. **Share for Testing**: Use `bun run nightly:github` to upload to GitHub
 3. **Community Feedback**: Let testers download and provide feedback
-4. **Promote if Stable**: Use `npm run nightly:promote` for official release
+4. **Promote if Stable**: Use `bun run nightly:promote` for official release
 
 ## 🔧 GitHub Release Setup
 
@@ -293,41 +293,41 @@ This will open a web browser to authenticate with GitHub. Choose your preferred 
 ### Node.js
 ```bash
 # Quick build (increment build number)
-node build-apk.js
+bun build-apk.js
 
 # Increment patch version
-node build-apk.js patch
+bun build-apk.js patch
 
 # Increment minor version  
-node build-apk.js minor
+bun build-apk.js minor
 
 # Increment major version
-node build-apk.js major
+bun build-apk.js major
 
 # Show help
-node build-apk.js --help
+bun build-apk.js --help
 ```
 
 ### NPM Scripts
 ```bash
-npm run build         # Default build
-npm run build:patch   # Patch version
-npm run build:minor   # Minor version  
-npm run build:major   # Major version
-npm run help          # Show help
+bun run build         # Default build
+bun run build:patch   # Patch version
+bun run build:minor   # Minor version  
+bun run build:major   # Major version
+bun run help          # Show help
 ```
 
 ### Nightly GitHub Release Examples
 ```bash
 # Create and share latest nightly on GitHub
-npm run nightly && npm run nightly:github
+bun run nightly && bun run nightly:github
 
 # Share specific nightly build
-npm run nightly:github               # Latest nightly
-node nightly-github-release.js --build-id 20250614-143022  # Specific build
+bun run nightly:github               # Latest nightly
+bun nightly-github-release.js --build-id 20250614-143022  # Specific build
 
 # Mark nightly as stable release (not prerelease)
-npm run nightly:github-stable
+bun run nightly:github-stable
 ```
 
 ## 🏗️ Release Build Usage
@@ -335,24 +335,24 @@ npm run nightly:github-stable
 ### Node.js
 ```bash
 # Default release build (patch increment)
-node release-apk.js
+bun release-apk.js
 
 # Increment version types
-node release-apk.js patch   # 0.0.1+5 → 0.0.2+1
-node release-apk.js minor   # 0.1.2+3 → 0.2.0+1  
-node release-apk.js major   # 1.2.3+4 → 2.0.0+1
+bun release-apk.js patch   # 0.0.1+5 → 0.0.2+1
+bun release-apk.js minor   # 0.1.2+3 → 0.2.0+1  
+bun release-apk.js major   # 1.2.3+4 → 2.0.0+1
 
 # APK only (skip AAB bundle)
-node release-apk.js --no-bundle
+bun release-apk.js --no-bundle
 ```
 
 ### NPM Scripts
 ```bash
-npm run release           # Default release (patch)
-npm run release:patch     # Patch version
-npm run release:minor     # Minor version
-npm run release:major     # Major version
-npm run release:apk-only  # APK only, no AAB
+bun run release           # Default release (patch)
+bun run release:patch     # Patch version
+bun run release:minor     # Minor version
+bun run release:major     # Major version
+bun run release:apk-only  # APK only, no AAB
 ```
 
 ### PowerShell
@@ -471,10 +471,10 @@ adb install "nightly/playtivity-nightly-20250614-143022-a1b2c3d.apk"
 1. **📖 Read Current Version**: Parse version from `pubspec.yaml`
 2. **🔢 Increment Build Number**: Increment build number only (for testing)
 3. **💾 Update pubspec.yaml**: Write new version back to file
-4. **🧹 Clean Build**: Run `flutter clean` to ensure fresh build
-5. **📦 Get Dependencies**: Run `flutter pub get`
+4. **🧹 Clean Build**: Run `bunx expo prebuild --clean` to ensure fresh build
+5. **📦 Get Dependencies**: Run `bun install`
 6. **🧪 Run Tests**: Execute tests (continues on failure)
-7. **🔨 Build APK**: Create debug APK with `flutter build apk --release`
+7. **🔨 Build APK**: Create debug APK with `./gradlew assembleRelease`
 8. **📁 Copy & Organize**: Copy APK to `builds/` with timestamp
 
 ### Release Build Process (`release-apk.js`)
@@ -482,8 +482,8 @@ adb install "nightly/playtivity-nightly-20250614-143022-a1b2c3d.apk"
 2. **📖 Read Current Version**: Parse version from `pubspec.yaml`
 3. **🔢 Increment Version**: Increment version number (patch/minor/major)
 4. **💾 Update pubspec.yaml**: Write new version back to file
-5. **🧹 Clean Build**: Run `flutter clean` to ensure fresh build
-6. **📦 Get Dependencies**: Run `flutter pub get`
+5. **🧹 Clean Build**: Run `bunx expo prebuild --clean` to ensure fresh build
+6. **📦 Get Dependencies**: Run `bun install`
 7. **🧪 Run Tests**: Execute tests (continues on failure)
 8. **🔨 Build Signed APK**: Create signed APK with release keystore
 9. **📦 Build AAB Bundle**: Create signed App Bundle for Play Store
@@ -496,7 +496,7 @@ adb install "nightly/playtivity-nightly-20250614-143022-a1b2c3d.apk"
 
 ### For All Scripts:
 - Node.js 14.0.0 or higher
-- Flutter SDK (or FVM)
+- Android SDK, JDK 17 and Bun
 - Android SDK (for release signing verification)
 - **Java 21** (required for Android builds - configured in `android/app/build.gradle.kts`)
 
@@ -557,14 +557,14 @@ Android requires a higher version code (build number) for app updates. These scr
 
 ## 🔍 Troubleshooting
 
-### "Flutter not found"
-- Ensure Flutter SDK is in your PATH
+### "Android SDK not found"
+- Set ANDROID_HOME to your Android SDK
 - Or install and use FVM: `dart pub global activate fvm`
 
 ### "Build failed"
 - Check that you're in the project root directory
 - Ensure `pubspec.yaml` exists
-- Run `flutter doctor` to check Flutter installation
+- Check ANDROID_HOME and JDK 17
 
 ### "Permission denied" (PowerShell)
 ```powershell
@@ -578,7 +578,7 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 - Check available storage space
 
 ### "No nightly builds found" (Nightly Promotion)
-- Run `npm run nightly` first to create nightly builds
+- Run `bun run nightly` first to create nightly builds
 - Check that `nightly/` folder exists with APK files
 - Verify nightly build completed successfully
 

@@ -1,10 +1,10 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Fetches a Spotify web-player JWT access token using an sp_dc cookie.
 // Mirrors SpotifyTokenService + SpotifyTotpHelper from the Flutter app.
 //
 // Usage:
-//   node scripts/get_token.js <sp_dc_value>
-//   node scripts/get_token.js   (reads SP_DC from .env or environment)
+//   bun scripts/get_token.js <sp_dc_value>
+//   bun scripts/get_token.js   (reads SP_DC from .env or environment)
 
 const https = require('https');
 const crypto = require('crypto');
@@ -130,7 +130,7 @@ async function main() {
 
   const spDc = process.argv[2] || process.env.SP_DC || process.env.sp_dc;
   if (!spDc) {
-    console.error('Usage: node scripts/get_token.js <sp_dc_value>');
+    console.error('Usage: bun scripts/get_token.js <sp_dc_value>');
     console.error('   or: set SP_DC in .env');
     process.exit(1);
   }

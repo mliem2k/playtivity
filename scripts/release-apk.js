@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 const fs = require('fs');
 const path = require('path');
@@ -8,11 +8,11 @@ const crypto = require('crypto');
 class APKReleaser {
     constructor() {
         this.projectRoot = path.join(__dirname, '..');
-        this.pubspecPath = path.join(this.projectRoot, 'pubspec.yaml');
+        this.pubspecPath = path.join(this.projectRoot, 'version.yml');
         this.outputDir = path.join(this.projectRoot, 'releases');
         this.keystorePath = path.join(this.projectRoot, 'release-key.jks');
         this.keystoreBase64Path = path.join(this.projectRoot, 'keystore.base64.txt');
-        this.apkPath = path.join(this.projectRoot, 'build', 'app', 'outputs', 'flutter-apk', 'app-release.apk');
+        this.apkPath = path.join(this.projectRoot, 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk');
         this.bundlePath = path.join(this.projectRoot, 'build', 'app', 'outputs', 'bundle', 'release', 'app-release.aab');
     }
 
@@ -43,7 +43,7 @@ class APKReleaser {
             const content = fs.readFileSync(this.pubspecPath, 'utf8');
             return content;
         } catch (error) {
-            throw new Error(`Failed to read pubspec.yaml: ${error.message}`);
+            throw new Error(`Failed to read version.yml: ${error.message}`);
         }
     }
 
@@ -51,14 +51,14 @@ class APKReleaser {
         try {
             fs.writeFileSync(this.pubspecPath, content, 'utf8');
         } catch (error) {
-            throw new Error(`Failed to write pubspec.yaml: ${error.message}`);
+            throw new Error(`Failed to write version.yml: ${error.message}`);
         }
     }
 
     parseVersion(versionLine) {
         const match = versionLine.match(/version:\s*(.+)/);
         if (!match) {
-            throw new Error('Invalid version format in pubspec.yaml');
+            throw new Error('Invalid version format in version.yml');
         }
 
         const fullVersion = match[1].trim();
@@ -81,11 +81,11 @@ class APKReleaser {
             }
         }
         
-        throw new Error('Version line not found in pubspec.yaml');
+        throw new Error('Version line not found in version.yml');
     }
 
     incrementVersion(incrementType = 'patch') {
-        this.log('Reading current version from pubspec.yaml');
+        this.log('Reading current version from version.yml');
         
         const content = this.readPubspec();
         const lines = content.split('\n');
@@ -102,7 +102,7 @@ class APKReleaser {
         }
 
         if (versionLineIndex === -1) {
-            throw new Error('Version line not found in pubspec.yaml');
+            throw new Error('Version line not found in version.yml');
         }
 
         this.log(`Current version: ${currentVersion.fullVersion}`);
@@ -497,7 +497,7 @@ function showHelp() {
     console.log(`
 Playtivity Release Builder
 
-Usage: node release-apk.js [increment-type] [options]
+Usage: bun release-apk.js [increment-type] [options]
 
 Increment Types:
   patch (default) - Increment patch version (0.0.1 → 0.0.2)
@@ -510,10 +510,10 @@ Options:
   --help, -h     - Show this help message
 
 Examples:
-  node release-apk.js              # Increment patch, build APK + AAB
-  node release-apk.js minor        # Increment minor version
-  node release-apk.js --no-bundle  # Build APK only, no AAB
-  node release-apk.js none         # Build release without version increment
+  bun release-apk.js              # Increment patch, build APK + AAB
+  bun release-apk.js minor        # Increment minor version
+  bun release-apk.js --no-bundle  # Build APK only, no AAB
+  bun release-apk.js none         # Build release without version increment
 
 Environment Variables:
   ANDROID_KEYSTORE_PASSWORD - Keystore password (default: playtivity123)
@@ -522,7 +522,7 @@ Environment Variables:
 
 The script will:
   - Set up keystore for release signing
-  - Increment version in pubspec.yaml
+  - Increment version in version.yml
   - Build signed release APK
   - Build signed release AAB (optional)
   - Generate checksums and release notes

@@ -129,3 +129,10 @@ Carthage/Build/
 **/fastlane/README.md
 **/fastlane/Preview.html
 **/fastlane/test_output
+
+# Expo prebuild output and archived Flutter native projects
+/android/
+/ios/
+.expo/
+.legacy/
+dist/
