@@ -14,7 +14,9 @@ async function loadUser(token: string, spDc: string): Promise<User | null> {
   const id = account?.username || userIdFromJwt(token);
   if (!id) return null;
   const profile = (await fetchProfile(token, id).catch(() => null)) ?? { id, displayName: id };
-  return { ...profile, email: account?.email, country: account?.country };
+  // Debug only (screenshots): keep the account email out of the picture.
+  const email = __DEV__ && process.env.EXPO_PUBLIC_DEV_HIDE_EMAIL ? undefined : account?.email;
+  return { ...profile, email, country: account?.country };
 }
 
 type AuthState = {

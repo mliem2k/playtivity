@@ -3,12 +3,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
-import { ActivityIndicator, View } from "react-native";
+import { ActivityIndicator, LogBox, View } from "react-native";
 import { useAuth } from "@/lib/auth";
 import { usePrefs } from "@/lib/prefs";
 import { colors } from "@/theme";
 
 const client = new QueryClient();
+
+// Debug builds that sign in from the environment are for screenshots, so keep the warning toast out of them.
+if (__DEV__ && process.env.EXPO_PUBLIC_DEV_SP_DC) LogBox.ignoreAllLogs();
 
 export default function Root() {
   const { ready, spDc, init } = useAuth();
