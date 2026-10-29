@@ -1,5 +1,4 @@
 import { MaterialIcons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
@@ -7,6 +6,8 @@ import { Alert, Linking, Pressable, ScrollView, Switch, Text, View } from "react
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Avatar, Divider, SectionHeader, type IconName } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
+import { hapticSelect } from "@/lib/haptics";
+import { usePrefs } from "@/lib/prefs";
 import { currentVersion, getNightlyPref, setNightlyPref } from "@/lib/update";
 import { runUpdateCheck } from "@/lib/updateUi";
 import { colors } from "@/theme";
@@ -18,7 +19,7 @@ function Tile({ icon, title, subtitle, onPress, trailing, danger }: { icon: Icon
       disabled={!onPress}
       android_ripple={{ color: "#ffffff14" }}
       onPress={() => {
-        Haptics.selectionAsync();
+        hapticSelect();
         onPress?.();
       }}
       style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12 }}
@@ -36,6 +37,7 @@ function Tile({ icon, title, subtitle, onPress, trailing, danger }: { icon: Icon
 export default function Settings() {
   const { user, signOut } = useAuth();
   const [nightly, setNightly] = useState<boolean | null>(null);
+  const { haptics, setHaptics } = usePrefs();
   useEffect(() => {
     getNightlyPref().then(setNightly);
   }, []);
@@ -84,6 +86,15 @@ export default function Settings() {
 
         <SectionHeader label="ACCOUNT" />
         <Tile icon="public" title="Country" subtitle={user?.country} />
+        <Divider indent={56} />
+
+        <SectionHeader label="PREFERENCES" />
+        <Tile
+          icon="vibration"
+          title="Haptic Feedback"
+          subtitle="Vibrate on taps and swipes"
+          trailing={<Switch value={haptics} onValueChange={setHaptics} trackColor={{ true: colors.primary }} />}
+        />
         <Divider indent={56} />
 
         <SectionHeader label="UPDATES" />

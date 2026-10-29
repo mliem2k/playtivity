@@ -1,11 +1,11 @@
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import PagerView from "react-native-pager-view";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { useAuth } from "@/lib/auth";
+import { hapticSelect } from "@/lib/haptics";
 import { useUpdate } from "@/lib/updateStore";
 import { ActivitiesScreen, type ScrollTop } from "@/screens/ActivitiesScreen";
 import { ProfileScreen } from "@/screens/ProfileScreen";
@@ -25,7 +25,7 @@ export default function Main() {
   }, []);
 
   const press = (i: number) => {
-    Haptics.selectionAsync();
+    hapticSelect();
     if (i === index) pages[i].current?.scrollToTop();
     else pager.current?.setPage(i);
   };

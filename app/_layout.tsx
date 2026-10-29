@@ -5,6 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { useAuth } from "@/lib/auth";
+import { usePrefs } from "@/lib/prefs";
 import { colors } from "@/theme";
 
 const client = new QueryClient();
@@ -13,6 +14,7 @@ export default function Root() {
   const { ready, spDc, init } = useAuth();
   useEffect(() => {
     init();
+    usePrefs.getState().load();
   }, [init]);
 
   if (!ready)

@@ -1,7 +1,6 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
-import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import { Linking, Pressable, RefreshControl, ScrollView, type ScrollViewInstance, Text, View } from "react-native";
@@ -9,6 +8,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { ArtistTile, CurrentlyPlayingCard, TrackTile } from "@/components/Tiles";
 import { Avatar, Divider, SkeletonRow, StateDisplay } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
+import { hapticMedium } from "@/lib/haptics";
 import { useArtistListeners, useCurrentlyPlaying, useTop } from "@/lib/queries";
 import { lastSegment } from "@/lib/spotify";
 import { colors } from "@/theme";
@@ -66,7 +66,7 @@ export const ProfileScreen = forwardRef<ScrollTop>(function ProfileScreen(_, ref
               <Pressable
                 style={{ padding: 12 }}
                 onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  hapticMedium();
                   router.push("/settings");
                 }}
               >

@@ -1,6 +1,6 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import * as Haptics from "expo-haptics";
+import { hapticLight } from "@/lib/haptics";
 import { useEffect } from "react";
 import { Pressable, Text, View } from "react-native";
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withDelay, withRepeat, withTiming } from "react-native-reanimated";
@@ -8,7 +8,7 @@ import { colors } from "@/theme";
 
 export type IconName = React.ComponentProps<typeof MaterialIcons>["name"];
 
-export const tap = () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+export const tap = () => hapticLight();
 
 /** Rounded album art; a music note on elevated grey while there is no image. */
 export const Art = ({ uri, size = 48 }: { uri?: string; size?: number }) => (
