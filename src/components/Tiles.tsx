@@ -1,5 +1,6 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { Image } from "expo-image";
+import { memo } from "react";
 import { Linking, Pressable, Text, View } from "react-native";
 import { formatCount, formatDuration } from "@/lib/format";
 import { spotifyUrl, type Artist, type Track } from "@/lib/spotify";
@@ -14,7 +15,7 @@ const Rank = ({ n }: { n?: number }) =>
     </>
   ) : null;
 
-export function TrackTile({ track, rank }: { track: Track; rank?: number }) {
+function TrackTileView({ track, rank }: { track: Track; rank?: number }) {
   return (
     <Pressable
       android_ripple={{ color: "#ffffff14" }}
@@ -35,7 +36,7 @@ export function TrackTile({ track, rank }: { track: Track; rank?: number }) {
   );
 }
 
-export function ArtistTile({ artist, rank, listeners }: { artist: Artist; rank?: number; listeners?: number }) {
+function ArtistTileView({ artist, rank, listeners }: { artist: Artist; rank?: number; listeners?: number }) {
   return (
     <Pressable
       android_ripple={{ color: "#ffffff14" }}
@@ -48,7 +49,7 @@ export function ArtistTile({ artist, rank, listeners }: { artist: Artist; rank?:
       <Rank n={rank} />
       <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: colors.surfaceElevated, overflow: "hidden", alignItems: "center", justifyContent: "center" }}>
         {artist.imageUrl ? (
-          <Image source={{ uri: artist.imageUrl }} style={{ width: 48, height: 48 }} contentFit="cover" recyclingKey={artist.imageUrl} />
+          <Image source={{ uri: artist.imageUrl }} style={{ width: 48, height: 48 }} contentFit="cover" cachePolicy="memory-disk" recyclingKey={artist.imageUrl} />
         ) : (
           <MaterialIcons name="person" size={24} color={colors.textSubdued} />
         )}
@@ -79,3 +80,6 @@ export function CurrentlyPlayingCard({ track }: { track: Track }) {
     </Pressable>
   );
 }
+
+export const TrackTile = memo(TrackTileView);
+export const ArtistTile = memo(ArtistTileView);

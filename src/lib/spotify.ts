@@ -1,4 +1,4 @@
-import { applySecrets, generateParams } from "./totp";
+import { generateParams } from "./totp";
 
 export const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36";
@@ -7,7 +7,6 @@ const PARTNER = "https://api-partner.spotify.com/pathfinder/v2/query";
 const TOP_HASH = "feb6d55177e2cbce2ac59214f9493f1ef2e4368eec01b3d4c3468fa1b97336e2";
 const ARTIST_URL = "https://api-partner.spotify.com/pathfinder/v1/query";
 const ARTIST_HASH = "d66221ea13998b2f81883c5187d174c8646e4041d67f5b1e103bc262d447e3a0";
-const SECRETS_URL = "https://github.com/xyloflake/spot-secrets-go/blob/main/secrets/secretDict.json?raw=true";
 export const PLAYING_MS = 5 * 60 * 1000;
 
 export class AuthError extends Error {}
@@ -29,19 +28,6 @@ const webHeaders = (token: string) => ({
 });
 
 const lastSegment = (uri: string) => uri.split(":").pop() ?? "";
-
-/** Refreshes the TOTP secret table from the community mirror; keeps the fallback on any failure. */
-export async function refreshSecrets(): Promise<void> {
-  try {
-    const r = await fetch(SECRETS_URL, { headers: { accept: "application/json" } });
-    if (!r.ok) return;
-    const raw = (await r.json()) as Record<string, unknown>;
-    const ok = Object.entries(raw).every(
-      ([k, v]) => /^\d+$/.test(k) && Array.isArray(v) && v.length > 0 && v.every(Number.isInteger),
-    );
-    if (ok && Object.keys(raw).length) applySecrets(raw as Record<string, number[]>);
-  } catch {}
-}
 
 async function serverTimeMs(): Promise<number> {
   try {

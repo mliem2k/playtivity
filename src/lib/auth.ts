@@ -1,9 +1,13 @@
 import * as SecureStore from "expo-secure-store";
 import { create } from "zustand";
 import { isSample, sampleUser } from "./sample";
-import { fetchAccountProfile, fetchBearerToken, fetchProfile, refreshSecrets, userIdFromJwt, type User } from "./spotify";
+import { initSecrets, refreshSecrets } from "./secrets";
+import { fetchAccountProfile, fetchBearerToken, fetchProfile, userIdFromJwt, type User } from "./spotify";
 
 const KEY = "sp_dc";
+
+// The token and profile load in the background after the first screen; requests wait on this instead of the UI.
+let booting: Promise<string | null> | null = null;
 
 /**
  * The web token is not a JWT any more, so the user id comes from the account settings endpoint (sp_dc only),
@@ -28,6 +32,8 @@ type AuthState = {
   signIn: (spDc: string) => Promise<boolean>;
   /** Fresh bearer token from the stored sp_dc; signs out when Spotify says sp_dc expired. */
   refreshToken: () => Promise<string | null>;
+  /** The current token, waiting for the startup load when it is still in flight. */
+  whenToken: () => Promise<string | null>;
   signOut: () => Promise<void>;
   /** Retries the profile lookup, for a start where the network was not ready the first time. */
   reloadUser: () => Promise<void>;
@@ -40,19 +46,22 @@ export const useAuth = create<AuthState>((set, get) => ({
   user: null,
   init: async () => {
     if (isSample) return set({ ready: true, spDc: "sample", token: "sample", user: sampleUser });
-    await refreshSecrets();
+    await initSecrets(); // cache read only; the network refresh runs in the background
     // Debug only: lets a dev build sign in from the environment, for screenshots and manual tests.
     // The variable is read at bundle time and __DEV__ is false in release builds, so it never ships.
     const spDc = (__DEV__ && process.env.EXPO_PUBLIC_DEV_SP_DC) || (await SecureStore.getItemAsync(KEY));
-    set({ spDc });
-    if (spDc && (await get().refreshToken())) {
-      const user = await loadUser(get().token!, spDc);
-      set({ user });
+    // The first screen no longer waits for the token and profile round trips.
+    set({ spDc, ready: true });
+    if (spDc) {
+      booting = (async () => {
+        const token = await get().refreshToken();
+        if (token) set({ user: await loadUser(token, spDc) });
+        return token;
+      })();
     }
-    set({ ready: true });
   },
   signIn: async (spDc) => {
-    const token = await fetchBearerToken(spDc);
+    const token = await fetchBearerToken(spDc).catch(() => null);
     if (!token) return false;
     await SecureStore.setItemAsync(KEY, spDc);
     const user = await loadUser(token, spDc);
@@ -63,7 +72,16 @@ export const useAuth = create<AuthState>((set, get) => ({
     if (isSample) return "sample";
     const { spDc } = get();
     if (!spDc) return null;
-    const token = await fetchBearerToken(spDc);
+    // A network error keeps the session; only Spotify refusing the cookie signs the user out.
+    const attempt = () => fetchBearerToken(spDc).catch(() => undefined);
+    let token = await attempt();
+    if (token === undefined) return null;
+    if (!token) {
+      // The cookie may be fine and the secret table stale, so refresh the table and try once more.
+      await refreshSecrets();
+      token = await attempt();
+      if (token === undefined) return null;
+    }
     if (!token) {
       await get().signOut();
       return null;
@@ -71,6 +89,7 @@ export const useAuth = create<AuthState>((set, get) => ({
     set({ token });
     return token;
   },
+  whenToken: async () => get().token ?? (booting ? await booting : null),
   reloadUser: async () => {
     const { token, spDc, user } = get();
     if (user || !token || !spDc) return;
@@ -79,6 +98,7 @@ export const useAuth = create<AuthState>((set, get) => ({
   },
   signOut: async () => {
     await SecureStore.deleteItemAsync(KEY);
+    booting = null;
     set({ spDc: null, token: null, user: null });
   },
 }));

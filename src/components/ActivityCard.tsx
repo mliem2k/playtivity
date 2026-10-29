@@ -1,4 +1,5 @@
 import { MaterialIcons } from "@expo/vector-icons";
+import { memo } from "react";
 import { Linking, Pressable, Text, View } from "react-native";
 import { timeAgo } from "@/lib/format";
 import { spotifyUrl, type Activity, type Playlist } from "@/lib/spotify";
@@ -12,7 +13,7 @@ function playlistSubtitle(p: Playlist) {
   return owner ?? (count ? `Playlist · ${count}` : "Playlist");
 }
 
-export function ActivityCard({ a }: { a: Activity }) {
+function ActivityCardView({ a }: { a: Activity }) {
   const title = a.track?.name ?? a.playlist?.name;
   const subtitle = a.track ? `${a.track.artists.join(", ")} · ${a.track.album}` : a.playlist ? playlistSubtitle(a.playlist) : "";
   const uri = a.track?.uri ?? a.playlist?.uri ?? "";
@@ -67,3 +68,6 @@ export function ActivityCard({ a }: { a: Activity }) {
     </Pressable>
   );
 }
+
+/** Rows are memoised: the feed refetches every 30 seconds and most entries come back unchanged. */
+export const ActivityCard = memo(ActivityCardView);

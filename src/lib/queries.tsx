@@ -10,7 +10,8 @@ import { AuthError, fetchArtistListeners, fetchBuddyList, fetchCurrentlyPlaying,
 
 /** Runs `fn` with the current token; on an auth error refreshes once and retries. */
 async function withToken<T>(fn: (t: string) => Promise<T>): Promise<T> {
-  const { token, refreshToken } = useAuth.getState();
+  const { refreshToken, whenToken } = useAuth.getState();
+  const token = await whenToken();
   if (!token) throw new AuthError("signed out");
   try {
     return await fn(token);

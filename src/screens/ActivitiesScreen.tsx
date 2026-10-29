@@ -49,6 +49,9 @@ export const ActivitiesScreen = forwardRef<ScrollTop>(function ActivitiesScreen(
         contentContainerStyle={hasData ? { paddingBottom: 8 } : { flexGrow: 1 }}
         refreshControl={<RefreshControl refreshing={isRefetching && hasData} onRefresh={() => { refetch(); }} colors={[colors.primary]} progressBackgroundColor={colors.surfaceRaised} />}
         overScrollMode="never"
+        initialNumToRender={8}
+        windowSize={7}
+        removeClippedSubviews
       />
     </SafeAreaView>
   );

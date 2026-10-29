@@ -6,10 +6,17 @@ import { useEffect } from "react";
 import { ActivityIndicator, LogBox, View } from "react-native";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { useAuth } from "@/lib/auth";
+import { loadActivities } from "@/lib/cache";
+import { mergeActivities } from "@/lib/spotify";
 import { usePrefs } from "@/lib/prefs";
 import { colors } from "@/theme";
 
 const client = new QueryClient();
+
+// Show the last known feed at once while the network answers; times and the listening flags are recomputed.
+loadActivities().then((cached) => {
+  if (cached.length && !client.getQueryData(["activities"])) client.setQueryData(["activities"], mergeActivities(cached, []));
+});
 
 // Debug builds that sign in from the environment are for screenshots, so keep the warning toast out of them.
 if (__DEV__ && process.env.EXPO_PUBLIC_DEV_SP_DC) LogBox.ignoreAllLogs();

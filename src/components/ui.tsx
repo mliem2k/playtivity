@@ -14,7 +14,7 @@ export const tap = () => hapticLight();
 export const Art = ({ uri, size = 48 }: { uri?: string; size?: number }) => (
   <View style={{ width: size, height: size, borderRadius: 4, backgroundColor: colors.surfaceElevated, overflow: "hidden", alignItems: "center", justifyContent: "center" }}>
     {uri ? (
-      <Image source={{ uri }} style={{ width: size, height: size }} contentFit="cover" recyclingKey={uri} />
+      <Image source={{ uri }} style={{ width: size, height: size }} contentFit="cover" cachePolicy="memory-disk" recyclingKey={uri} />
     ) : (
       <MaterialIcons name="music-note" size={size / 2} color={colors.textSubdued} />
     )}
@@ -27,7 +27,7 @@ export function Avatar({ uri, name, radius = 22, bg = colors.primary }: { uri?: 
   return (
     <View style={{ width: size, height: size, borderRadius: radius, backgroundColor: bg, overflow: "hidden", alignItems: "center", justifyContent: "center" }}>
       {uri ? (
-        <Image source={{ uri }} style={{ width: size, height: size }} contentFit="cover" recyclingKey={uri} />
+        <Image source={{ uri }} style={{ width: size, height: size }} contentFit="cover" cachePolicy="memory-disk" recyclingKey={uri} />
       ) : (
         <Text className="font-mont-b text-white" style={{ fontSize: radius * 0.8 }}>
           {name ? name[0].toUpperCase() : "?"}
