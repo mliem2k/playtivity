@@ -1,26 +1,21 @@
 {
-  "extends": "expo/tsconfig.base",
   "compilerOptions": {
+    "allowJs": true,
+    "esModuleInterop": true,
+    "jsx": "react-jsx",
+    "lib": ["DOM", "ESNext"],
+    "module": "preserve",
+    "moduleDetection": "force",
+    "moduleResolution": "bundler",
+    "customConditions": ["react-native"],
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "target": "ESNext",
     "strict": true,
-    "paths": {
-      "@/*": [
-        "./src/*"
-      ]
-    },
-    "types": [
-      "bun"
-    ]
+    "types": ["bun"],
+    "paths": { "@/*": ["./src/*"] }
   },
-  "include": [
-    "**/*.ts",
-    "**/*.tsx",
-    "nativewind-env.d.ts",
-    ".expo/types/**/*.ts"
-  ],
-  "exclude": [
-    "landing",
-    "scripts",
-    "tool",
-    "node_modules"
-  ]
+  "include": ["src/**/*", "app/**/*", "tests/**/*", "nativewind-env.d.ts", ".expo/types/**/*.ts"],
+  "exclude": ["node_modules", "babel.config.js", "metro.config.js", "android", "ios", "landing"]
 }
