@@ -3,13 +3,14 @@ import type { Activity } from "@/lib/spotify";
 import { spotifyUrl } from "@/lib/spotify";
 import { sortForWidget, widgetTimeText } from "./logic";
 
-// Same palette as the Flutter widget (res/values/colors.xml).
-const BG = "#E6000000";
-const ITEM_BG = "#4D000000";
-const HEADER_BG = "#33000000";
+// Same palette as the Flutter widget (res/values/colors.xml). The widget library reads 8 digit colors
+// as CSS #RRGGBBAA, not Android's #AARRGGBB, so the Flutter values are written with the alpha last.
+const BG = "#000000E6";
+const ITEM_BG = "#0000004D";
+const HEADER_BG = "#00000033";
 const TEXT = "#FFFFFF";
-const TEXT2 = "#E6FFFFFF";
-const TEXT3 = "#B3FFFFFF";
+const TEXT2 = "#FFFFFFE6";
+const TEXT3 = "#FFFFFFB3";
 const ACCENT = "#1DB954";
 
 function Row({ a }: { a: Activity }) {
