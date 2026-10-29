@@ -284,8 +284,8 @@ After installation, authenticate with: gh auth login
         }
     }
 
-    // Builds on a Windows machine reachable over ssh (PLAYTIVITY_BUILDER=<ssh host>), then signs
-    // here, so the release keystore never leaves this machine.
+    // Builds and signs on a machine reachable over ssh (PLAYTIVITY_BUILDER=<ssh host>). The release
+    // keystore lives in C:\\b\\secrets there (user only ACL) and signing happens next to the build.
     buildOnRemote(host) {
         const remoteDir = 'C:/b/pt';
         const apkOut = this.apkPath;
@@ -301,39 +301,33 @@ After installation, authenticate with: gh auth login
         const remoteWin = 'C:\\b\\pt';
         this.runCommand(`ssh ${host} "for %d in (app src tests plugins) do if exist ${remoteWin}\\%d rmdir /s /q ${remoteWin}\\%d"`, `Clearing stale sources on ${host}`);
         this.runCommand(`COPYFILE_DISABLE=1 tar -c -T "${listFile}" -f - | ssh ${host} "tar -x -C ${remoteDir} -f -"`, `Syncing source to ${host}`);
-        this.runCommand(`scp -q scripts/builder/build-android.ps1 ${host}:C:/b/build-android.ps1`, 'Copying build script');
-        // The builder holds the release keystore (copied once to C:\b\keys), so it signs there. The
-        // secrets are set for this one command only and never written to a file on the builder.
-        const signEnv = [
-            ['ANDROID_KEYSTORE_PATH', 'C:\\b\\keys\\release-key.jks'],
-            ['ANDROID_KEYSTORE_PASSWORD', process.env.ANDROID_KEYSTORE_PASSWORD],
-            ['ANDROID_KEY_ALIAS', process.env.ANDROID_KEY_ALIAS],
-            ['ANDROID_KEY_PASSWORD', process.env.ANDROID_KEY_PASSWORD],
-        ].map(([k, v]) => `set ${k}=${v}`).join('&& ');
-        this.runCommand(`ssh ${host} "${signEnv}&& powershell -NoProfile -ExecutionPolicy Bypass -File C:\\b\\build-android.ps1"`, `Building and signing on ${host}`);
+        this.runCommand(`scp -q scripts/builder/build-android.ps1 scripts/builder/sign-android.ps1 ${host}:C:/b/`, 'Copying build scripts');
+        this.runCommand(`ssh ${host} "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\b\\build-android.ps1"`, `Building on ${host}`);
+
+        // Passwords travel as environment variables of the remote command, never as files.
+        for (const v of [process.env.ANDROID_KEY_ALIAS, process.env.ANDROID_KEYSTORE_PASSWORD, process.env.ANDROID_KEY_PASSWORD]) {
+            if (/[&|^"%<>\s]/.test(v)) throw new Error('Signing values must not contain shell special characters');
+        }
+        this.runCommand(
+            `ssh ${host} "set KS_ALIAS=${process.env.ANDROID_KEY_ALIAS}&& set KS_PASS=${process.env.ANDROID_KEYSTORE_PASSWORD}&& set KEY_PASS=${process.env.ANDROID_KEY_PASSWORD}&& powershell -NoProfile -ExecutionPolicy Bypass -File C:\\b\\sign-android.ps1"`,
+            `Signing on ${host}`
+        );
 
         fs.mkdirSync(path.dirname(apkOut), { recursive: true });
-        this.runCommand(`scp -q ${host}:${remoteDir}/android/app/build/outputs/apk/release/app-release.apk "${apkOut}"`, 'Fetching APK');
-        this.verifyApkSignature(apkOut);
+        this.runCommand(`scp -q ${host}:${remoteDir}/android/app/build/outputs/apk/release/app-release-signed.apk "${apkOut}"`, 'Fetching signed APK');
+        this.verifyApk(apkOut);
     }
 
-    // The APK arrives already signed by the builder. Check it is signed with this machine's release key,
-    // so a missing or wrong keystore on the builder fails here instead of shipping a debug signed APK.
-    verifyApkSignature(apk) {
+    apksignerPath() {
         const sdk = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT || '/opt/homebrew/share/android-commandlinetools';
         const tools = path.join(sdk, 'build-tools');
         const latest = fs.readdirSync(tools).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).pop();
-        const apksigner = path.join(tools, latest, 'apksigner');
-        const expected = execSync(
-            `keytool -list -v -keystore "${process.env.ANDROID_KEYSTORE_PATH}" -storepass "${process.env.ANDROID_KEYSTORE_PASSWORD}" -alias "${process.env.ANDROID_KEY_ALIAS}"`,
-            { encoding: 'utf8' }
-        ).match(/SHA256:\s*([0-9A-F:]+)/i)[1].replace(/:/g, '').toLowerCase();
-        const actual = execSync(`"${apksigner}" verify --print-certs "${apk}"`, { encoding: 'utf8' })
-            .match(/certificate SHA-256 digest:\s*([0-9a-f]+)/i)?.[1]?.toLowerCase();
-        if (actual !== expected) {
-            throw new Error(`APK is not signed with the release key (got ${actual}, expected ${expected})`);
-        }
-        this.log('APK signature matches the release key', 'success');
+        return path.join(tools, latest, 'apksigner');
+    }
+
+    // Checks the signature here, whoever produced it, so a bad or missing signature never gets published.
+    verifyApk(apk) {
+        this.runCommand(`"${this.apksignerPath()}" verify --print-certs "${apk}"`, 'Verifying signature');
     }
 
     shouldCleanBuild() {
