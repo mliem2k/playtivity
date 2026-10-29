@@ -1,9 +1,11 @@
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import PagerView from "react-native-pager-view";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { UpdateBanner } from "@/components/UpdateBanner";
+import { useUpdate } from "@/lib/updateStore";
 import { ActivitiesScreen, type ScrollTop } from "@/screens/ActivitiesScreen";
 import { ProfileScreen } from "@/screens/ProfileScreen";
 import { colors } from "@/theme";
@@ -16,6 +18,9 @@ export default function Main() {
   const pages = [useRef<ScrollTop>(null), useRef<ScrollTop>(null)];
   const [index, setIndex] = useState(0);
   const insets = useSafeAreaInsets();
+  useEffect(() => {
+    useUpdate.getState().checkOnStart().catch(() => {});
+  }, []);
 
   const press = (i: number) => {
     Haptics.selectionAsync();
@@ -25,6 +30,7 @@ export default function Main() {
 
   return (
     <View className="flex-1 bg-bg">
+      <UpdateBanner />
       <PagerView ref={pager} style={{ flex: 1 }} initialPage={0} onPageSelected={(e) => setIndex(e.nativeEvent.position)}>
         <View key="activities" style={{ flex: 1 }}><ActivitiesScreen ref={pages[0]} /></View>
         <View key="profile" style={{ flex: 1 }}><ProfileScreen ref={pages[1]} /></View>

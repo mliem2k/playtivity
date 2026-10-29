@@ -3,7 +3,8 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as IntentLauncher from "expo-intent-launcher";
 import Storage from "expo-sqlite/kv-store";
 
-const RELEASES_API = "https://api.github.com/repos/mliem2k/playtivity/releases";
+// 100 per page: nightlies pile up, and a stable release must not scroll off the first page.
+const RELEASES_API = "https://api.github.com/repos/mliem2k/playtivity/releases?per_page=100";
 const HOUR = 3_600_000;
 
 export type AppVersion = { version: string; buildNumber: string };

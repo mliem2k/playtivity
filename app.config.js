@@ -13,7 +13,7 @@ module.exports = {
     version,
     orientation: "portrait",
     userInterfaceStyle: "dark",
-    icon: "./assets/images/playtivity_logo.png",
+    icon: "./assets/icon/icon.png",
     newArchEnabled: true,
     plugins: [
       "expo-router",
@@ -66,7 +66,16 @@ module.exports = {
       "./plugins/withReleaseSigning",
     ],
     experiments: { typedRoutes: true },
-    android: { package: "com.mliem.playtivity", versionCode: Number(build) || 1 },
+    android: {
+      package: "com.mliem.playtivity",
+      permissions: ["REQUEST_INSTALL_PACKAGES"],
+      versionCode: Number(build) || 1,
+      adaptiveIcon: {
+        foregroundImage: "./assets/icon/adaptive-foreground.png",
+        monochromeImage: "./assets/icon/adaptive-monochrome.png",
+        backgroundColor: "#000000",
+      },
+    },
     ios: { bundleIdentifier: "com.mliem.playtivity" },
   },
 };
