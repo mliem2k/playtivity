@@ -95,7 +95,7 @@ const steps = [
     </div>
     <div class="hero-phone">
       <div class="phone-frame">
-        <Image src={homeScreenshot} alt="Playtivity friend activity feed" width={320} height={676} loading="eager" fetchpriority="high" />
+        <Image src={homeScreenshot} alt="Playtivity friend activity feed" width={320} height={711} widths={[320, 640, 960]} sizes="320px" quality={90} loading="eager" fetchpriority="high" />
       </div>
     </div>
   </div>
@@ -134,7 +134,7 @@ const steps = [
       ].map(s => (
         <div class="screenshot-item">
           <div class="phone-frame phone-frame--sm">
-            <Image src={s.src} alt={s.label} width={220} height={464} loading="lazy" />
+            <Image src={s.src} alt={s.label} width={220} height={489} widths={[220, 440, 660]} sizes="220px" quality={90} loading="lazy" />
           </div>
           <span class="screenshot-label">{s.label}</span>
         </div>
