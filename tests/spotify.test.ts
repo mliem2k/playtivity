@@ -29,3 +29,10 @@ test("jwt sub strips the user prefix", () => {
   const p = btoa(JSON.stringify({ sub: "spotify:user:xyz" }));
   expect(userIdFromJwt(`h.${p}.s`)).toBe("xyz");
 });
+
+import { buildUser } from "../src/lib/spotify";
+
+test("profile mapping keeps the id when the body is missing or partial", () => {
+  expect(buildUser("abc", null)).toEqual({ id: "abc", displayName: "abc", imageUrl: undefined, followers: 0 });
+  expect(buildUser("abc", { name: "Michael", image_url: "https://i/x.jpg", followers_count: 42 })).toEqual({ id: "abc", displayName: "Michael", imageUrl: "https://i/x.jpg", followers: 42 });
+});

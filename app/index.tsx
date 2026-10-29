@@ -5,6 +5,7 @@ import { Pressable, Text, View } from "react-native";
 import PagerView from "react-native-pager-view";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { UpdateBanner } from "@/components/UpdateBanner";
+import { useAuth } from "@/lib/auth";
 import { useUpdate } from "@/lib/updateStore";
 import { ActivitiesScreen, type ScrollTop } from "@/screens/ActivitiesScreen";
 import { ProfileScreen } from "@/screens/ProfileScreen";
@@ -20,6 +21,7 @@ export default function Main() {
   const insets = useSafeAreaInsets();
   useEffect(() => {
     useUpdate.getState().checkOnStart().catch(() => {});
+    useAuth.getState().reloadUser();
   }, []);
 
   const press = (i: number) => {

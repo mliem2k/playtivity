@@ -84,13 +84,16 @@ export function userIdFromJwt(token: string): string | null {
   }
 }
 
-export async function fetchProfile(token: string): Promise<User | null> {
-  const id = userIdFromJwt(token);
-  if (!id) return null;
+/** Name, picture and follower count for a user id. Null when the endpoint refuses or the body is unusable. */
+export async function fetchProfile(token: string, id: string): Promise<User | null> {
   const r = await fetch(`${SPCLIENT}/user-profile-view/v3/profile/${id}`, { headers: webHeaders(token) });
   if (!r.ok) return null;
-  const j = await r.json();
-  return { id, displayName: j.name ?? id, imageUrl: j.image_url ?? undefined, followers: Number(j.followers_count) || 0 };
+  return buildUser(id, await r.json().catch(() => null));
+}
+
+/** Pure mapping of the spclient profile body; a missing body still yields a user so the id is not lost. */
+export function buildUser(id: string, body: any): User {
+  return { id, displayName: body?.name || id, imageUrl: body?.image_url || undefined, followers: Number(body?.followers_count) || 0 };
 }
 
 async function retry<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
@@ -258,7 +261,7 @@ export async function fetchArtistListeners(token: string, artistId: string): Pro
 }
 
 /** Email and country from the account settings endpoint; needs only the sp_dc cookie and is not rate limited. */
-export async function fetchAccountProfile(spDc: string): Promise<{ email: string; country: string } | null> {
+export async function fetchAccountProfile(spDc: string): Promise<{ username: string; email: string; country: string } | null> {
   try {
     const r = await fetch("https://www.spotify.com/api/account-settings/v1/profile", {
       headers: { Cookie: `sp_dc=${spDc}`, "User-Agent": UA, Accept: "application/json", Referer: "https://www.spotify.com/account/overview/" },
@@ -266,7 +269,7 @@ export async function fetchAccountProfile(spDc: string): Promise<{ email: string
     });
     if (r.status !== 200) return null;
     const p = (await r.json())?.profile;
-    return p ? { email: p.email ?? "", country: p.country ?? "" } : null;
+    return p ? { username: p.username ?? "", email: p.email ?? "", country: p.country ?? "" } : null;
   } catch {
     return null;
   }
