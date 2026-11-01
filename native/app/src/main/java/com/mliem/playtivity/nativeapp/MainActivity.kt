@@ -67,10 +67,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        intent?.getStringExtra("spotify_url")?.takeIf { it.startsWith("https://open.spotify.com/") }?.let { url ->
-            startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
-            intent.removeExtra("spotify_url")
-        }
+        openWidgetLink(intent)
         setContent {
             val state by viewModel.state.collectAsStateWithLifecycle()
             PlaytivityTheme {
@@ -86,6 +83,21 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         viewModel.resume()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        openWidgetLink(intent)
+    }
+
+    private fun openWidgetLink(intent: Intent?) {
+        val url = intent?.getStringExtra("spotify_url") ?: return
+        val uri = url.toUri()
+        intent.removeExtra("spotify_url")
+        if (uri.scheme == "https" && uri.host == "open.spotify.com") {
+            startActivity(Intent(Intent.ACTION_VIEW, uri))
+        }
     }
 
     override fun onStop() {

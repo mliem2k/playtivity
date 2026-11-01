@@ -3,4 +3,6 @@
     <string name="widget_title">Friend Activity</string>
     <string name="widget_refresh">Refresh</string>
     <string name="widget_empty">No recent activities</string>
+    <string name="widget_avatar_description">Friend profile picture</string>
+    <string name="widget_art_description">Track or playlist artwork</string>
 </resources>

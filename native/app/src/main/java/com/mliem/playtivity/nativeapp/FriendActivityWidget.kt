@@ -64,6 +64,10 @@ class FriendActivityWidget : AppWidgetProvider() {
             val ids = manager.getAppWidgetIds(component)
             if (ids.isEmpty()) return
             val rows = sortForWidget(mergeActivities(app.activityCache.load(), emptyList()))
+            val useCollection = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && rows.size <= 20 && rows.all { activity ->
+                listOfNotNull(activity.user.imageUrl, activity.track?.imageUrl ?: activity.playlist?.imageUrl)
+                    .all { url -> WidgetArtwork.cached(context, url) != null }
+            }
             ids.forEach { id ->
                 val views = RemoteViews(context.packageName, R.layout.widget_friend_activity)
                 val refresh = Intent(context, FriendActivityWidget::class.java).setAction(ACTION_REFRESH)
@@ -71,7 +75,7 @@ class FriendActivityWidget : AppWidgetProvider() {
                 views.setOnClickPendingIntent(R.id.widget_refresh, pending)
                 val openApp = PendingIntent.getActivity(context, id, Intent(context, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
                 views.setOnClickPendingIntent(R.id.widget_title, openApp)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (useCollection) {
                     val items = RemoteViews.RemoteCollectionItems.Builder()
                     rows.forEach { activity -> items.addItem(activity.user.id.hashCode().toLong(), widgetRow(context, activity)) }
                     views.setRemoteAdapter(R.id.widget_list, items.build())
@@ -85,7 +89,7 @@ class FriendActivityWidget : AppWidgetProvider() {
                 views.setPendingIntentTemplate(R.id.widget_list, clickTemplate)
                 manager.updateAppWidget(id, views)
             }
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) notifyLegacyList(manager, ids)
+            if (!useCollection) notifyLegacyList(manager, ids)
         }
 
         @Suppress("DEPRECATION")
