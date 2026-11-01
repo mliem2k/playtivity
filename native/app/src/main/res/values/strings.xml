@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_title">Friend Activity</string>
+    <string name="widget_refresh">Refresh</string>
+    <string name="widget_empty">No recent activities</string>
+</resources>
