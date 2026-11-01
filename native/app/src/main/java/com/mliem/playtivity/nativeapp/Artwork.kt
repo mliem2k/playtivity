@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
@@ -29,7 +30,7 @@ private val imageCache = object : LruCache<String, Bitmap>(20 * 1024 * 1024) {
 }
 
 @Composable
-fun Artwork(url: String?, size: Dp = 48.dp, modifier: Modifier = Modifier) {
+fun Artwork(url: String?, modifier: Modifier = Modifier, size: Dp = 48.dp, shape: Shape = RoundedCornerShape(4.dp)) {
     val bitmap by produceState<Bitmap?>(initialValue = url?.let(imageCache::get), key1 = url) {
         if (url.isNullOrBlank()) return@produceState
         imageCache.get(url)?.let { value = it; return@produceState }
@@ -52,7 +53,6 @@ fun Artwork(url: String?, size: Dp = 48.dp, modifier: Modifier = Modifier) {
             null
         }
     }
-    val shape = RoundedCornerShape(4.dp)
     val image = bitmap
     if (image == null) Box(modifier.size(size).clip(shape).background(PlaytivityColors.surfaceElevated))
     else Image(image.asImageBitmap(), contentDescription = null, modifier = modifier.size(size).clip(shape), contentScale = ContentScale.Crop)
