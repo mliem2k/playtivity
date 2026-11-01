@@ -37,6 +37,10 @@ app.*.map.json
 # Build tooling output (scripts/build-apk.js, scripts/nightly.js, etc.)
 *.apk
 /nightly
+/releases/
+/builds/
+/.dart_tool/
+/.flutter-plugins-dependencies
 delete-releases.js
 /.omc
 

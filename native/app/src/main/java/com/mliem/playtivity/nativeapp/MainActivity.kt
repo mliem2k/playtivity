@@ -58,6 +58,7 @@ import com.mliem.playtivity.core.Track
 import com.mliem.playtivity.core.SpotifyHttpClient
 import com.mliem.playtivity.core.timeAgo
 import com.mliem.playtivity.core.formatCount
+import com.mliem.playtivity.core.formatDuration
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -215,7 +216,14 @@ private fun ActivityRow(activity: Activity) {
     val view = LocalView.current
     val hapticsEnabled = (context.applicationContext as PlaytivityApp).hapticsEnabled
     val content = activity.track?.name ?: activity.playlist?.name.orEmpty()
-    val detail = activity.track?.artists?.joinToString(", ") ?: activity.playlist?.ownerName.orEmpty()
+    val detail = activity.track?.let { track ->
+        listOf(track.artists.joinToString(", "), track.album).filter(String::isNotEmpty).joinToString(" · ")
+    } ?: activity.playlist?.let { playlist ->
+        listOfNotNull(
+            playlist.ownerName.takeIf(String::isNotEmpty),
+            playlist.trackCount.takeIf { it > 0 }?.let { "$it tracks" },
+        ).joinToString(" · ").ifEmpty { "Playlist" }
+    }.orEmpty()
     val uri = activity.track?.uri ?: activity.playlist?.uri.orEmpty()
     Row(
         Modifier.fillMaxWidth().clickable(enabled = uri.isNotEmpty()) {
@@ -224,7 +232,11 @@ private fun ActivityRow(activity: Activity) {
         }.padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Artwork(activity.user.imageUrl, size = 44.dp)
+        Column(Modifier.clickable {
+            context.startActivity(Intent(Intent.ACTION_VIEW, "https://open.spotify.com/user/${Uri.encode(activity.user.id)}".toUri()))
+        }) {
+            Artwork(activity.user.imageUrl, size = 44.dp)
+        }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(activity.user.displayName, style = MaterialTheme.typography.titleMedium)
@@ -249,7 +261,23 @@ private fun ProfilePage(state: PlaytivityState, refresh: () -> Unit, modifier: M
             }
             Button(onClick = refresh, enabled = !state.loadingProfile) { Text("Refresh") }
         }
-        state.nowPlaying?.let { Text("Now playing: ${it.name}", Modifier.padding(16.dp)) }
+        state.nowPlaying?.let { track ->
+            val context = LocalContext.current
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, track.uri.toSpotifyUrl().toUri()))
+                }.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Artwork(track.imageUrl, size = 40.dp)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(track.name, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                    Text(track.artists.joinToString(", "), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                }
+                Text("♫", color = PlaytivityColors.primary)
+            }
+        }
         if (state.loadingProfile) CircularProgressIndicator()
         if (state.profileError != null) Text(state.profileError, Modifier.padding(16.dp), color = MaterialTheme.colorScheme.error)
         PrimaryTabRow(selectedTabIndex = tab) {
@@ -258,12 +286,12 @@ private fun ProfilePage(state: PlaytivityState, refresh: () -> Unit, modifier: M
         }
         if (tab == 0) {
             LazyColumn {
-                items(state.top?.tracks.orEmpty()) { track -> TrackRow(track) }
+                items(state.top?.tracks.orEmpty().withIndex().toList(), key = { it.index }) { (index, track) -> TrackRow(track, index + 1) }
             }
         } else {
             LazyColumn {
-                items(state.top?.artists.orEmpty()) { artist ->
-                    ArtistRow(artist.copy(monthlyListeners = state.artistListeners[artist.uri.substringAfterLast(':')]?.takeIf { it >= 0 }))
+                items(state.top?.artists.orEmpty().withIndex().toList(), key = { it.index }) { (index, artist) ->
+                    ArtistRow(artist.copy(monthlyListeners = state.artistListeners[artist.uri.substringAfterLast(':')]?.takeIf { it >= 0 }), index + 1)
                 }
             }
         }
@@ -271,24 +299,26 @@ private fun ProfilePage(state: PlaytivityState, refresh: () -> Unit, modifier: M
 }
 
 @Composable
-private fun TrackRow(track: Track) {
+private fun TrackRow(track: Track, rank: Int) {
     val context = LocalContext.current
     Row(Modifier.fillMaxWidth().clickable { context.startActivity(Intent(Intent.ACTION_VIEW, track.uri.toSpotifyUrl().toUri())) }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(rank.toString(), Modifier.width(30.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         Artwork(track.imageUrl)
         Spacer(Modifier.width(12.dp))
-        Column {
-            Text(track.name, style = MaterialTheme.typography.titleMedium)
-            Text(track.artists.joinToString(", "))
-            Text(track.album, style = MaterialTheme.typography.bodySmall)
+        Column(Modifier.weight(1f)) {
+            Text(track.name, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+            Text(track.artists.joinToString(", "), maxLines = 1)
         }
+        Text(formatDuration(track.durationMs), color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     HorizontalDivider()
 }
 
 @Composable
-private fun ArtistRow(artist: Artist) {
+private fun ArtistRow(artist: Artist, rank: Int) {
     val context = LocalContext.current
     Row(Modifier.fillMaxWidth().clickable { context.startActivity(Intent(Intent.ACTION_VIEW, artist.uri.toSpotifyUrl().toUri())) }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(rank.toString(), Modifier.width(30.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         Artwork(artist.imageUrl)
         Spacer(Modifier.width(12.dp))
         Column {

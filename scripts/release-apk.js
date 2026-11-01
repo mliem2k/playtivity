@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 const crypto = require('crypto');
+const NightlyBuilder = require('./nightly.js');
 
 class APKReleaser {
     constructor() {
@@ -12,8 +13,8 @@ class APKReleaser {
         this.outputDir = path.join(this.projectRoot, 'releases');
         this.keystorePath = path.join(this.projectRoot, 'release-key.jks');
         this.keystoreBase64Path = path.join(this.projectRoot, 'keystore.base64.txt');
-        this.apkPath = path.join(this.projectRoot, 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk');
-        this.bundlePath = path.join(this.projectRoot, 'build', 'app', 'outputs', 'bundle', 'release', 'app-release.aab');
+        this.apkPath = path.join(this.projectRoot, 'native', 'app', 'build', 'outputs', 'apk', 'production', 'release', 'app-production-release.apk');
+        this.bundlePath = path.join(this.projectRoot, 'native', 'app', 'build', 'outputs', 'bundle', 'productionRelease', 'app-production-release.aab');
     }
 
     log(message, type = 'info') {
@@ -212,53 +213,17 @@ class APKReleaser {
     }
 
     buildReleaseAPK() {
-        this.log('Starting release APK build', 'build');
-
-        // Check if FVM is available
-        let flutterCommand = 'flutter';
-        try {
-            execSync('fvm --version', { stdio: 'pipe' });
-            flutterCommand = 'fvm flutter';
-            this.log('Using FVM for Flutter commands');
-        } catch (error) {
-            this.log('FVM not found, using system Flutter');
-        }
-
-        try {
-            // Clean and get dependencies
-            this.runCommand(`${flutterCommand} clean`, 'Cleaning project');
-            this.runCommand(`${flutterCommand} pub get`, 'Getting dependencies');
-            
-            // Run tests
-            try {
-                this.runCommand(`${flutterCommand} test`, 'Running tests');
-            } catch (error) {
-                this.log('Tests failed, but continuing with release build', 'warning');
-            }
-            
-            // Build signed APK
-            this.runCommand(`${flutterCommand} build apk --release`, 'Building signed release APK');
-            
-            return true;
-        } catch (error) {
-            this.log(`Release build failed: ${error.message}`, 'error');
-            return false;
-        }
+        return new NightlyBuilder().buildNightlyAPK();
     }
 
     buildReleaseBundle() {
         this.log('Building Android App Bundle (AAB)', 'build');
 
-        let flutterCommand = 'flutter';
         try {
-            execSync('fvm --version', { stdio: 'pipe' });
-            flutterCommand = 'fvm flutter';
-        } catch (error) {
-            // FVM not available, use system flutter
-        }
-
-        try {
-            this.runCommand(`${flutterCommand} build appbundle --release`, 'Building signed release bundle');
+            if (!process.env.PLAYTIVITY_BUILDER) {
+                this.runCommand('cd native && ./gradlew :app:bundleProductionRelease', 'Building signed Kotlin App Bundle');
+            }
+            if (!fs.existsSync(this.bundlePath)) throw new Error('Signed App Bundle not found');
             return true;
         } catch (error) {
             this.log(`Bundle build failed: ${error.message}`, 'warning');
@@ -280,37 +245,11 @@ class APKReleaser {
 
     verifyAPKSignature(apkPath) {
         this.log('Verifying APK signature', 'security');
-        
-        try {
-            // Try to get APK info using aapt if available
-            try {
-                const output = execSync(`aapt dump badging "${apkPath}"`, { 
-                    stdio: 'pipe', 
-                    encoding: 'utf8' 
-                });
-                
-                const packageMatch = output.match(/package: name='([^']+)'/);
-                const versionCodeMatch = output.match(/versionCode='([^']+)'/);
-                const versionNameMatch = output.match(/versionName='([^']+)'/);
-                
-                this.log('APK signature verified successfully', 'success');
-                
-                return {
-                    packageName: packageMatch ? packageMatch[1] : 'Unknown',
-                    versionCode: versionCodeMatch ? versionCodeMatch[1] : 'Unknown',
-                    versionName: versionNameMatch ? versionNameMatch[1] : 'Unknown'
-                };
-            } catch (error) {
-                this.log('aapt not available, skipping detailed APK verification', 'warning');
-                return null;
-            }
-        } catch (error) {
-            this.log(`APK verification failed: ${error.message}`, 'error');
-            throw error;
-        }
+        new NightlyBuilder().verifyApk(apkPath);
+        this.log('APK signature verified successfully', 'success');
     }
 
-    copyReleaseFiles(version) {
+    copyReleaseFiles(version, includeBundle = true) {
         this.log('Copying release files to release directory', 'release');
         
         const releaseInfo = {
@@ -320,28 +259,28 @@ class APKReleaser {
         };
 
         // Copy APK
-        if (fs.existsSync(this.apkPath)) {
-            const apkFileName = `playtivity-v${version.versionName}-release.apk`;
-            const apkDestPath = path.join(this.outputDir, apkFileName);
+        if (!fs.existsSync(this.apkPath)) throw new Error(`APK not found at: ${this.apkPath}`);
+        if (includeBundle && !fs.existsSync(this.bundlePath)) throw new Error(`App Bundle not found at: ${this.bundlePath}`);
+        const apkFileName = `playtivity-v${version.versionName}-release.apk`;
+        const apkDestPath = path.join(this.outputDir, apkFileName);
             
-            fs.copyFileSync(this.apkPath, apkDestPath);
+        fs.copyFileSync(this.apkPath, apkDestPath);
             
-            const apkInfo = this.getFileInfo(apkDestPath);
-            const checksum = this.generateAPKChecksum(apkDestPath);
+        const apkInfo = this.getFileInfo(apkDestPath);
+        const checksum = this.generateAPKChecksum(apkDestPath);
             
-            releaseInfo.files.push({
-                type: 'APK',
-                name: apkFileName,
-                path: apkDestPath,
-                size: apkInfo.size,
-                checksum: checksum
-            });
+        releaseInfo.files.push({
+            type: 'APK',
+            name: apkFileName,
+            path: apkDestPath,
+            size: apkInfo.size,
+            checksum: checksum
+        });
             
-            this.log(`APK copied: ${apkFileName}`, 'success');
-        }
+        this.log(`APK copied: ${apkFileName}`, 'success');
 
-        // Copy AAB if exists
-        if (fs.existsSync(this.bundlePath)) {
+        // Copy AAB when requested
+        if (includeBundle) {
             const bundleFileName = `playtivity-v${version.versionName}-release.aab`;
             const bundleDestPath = path.join(this.outputDir, bundleFileName);
             
@@ -404,11 +343,6 @@ ${releaseInfo.files.map(file => `
 2. Download the APK file: \`${releaseInfo.files.find(f => f.type === 'APK')?.name || 'N/A'}\`
 3. Open the downloaded file and follow installation prompts
 
-### Using ADB
-\`\`\`bash
-adb install "${releaseInfo.files.find(f => f.type === 'APK')?.name || 'playtivity-release.apk'}"
-\`\`\`
-
 ## Verification
 You can verify the integrity of the downloaded files using their SHA256 checksums listed above.
 
@@ -452,12 +386,10 @@ You can verify the integrity of the downloaded files using their SHA256 checksum
             }
 
             // Build AAB (optional)
-            if (buildBundle) {
-                this.buildReleaseBundle();
-            }
+            if (buildBundle && !this.buildReleaseBundle()) throw new Error('App Bundle build failed');
             
             // Copy and organize release files
-            const releaseInfo = this.copyReleaseFiles(newVersion);
+            const releaseInfo = this.copyReleaseFiles(newVersion, buildBundle);
             
             // Generate release notes
             const releaseNotesPath = this.generateReleaseNotes(newVersion, releaseInfo);

@@ -59,7 +59,9 @@ class PlaytivityViewModel(private val app: PlaytivityApp) : ViewModel() {
     val state: StateFlow<PlaytivityState> = _state.asStateFlow()
     private var token: String? = null
     private var pollJob: Job? = null
+    private var nowPlayingJob: Job? = null
     private var lastWidgetSignature: String? = null
+    private var lastTopFetchAt: Long = 0
 
     init {
         viewModelScope.launch {
@@ -115,13 +117,22 @@ class PlaytivityViewModel(private val app: PlaytivityApp) : ViewModel() {
         FriendActivityWidget.render(app)
         pollJob?.cancel()
         pollJob = null
+        nowPlayingJob?.cancel()
+        nowPlayingJob = null
         token = null
+        lastTopFetchAt = 0
         _state.value = PlaytivityState(ready = true, nightlyUpdates = app.updates.nightly, hapticsEnabled = app.hapticsEnabled, version = app.updates.currentVersion().version)
     }
 
     fun open(page: Page) {
         _state.update { it.copy(page = page) }
-        if (page == Page.Profile && _state.value.top == null) refreshProfile()
+        if (page == Page.Profile) {
+            if (_state.value.top == null || System.currentTimeMillis() - lastTopFetchAt >= TOP_STALE_MS) refreshProfile()
+            startNowPlayingPolling()
+        } else {
+            nowPlayingJob?.cancel()
+            nowPlayingJob = null
+        }
     }
 
     fun refreshFeed() = viewModelScope.launch { loadFeed() }
@@ -173,12 +184,17 @@ class PlaytivityViewModel(private val app: PlaytivityApp) : ViewModel() {
     }
 
     fun resume() {
-        if (_state.value.cookie != null) startPolling()
+        if (_state.value.cookie != null) {
+            startPolling()
+            if (_state.value.page == Page.Profile) startNowPlayingPolling()
+        }
     }
 
     fun pause() {
         pollJob?.cancel()
         pollJob = null
+        nowPlayingJob?.cancel()
+        nowPlayingJob = null
     }
 
     private fun startPolling() {
@@ -186,6 +202,23 @@ class PlaytivityViewModel(private val app: PlaytivityApp) : ViewModel() {
         pollJob = viewModelScope.launch {
             while (isActive && _state.value.cookie != null) {
                 loadFeed()
+                delay(30_000)
+            }
+        }
+    }
+
+    private fun startNowPlayingPolling() {
+        if (nowPlayingJob?.isActive == true || _state.value.cookie == null) return
+        nowPlayingJob = viewModelScope.launch {
+            while (isActive && _state.value.cookie != null && _state.value.page == Page.Profile) {
+                try {
+                    val playing = withToken(app.spotify::fetchCurrentlyPlaying)
+                    _state.update { it.copy(nowPlaying = playing) }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    // Keep the last known track while the connection is unavailable.
+                }
                 delay(30_000)
             }
         }
@@ -265,14 +298,8 @@ class PlaytivityViewModel(private val app: PlaytivityApp) : ViewModel() {
         _state.update { it.copy(loadingProfile = true, profileError = null) }
         try {
             val top = withToken { app.spotify.fetchTop(it) }
+            lastTopFetchAt = System.currentTimeMillis()
             _state.update { it.copy(top = top) }
-            val nowPlaying = try {
-                withToken(app.spotify::fetchCurrentlyPlaying)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Exception) {
-                null
-            }
             val listeners = mutableMapOf<String, Int>()
             for (artists in top.artists.chunked(4)) {
                 val batch = coroutineScope {
@@ -285,7 +312,7 @@ class PlaytivityViewModel(private val app: PlaytivityApp) : ViewModel() {
                 }
                 listeners.putAll(batch)
             }
-            _state.update { it.copy(nowPlaying = nowPlaying, artistListeners = listeners) }
+            _state.update { it.copy(artistListeners = listeners) }
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
@@ -296,6 +323,7 @@ class PlaytivityViewModel(private val app: PlaytivityApp) : ViewModel() {
     }
 
     companion object {
+        private const val TOP_STALE_MS = 5 * 60_000L
         val Factory = viewModelFactory {
             initializer { PlaytivityViewModel(this[APPLICATION_KEY] as PlaytivityApp) }
         }

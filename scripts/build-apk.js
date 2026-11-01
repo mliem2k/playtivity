@@ -2,14 +2,14 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const NightlyBuilder = require('./nightly.js');
 
 class APKBuilder {
     constructor() {
         this.projectRoot = path.join(__dirname, '..');
         this.pubspecPath = path.join(this.projectRoot, 'version.yml');
         this.outputDir = path.join(this.projectRoot, 'builds');
-        this.apkPath = path.join(this.projectRoot, 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk');
+        this.apkPath = path.join(this.projectRoot, 'native', 'app', 'build', 'outputs', 'apk', 'production', 'release', 'app-production-release.apk');
     }
 
     log(message, type = 'info') {
@@ -133,57 +133,8 @@ class APKBuilder {
         };
     }
 
-    runCommand(command, description) {
-        this.log(`${description}...`, 'build');
-        try {
-            const output = execSync(command, { 
-                cwd: this.projectRoot,
-                stdio: 'pipe',
-                encoding: 'utf8'
-            });
-            this.log(`${description} completed`, 'success');
-            return output;
-        } catch (error) {
-            this.log(`${description} failed: ${error.message}`, 'error');
-            throw error;
-        }
-    }
-
     buildAPK() {
-        this.log('Starting APK build process', 'build');
-
-        // Check if FVM is available, otherwise use flutter directly
-        let flutterCommand = 'flutter';
-        try {
-            execSync('fvm --version', { stdio: 'pipe' });
-            flutterCommand = 'fvm flutter';
-            this.log('Using FVM for Flutter commands');
-        } catch (error) {
-            this.log('FVM not found, using system Flutter');
-        }
-
-        try {
-            // Get dependencies
-            this.runCommand(`${flutterCommand} pub get`, 'Getting dependencies');
-            
-            // Clean previous builds
-            this.runCommand(`${flutterCommand} clean`, 'Cleaning previous builds');
-            
-            // Run tests (optional, continue on failure)
-            try {
-                this.runCommand(`${flutterCommand} test`, 'Running tests');
-            } catch (error) {
-                this.log('Tests failed, but continuing with build', 'warning');
-            }
-            
-            // Build APK
-            this.runCommand(`${flutterCommand} build apk --release`, 'Building APK');
-            
-            return true;
-        } catch (error) {
-            this.log(`Build failed: ${error.message}`, 'error');
-            return false;
-        }
+        return new NightlyBuilder().buildNightlyAPK();
     }
 
     copyAPK(version) {
@@ -256,8 +207,7 @@ class APKBuilder {
             console.log(`   Location: ${apkInfo.timestampedPath}`);
             console.log(`   Latest: ${apkInfo.latestPath}`);
             console.log('\nInstallation:');
-            console.log(`   adb install "${apkInfo.latestPath}"`);
-            console.log('   or transfer to your device and install manually');
+            console.log('   Transfer the APK to your Android device and open it to install');
             
         } catch (error) {
             this.log(`Build process failed: ${error.message}`, 'error');
@@ -288,7 +238,7 @@ Examples:
 
 The script will:
   - Automatically increment the version in version.yml
-  - Clean and build the APK
+  - Test, lint, and build the signed Kotlin APK
   - Copy the APK to builds/ folder with timestamp
   - Create a "latest" APK for easy installation
 `);

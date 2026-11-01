@@ -35,8 +35,10 @@ class SessionStore(context: Context) {
             return null
         }
         val cookie = spotifySessionCookie(cookieHeader)
-        if (cookie != null) saveCookie(cookie)
-        preferences.edit().putBoolean("web_cookie_checked", true).apply()
+        if (cookie != null) {
+            saveCookie(cookie)
+            preferences.edit().putBoolean("web_cookie_checked", true).apply()
+        }
         return cookie
     }
 

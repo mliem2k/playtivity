@@ -23,9 +23,7 @@ The workflows in `.github/workflows/` have been removed; releases are owned by t
 
 All version strings follow `version: NAME+BUILD` in `version.yml`.
 
-`app.config.js` maps this to the platform as:
-- Android `versionName` = NAME, `versionCode` = BUILD
-- iOS `CFBundleShortVersionString` = NAME, `CFBundleVersion` = BUILD
+`native/app/build.gradle` maps NAME to Android `versionName` and BUILD to Android `versionCode`.
 
 ### Stable release
 
@@ -59,7 +57,7 @@ Example: `0.0.2-nightly-20260611-050901+1781212141`
 - GitHub tags: `nightly-YYYYMMDD-HHMMSS` (individual build) and
   `latest-nightly` (floating, always recreated to point to the newest nightly).
 
-### In-app update detection (`src/lib/update.ts`)
+### In-app update detection (`native/core/src/main/java/com/mliem/playtivity/core/UpdateModels.kt`)
 
 | Installed | Available | Rule |
 |-----------|-----------|------|
