@@ -23,6 +23,9 @@ class UpdateModelsTest {
         assertTrue(shouldUpdateToNightly(AppVersion("0.0.2-nightly-x", "1781212140"), info))
         assertFalse(shouldUpdateToNightly(AppVersion("0.0.2-nightly-x", "1781212141"), info))
         assertTrue(shouldUpdateToNightly(AppVersion("0.0.2", "1"), info))
+        assertFalse(shouldUpdateToNightly(AppVersion("0.0.2", "1781212142"), info))
+        assertFalse(shouldUpdateToNightly(AppVersion("0.0.2", "1781212142"), info.copy(version = "0.0.3-nightly-20260611-050901")))
+        assertTrue(shouldUpdateToNightly(AppVersion("0.0.2", "1781212140"), info.copy(version = "0.0.3-nightly-20260611-050901")))
         assertFalse(shouldUpdateToNightly(AppVersion("0.0.3", "1"), info))
     }
 

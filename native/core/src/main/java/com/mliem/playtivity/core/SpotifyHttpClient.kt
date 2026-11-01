@@ -2,16 +2,25 @@ package com.mliem.playtivity.core
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.io.IOException
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 data class SpotifyEndpoints(
     val open: String = "https://open.spotify.com",
@@ -31,14 +40,14 @@ class SpotifyHttpClient(
     suspend fun fetchBearerToken(spDc: String): String? = withContext(Dispatchers.IO) {
         val serverTime = try {
             val request = Request.Builder().url(endpoints.open).get().build()
-            client.newCall(request).execute().use { response ->
-                ZonedDateTime.parse(response.header("Date"), DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli()
-            }
+            val date = execute(request) { it.header("Date") }
+            ZonedDateTime.parse(date, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli()
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
             System.currentTimeMillis()
         }
+        currentCoroutineContext().ensureActive()
         val code = totp.generateCode(serverTime)
         val url = "${endpoints.open}/api/token".toHttpUrl().newBuilder()
             .addQueryParameter("reason", "transport")
@@ -145,8 +154,26 @@ class SpotifyHttpClient(
         .header("User-Agent", WEB_USER_AGENT)
         .build()
 
-    private fun execute(request: Request): HttpResult = client.newCall(request).execute().use { response ->
-        HttpResult(response.code, response.body.string())
+    private suspend fun execute(request: Request): HttpResult = execute(request) { HttpResult(it.code, it.body.string()) }
+
+    private suspend fun <T> execute(request: Request, decode: (Response) -> T): T = suspendCancellableCoroutine { continuation ->
+        val call = client.newCall(request)
+        continuation.invokeOnCancellation { call.cancel() }
+        call.enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                continuation.resumeWithException(e)
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                val result = try {
+                    response.use { decode(it) }
+                } catch (error: Exception) {
+                    continuation.resumeWithException(error)
+                    return
+                }
+                continuation.resume(result)
+            }
+        })
     }
 
     private fun check(response: HttpResult, what: String) {

@@ -11,6 +11,12 @@ def versionParts = versionText.split('\\+')
 if (versionParts.length != 2 || !versionParts[1].matches(/\d+/)) {
     throw new GradleException('version.yml must contain version: NAME+BUILD')
 }
+def buildCode = versionParts[1].toLong()
+// ponytail: Unix seconds reach Android's code limit in 2036; use a persisted release sequence before then.
+def androidCode = versionParts[0].contains('-nightly-') ? buildCode : Math.max(buildCode, System.currentTimeMillis().intdiv(1000))
+if (androidCode > 2100000000L) {
+    throw new GradleException('Android version code exceeds the supported range')
+}
 def signingVariables = ['ANDROID_KEYSTORE_PATH', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD']
 def releaseSigningReady = signingVariables.every { System.getenv(it) }
 
@@ -26,7 +32,7 @@ android {
         applicationId 'com.mliem.playtivity'
         minSdk 26
         targetSdk 36
-        versionCode versionParts[1].toInteger()
+        versionCode androidCode.toInteger()
         versionName versionParts[0]
     }
 

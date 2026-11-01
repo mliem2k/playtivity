@@ -50,6 +50,9 @@ fun shouldUpdateToNightly(current: AppVersion, nightly: UpdateInfo): Boolean {
     if ("nightly" !in current.version) {
         val currentBase = extractBaseVersion(current.version)
         val nextBase = extractBaseVersion(nightly.version)
+        val currentCode = current.buildNumber.toLongOrNull()
+        val nextCode = nightly.buildNumber.toLongOrNull()
+        if (currentCode != null && nextCode != null && nextCode <= currentCode) return false
         return currentBase == nextBase || isNewerVersion(currentBase, nextBase)
     }
     val oldBuild = current.buildNumber.toLongOrNull()

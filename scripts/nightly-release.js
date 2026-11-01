@@ -294,23 +294,14 @@ class NightlyReleaser {
         }
     }
 
-    buildSignedAPK() {
+    buildSignedAPK(buildBundle = false) {
         const NightlyBuilder = require('./nightly');
-        return new NightlyBuilder().buildNightlyAPK();
+        return new NightlyBuilder().buildNightlyAPK(buildBundle);
     }
 
     buildSignedBundle() {
-        this.log('Building signed App Bundle (AAB)', 'build');
         const bundlePath = path.join(this.projectRoot, 'native', 'app', 'build', 'outputs', 'bundle', 'productionRelease', 'app-production-release.aab');
-        if (process.env.PLAYTIVITY_BUILDER) return fs.existsSync(bundlePath);
-        fs.rmSync(bundlePath, { force: true });
-        try {
-            this.runCommand('cd native && ./gradlew :app:bundleProductionRelease', 'Building signed release bundle');
-            return true;
-        } catch (error) {
-            this.log(`Bundle build failed: ${error.message}`, 'warning');
-            return false;
-        }
+        return fs.existsSync(bundlePath);
     }
 
     generateChecksum(filePath) {
@@ -325,7 +316,7 @@ class NightlyReleaser {
         }
     }
 
-    copyReleaseFiles(version, nightlyBuild) {
+    copyReleaseFiles(version, nightlyBuild, buildBundle = true) {
         this.log('Copying release files to releases directory', 'release');
         
         const apkPath = path.join(this.projectRoot, 'native', 'app', 'build', 'outputs', 'apk', 'production', 'release', 'app-production-release.apk');
@@ -359,8 +350,8 @@ class NightlyReleaser {
             this.log(`Release APK copied: ${apkFileName}`, 'success');
         }
 
-        // Copy AAB if exists
-        if (fs.existsSync(bundlePath)) {
+        // Copy AAB only when this build requested one
+        if (buildBundle && fs.existsSync(bundlePath)) {
             const bundleFileName = `playtivity-v${version.versionName}-from-nightly-release.aab`;
             const bundleDestPath = path.join(this.releasesDir, bundleFileName);
             
@@ -510,7 +501,7 @@ Download the APK below. Enable "Install from unknown sources" in Android setting
             const releaseVersion = this.createReleaseVersion(incrementType, customVersion);
             
             // Build signed APK and Bundle
-            const apkSuccess = this.buildSignedAPK();
+            const apkSuccess = this.buildSignedAPK(buildBundle);
             if (!apkSuccess) {
                 throw new Error('Release APK build failed');
             }
@@ -522,7 +513,7 @@ Download the APK below. Enable "Install from unknown sources" in Android setting
             }
             
             // Copy and organize release files
-            const releaseInfo = this.copyReleaseFiles(releaseVersion, selectedBuild);
+            const releaseInfo = this.copyReleaseFiles(releaseVersion, selectedBuild, buildBundle);
 
             // Generate release notes
             const releaseNotesPath = this.generateReleaseNotes(releaseVersion, releaseInfo, selectedBuild);

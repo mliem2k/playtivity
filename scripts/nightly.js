@@ -251,7 +251,7 @@ After installation, authenticate with: gh auth login
         this.log('Release signing configured', 'success');
     }
 
-    buildNightlyAPK() {
+    buildNightlyAPK(buildBundle = false) {
         this.log('Starting nightly APK build', 'build');
 
         // Signing env vars must be set before gradle runs, otherwise the APK falls back to the
@@ -264,7 +264,11 @@ After installation, authenticate with: gh auth login
                 return true;
             }
             const clean = this.shouldCleanBuild() ? ' clean' : '';
-            this.runCommand(`cd native && ./gradlew${clean} :core:testDebugUnitTest :app:lintProductionRelease :app:assembleProductionRelease`, 'Building Kotlin APK');
+            const bundleTask = buildBundle ? ' :app:bundleProductionRelease' : '';
+            if (buildBundle) {
+                fs.rmSync(path.join(this.projectRoot, 'native', 'app', 'build', 'outputs', 'bundle', 'productionRelease', 'app-production-release.aab'), { force: true });
+            }
+            this.runCommand(`cd native && ./gradlew${clean} :core:testDebugUnitTest :app:lintProductionRelease :app:assembleProductionRelease${bundleTask}`, 'Building Kotlin APK');
             this.verifyApk(this.apkPath);
             return true;
         } catch (error) {
@@ -400,7 +404,7 @@ After installation, authenticate with: gh auth login
 
     cleanDraftReleases() {
         try {
-            const raw = execSync('gh release list --json tagName,isDraft --limit 30 --include-drafts', {
+            const raw = execSync('gh release list --json tagName,isDraft --limit 30', {
                 encoding: 'utf8',
                 cwd: this.projectRoot,
                 stdio: ['ignore', 'pipe', 'ignore'],

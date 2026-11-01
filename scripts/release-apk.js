@@ -212,23 +212,12 @@ class APKReleaser {
         }
     }
 
-    buildReleaseAPK() {
-        return new NightlyBuilder().buildNightlyAPK();
+    buildReleaseAPK(buildBundle = false) {
+        return new NightlyBuilder().buildNightlyAPK(buildBundle);
     }
 
     buildReleaseBundle() {
-        this.log('Building Android App Bundle (AAB)', 'build');
-
-        try {
-            if (!process.env.PLAYTIVITY_BUILDER) {
-                this.runCommand('cd native && ./gradlew :app:bundleProductionRelease', 'Building signed Kotlin App Bundle');
-            }
-            if (!fs.existsSync(this.bundlePath)) throw new Error('Signed App Bundle not found');
-            return true;
-        } catch (error) {
-            this.log(`Bundle build failed: ${error.message}`, 'warning');
-            return false;
-        }
+        return fs.existsSync(this.bundlePath);
     }
 
     generateAPKChecksum(apkPath) {
@@ -375,7 +364,7 @@ You can verify the integrity of the downloaded files using their SHA256 checksum
             const newVersion = this.incrementVersion(incrementType);
             
             // Build APK
-            const apkSuccess = this.buildReleaseAPK();
+            const apkSuccess = this.buildReleaseAPK(buildBundle);
             if (!apkSuccess) {
                 throw new Error('APK build failed');
             }

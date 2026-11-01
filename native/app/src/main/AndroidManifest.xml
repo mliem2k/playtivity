@@ -16,7 +16,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <receiver android:name=".FriendActivityWidget" android:exported="false" android:label="Playtivity">
+        <receiver android:name="com.mliem.playtivity.widget.PlaytivityWidgetReceiver" android:exported="false" android:label="Playtivity">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="com.mliem.playtivity.nativeapp.REFRESH_WIDGET" />

@@ -1,6 +1,6 @@
 # Playtivity Android builds
 
-The Android app is built from `native/` with Kotlin and Gradle. `version.yml` supplies the Android version name and code.
+The Android app is built from `native/` with Kotlin and Gradle. `version.yml` supplies the version name and nightly build code; stable APKs use their build-time Unix timestamp as the Android version code so they can upgrade an installed nightly.
 
 ## Requirements
 

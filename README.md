@@ -22,7 +22,7 @@
 
 ## Screenshots
 
-These screenshots show the earlier Expo interface. The Kotlin interface is being checked for feature parity.
+These screenshots show an earlier interface. The Kotlin interface is being checked for feature parity.
 
 <div align="center">
   <table>
@@ -70,7 +70,7 @@ cd native
 ./gradlew :core:testDebugUnitTest :app:lintPreviewDebug :app:assemblePreviewDebug
 ```
 
-The preview APK is written to `native/app/build/outputs/apk/preview/debug/`. Production builds use the `production` flavor and read `version.yml`. The existing Expo source remains in the repository while device parity is checked.
+The preview APK is written to `native/app/build/outputs/apk/preview/debug/`. Production builds use the `production` flavor and read `version.yml`.
 
 ## Platform Support
 

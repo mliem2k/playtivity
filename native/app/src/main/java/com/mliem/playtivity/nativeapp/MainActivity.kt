@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.view.HapticFeedbackConstants
+import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -12,6 +13,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -141,7 +144,9 @@ private fun LoginScreen(error: String?, signingIn: Boolean, onCookie: (String) -
                 modifier = Modifier.fillMaxSize(),
                 factory = { context ->
                     WebView(context).apply {
+                        layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                         settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
                         settings.userAgentString = SpotifyHttpClient.WEB_USER_AGENT
                         CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
                         webViewClient = object : WebViewClient() {
@@ -180,10 +185,13 @@ private fun AppScreen(state: PlaytivityState, viewModel: PlaytivityViewModel) {
     Scaffold(
         topBar = {
             state.updateInfo?.let { info ->
-                Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Update ${info.version} available", Modifier.weight(1f).padding(8.dp))
-                    Button(onClick = viewModel::installUpdate, enabled = !state.installingUpdate) { Text("Install") }
-                    Button(onClick = viewModel::dismissUpdate) { Text("Dismiss") }
+                Column {
+                    Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Update ${info.version} available", Modifier.weight(1f).padding(8.dp))
+                        Button(onClick = viewModel::installUpdate, enabled = !state.installingUpdate) { Text("Install") }
+                        Button(onClick = viewModel::dismissUpdate) { Text("Dismiss") }
+                    }
+                    state.updateMessage?.let { Text(it, Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error) }
                 }
             }
         },
@@ -351,7 +359,7 @@ private fun SettingsPage(state: PlaytivityState, viewModel: PlaytivityViewModel,
         if (state.hapticsEnabled) view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
         context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
     }
-    Column(modifier.fillMaxSize().padding(16.dp)) {
+    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         Text("Settings", style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(24.dp))
         state.user?.let { user ->

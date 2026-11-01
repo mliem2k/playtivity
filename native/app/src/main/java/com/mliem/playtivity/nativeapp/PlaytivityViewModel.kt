@@ -19,6 +19,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -111,10 +112,14 @@ class PlaytivityViewModel(private val app: PlaytivityApp) : ViewModel() {
     }
 
     fun signOut() {
-        app.sessions.clear()
-        app.activityCache.clear()
-        lastWidgetSignature = null
-        FriendActivityWidget.render(app)
+        viewModelScope.coroutineContext.cancelChildren()
+        synchronized(app.sessions) {
+            FriendActivityWidget.cancelRefreshes()
+            app.sessions.clear()
+            app.activityCache.clear()
+            lastWidgetSignature = null
+            FriendActivityWidget.render(app)
+        }
         pollJob?.cancel()
         pollJob = null
         nowPlayingJob?.cancel()

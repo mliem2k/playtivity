@@ -23,7 +23,7 @@ The workflows in `.github/workflows/` have been removed; releases are owned by t
 
 All version strings follow `version: NAME+BUILD` in `version.yml`.
 
-`native/app/build.gradle` maps NAME to Android `versionName` and BUILD to Android `versionCode`.
+`native/app/build.gradle` maps NAME to Android `versionName`. Nightlies use BUILD as Android `versionCode`; stable APKs keep BUILD at `1` in `version.yml` but receive the build-time Unix timestamp as Android `versionCode` so they can upgrade installed nightlies.
 
 ### Stable release
 
@@ -64,7 +64,7 @@ Example: `0.0.2-nightly-20260611-050901+1781212141`
 | nightly   | nightly   | BUILD (integer) comparison — larger BUILD wins. Timestamp fallback if BUILDs are unparseable. |
 | nightly   | stable    | Offered when stable base version > nightly base version (any semver bump). |
 | stable    | stable    | Semver comparison on NAME. |
-| stable    | nightly   | Only offered if nightly base version >= installed stable base version. |
+| stable    | nightly   | Offered for a higher or equal base version only when the nightly Android code is newer, if both codes are available. |
 
 ### What never changes
 

@@ -1,6 +1,5 @@
 #!/usr/bin/env bun
 // Tests buddylist API fetch + JSON parsing against the live endpoint.
-// Mirrors parseFriendsJson logic from lib/services/spotify_buddy_service.dart.
 //
 // Usage:
 //   bun scripts/test_buddylist_parse.js [bearer_token]

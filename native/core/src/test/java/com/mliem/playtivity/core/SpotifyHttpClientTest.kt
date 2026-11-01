@@ -1,15 +1,22 @@
 package com.mliem.playtivity.core
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.util.concurrent.TimeUnit
 
 class SpotifyHttpClientTest {
     private lateinit var server: MockWebServer
@@ -39,6 +46,23 @@ class SpotifyHttpClientTest {
         server.enqueue(MockResponse().setResponseCode(200))
         server.enqueue(MockResponse().setResponseCode(200).setBody("""{"accessToken":"guest","isAnonymous":true}"""))
         assertNull(spotify.fetchBearerToken("cookie"))
+    }
+
+    @Test fun cancellationStopsInitialClockRequest() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setHeadersDelay(3, TimeUnit.SECONDS))
+        val request = launch(Dispatchers.IO) { spotify.fetchBearerToken("cookie") }
+        assertNotNull(server.takeRequest(2, TimeUnit.SECONDS))
+        withTimeout(1000) { request.cancelAndJoin() }
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test fun cancellationStopsInFlightCookieRequest() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200))
+        server.enqueue(MockResponse().setResponseCode(200).setBodyDelay(3, TimeUnit.SECONDS).setBody("""{"accessToken":"token"}"""))
+        val request = launch(Dispatchers.IO) { spotify.fetchBearerToken("cookie") }
+        assertNotNull(server.takeRequest(2, TimeUnit.SECONDS))
+        assertEquals("sp_dc=cookie", server.takeRequest(2, TimeUnit.SECONDS)?.getHeader("Cookie"))
+        withTimeout(1000) { request.cancelAndJoin() }
     }
 
     @Test fun authorizationRefusalDoesNotRetry() = runTest {

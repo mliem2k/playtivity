@@ -12,13 +12,15 @@ import android.widget.RemoteViews
 import com.mliem.playtivity.core.mergeActivities
 import com.mliem.playtivity.core.parseFriends
 import com.mliem.playtivity.core.sortForWidget
+import com.mliem.playtivity.widget.PlaytivityWidgetReceiver
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.launch
 
-class FriendActivityWidget : AppWidgetProvider() {
+open class FriendActivityWidget : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) {
         render(context)
         refresh(context)
@@ -32,37 +34,45 @@ class FriendActivityWidget : AppWidgetProvider() {
     private fun refresh(context: Context) {
         val pending = goAsync()
         val app = context.applicationContext as PlaytivityApp
-        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-            try {
-                val cookie = app.sessions.readCookie() ?: return@launch
-                var token = app.spotify.fetchBearerToken(cookie)
-                if (token == null) {
-                    app.secrets.refresh()
-                    token = app.spotify.fetchBearerToken(cookie)
+        synchronized(app.sessions) {
+            refreshScope.launch {
+                try {
+                    val cookie = app.sessions.readCookie() ?: return@launch
+                    var token = app.spotify.fetchBearerToken(cookie)
+                    if (token == null) {
+                        app.secrets.refresh()
+                        token = app.spotify.fetchBearerToken(cookie)
+                    }
+                    val body = token?.let { app.spotify.fetchBuddyList(it) } ?: return@launch
+                    val merged = mergeActivities(app.activityCache.load(), parseFriends(body))
+                    synchronized(app.sessions) {
+                        if (app.sessions.readCookie() != cookie) return@synchronized
+                        if (merged.isNotEmpty()) app.activityCache.save(merged)
+                        render(context)
+                    }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    render(context)
                 }
-                val body = token?.let { app.spotify.fetchBuddyList(it) } ?: return@launch
-                val merged = mergeActivities(app.activityCache.load(), parseFriends(body))
-                if (merged.isNotEmpty()) app.activityCache.save(merged)
-                render(context)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Exception) {
-                render(context)
-            } finally {
-                pending.finish()
-            }
+            }.invokeOnCompletion { pending.finish() }
         }
     }
 
     companion object {
         private const val ACTION_REFRESH = "com.mliem.playtivity.nativeapp.REFRESH_WIDGET"
+        private val refreshScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-        fun render(context: Context) {
+        fun cancelRefreshes() {
+            refreshScope.coroutineContext.cancelChildren()
+        }
+
+        fun render(context: Context) = synchronized((context.applicationContext as PlaytivityApp).sessions) {
             val app = context.applicationContext as PlaytivityApp
             val manager = AppWidgetManager.getInstance(context)
-            val component = ComponentName(context, FriendActivityWidget::class.java)
+            val component = ComponentName(context, PlaytivityWidgetReceiver::class.java)
             val ids = manager.getAppWidgetIds(component)
-            if (ids.isEmpty()) return
+            if (ids.isEmpty()) return@synchronized
             val rows = sortForWidget(mergeActivities(app.activityCache.load(), emptyList()))
             val useCollection = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && rows.size <= 20 && rows.all { activity ->
                 listOfNotNull(activity.user.imageUrl, activity.track?.imageUrl ?: activity.playlist?.imageUrl)
@@ -70,7 +80,7 @@ class FriendActivityWidget : AppWidgetProvider() {
             }
             ids.forEach { id ->
                 val views = RemoteViews(context.packageName, R.layout.widget_friend_activity)
-                val refresh = Intent(context, FriendActivityWidget::class.java).setAction(ACTION_REFRESH)
+                val refresh = Intent(context, PlaytivityWidgetReceiver::class.java).setAction(ACTION_REFRESH)
                 val pending = PendingIntent.getBroadcast(context, id, refresh, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
                 views.setOnClickPendingIntent(R.id.widget_refresh, pending)
                 val openApp = PendingIntent.getActivity(context, id, Intent(context, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)

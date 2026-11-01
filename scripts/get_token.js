@@ -1,6 +1,5 @@
 #!/usr/bin/env bun
 // Fetches a Spotify web-player JWT access token using an sp_dc cookie.
-// Mirrors SpotifyTokenService + SpotifyTotpHelper from the Flutter app.
 //
 // Usage:
 //   bun scripts/get_token.js <sp_dc_value>
@@ -11,7 +10,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-// --- TOTP secrets (same as SpotifyTotpHelper.secretCipherDict) ---
+// TOTP secrets
 const SECRET_CIPHER_DICT = {
   '59': [123,105,79,70,110,59,52,125,60,49,80,70,89,75,80,86,63,53,123,37,117,49,52,93,77,62,47,86,48,104,68,72],
   '60': [79,109,69,123,90,65,46,74,94,34,58,48,70,71,92,85,122,63,91,64,87,87],
