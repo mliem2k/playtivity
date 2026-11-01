@@ -65,7 +65,7 @@ class PlaytivityViewModel(private val app: PlaytivityApp) : ViewModel() {
         viewModelScope.launch {
             _state.update { it.copy(nightlyUpdates = app.updates.nightly, hapticsEnabled = app.hapticsEnabled, version = app.updates.currentVersion().version) }
             app.secrets.initialize(viewModelScope)
-            val cookie = app.sessions.readCookie()
+            val cookie = app.sessions.readOrImportCookie()
             val cached = if (cookie != null) mergeActivities(app.activityCache.load(), emptyList()) else emptyList()
             _state.update { it.copy(ready = true, cookie = cookie, activities = cached) }
             if (cookie != null) {

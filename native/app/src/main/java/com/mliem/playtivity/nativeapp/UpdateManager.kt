@@ -32,6 +32,9 @@ class UpdateManager(private val context: Context, private val client: OkHttpClie
     }
 
     suspend fun check(force: Boolean = false): UpdateCheck = withContext(Dispatchers.IO) {
+        if (context.packageName != PRODUCTION_PACKAGE) {
+            return@withContext UpdateCheck(false, false, error = "Updates are available in the official Playtivity app")
+        }
         val now = System.currentTimeMillis()
         val last = preferences.getLong("last_update_check", 0)
         if (!force && now - last < DAY_MS) return@withContext UpdateCheck(false, false, error = "Too soon since last check")
@@ -88,5 +91,6 @@ class UpdateManager(private val context: Context, private val client: OkHttpClie
 
     companion object {
         private const val DAY_MS = 24 * 60 * 60 * 1000L
+        private const val PRODUCTION_PACKAGE = "com.mliem.playtivity"
     }
 }

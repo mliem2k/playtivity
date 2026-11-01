@@ -3,6 +3,17 @@ plugins {
     id 'org.jetbrains.kotlin.plugin.compose'
 }
 
+def versionText = file('../../version.yml').text.readLines().find { it.startsWith('version:') }?.substring('version:'.length())?.trim()
+if (!versionText || !versionText.matches(/[A-Za-z0-9.+-]+/)) {
+    throw new GradleException('version.yml must contain version: NAME+BUILD')
+}
+def versionParts = versionText.split('\\+')
+if (versionParts.length != 2 || !versionParts[1].matches(/\d+/)) {
+    throw new GradleException('version.yml must contain version: NAME+BUILD')
+}
+def signingVariables = ['ANDROID_KEYSTORE_PATH', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD']
+def releaseSigningReady = signingVariables.every { System.getenv(it) }
+
 kotlin {
     jvmToolchain(21)
 }
@@ -12,11 +23,41 @@ android {
     compileSdk 37
 
     defaultConfig {
-        applicationId 'com.mliem.playtivity.nativeapp'
+        applicationId 'com.mliem.playtivity'
         minSdk 26
         targetSdk 36
-        versionCode 1
-        versionName '0.1.0'
+        versionCode versionParts[1].toInteger()
+        versionName versionParts[0]
+    }
+
+    flavorDimensions 'distribution'
+    productFlavors {
+        preview {
+            dimension 'distribution'
+            applicationIdSuffix '.nativeapp'
+            resValue 'string', 'app_name', 'Playtivity Preview'
+        }
+        production {
+            dimension 'distribution'
+            resValue 'string', 'app_name', 'Playtivity'
+        }
+    }
+
+    signingConfigs {
+        productionRelease {
+            if (releaseSigningReady) {
+                storeFile file(System.getenv('ANDROID_KEYSTORE_PATH'))
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            if (releaseSigningReady) signingConfig signingConfigs.productionRelease
+        }
     }
 
     compileOptions {
@@ -26,6 +67,7 @@ android {
 
     buildFeatures {
         compose true
+        resValues true
     }
 }
 

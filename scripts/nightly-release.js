@@ -295,49 +295,17 @@ class NightlyReleaser {
     }
 
     buildSignedAPK() {
-        this.log('Building signed release APK from nightly code', 'build');
-
-        let flutterCommand = 'flutter';
-        try {
-            execSync('fvm --version', { stdio: 'pipe' });
-            flutterCommand = 'fvm flutter';
-            this.log('Using FVM for Flutter commands');
-        } catch (error) {
-            this.log('FVM not found, using system Flutter');
-        }
-
-        try {
-            this.runCommand(`${flutterCommand} clean`, 'Cleaning project');
-            this.runCommand(`${flutterCommand} pub get`, 'Getting dependencies');
-            
-            try {
-                this.runCommand(`${flutterCommand} test`, 'Running tests');
-            } catch (error) {
-                this.log('Tests failed, but continuing with release build', 'warning');
-            }
-            
-            this.runCommand(`${flutterCommand} build apk --release`, 'Building signed release APK');
-            
-            return true;
-        } catch (error) {
-            this.log(`Release build failed: ${error.message}`, 'error');
-            return false;
-        }
+        const NightlyBuilder = require('./nightly');
+        return new NightlyBuilder().buildNightlyAPK();
     }
 
     buildSignedBundle() {
         this.log('Building signed App Bundle (AAB)', 'build');
-
-        let flutterCommand = 'flutter';
+        const bundlePath = path.join(this.projectRoot, 'native', 'app', 'build', 'outputs', 'bundle', 'productionRelease', 'app-production-release.aab');
+        if (process.env.PLAYTIVITY_BUILDER) return fs.existsSync(bundlePath);
+        fs.rmSync(bundlePath, { force: true });
         try {
-            execSync('fvm --version', { stdio: 'pipe' });
-            flutterCommand = 'fvm flutter';
-        } catch (error) {
-            // FVM not available
-        }
-
-        try {
-            this.runCommand(`${flutterCommand} build appbundle --release`, 'Building signed release bundle');
+            this.runCommand('cd native && ./gradlew :app:bundleProductionRelease', 'Building signed release bundle');
             return true;
         } catch (error) {
             this.log(`Bundle build failed: ${error.message}`, 'warning');
@@ -360,8 +328,8 @@ class NightlyReleaser {
     copyReleaseFiles(version, nightlyBuild) {
         this.log('Copying release files to releases directory', 'release');
         
-        const apkPath = path.join(this.projectRoot, 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk');
-        const bundlePath = path.join(this.projectRoot, 'build', 'app', 'outputs', 'bundle', 'release', 'app-release.aab');
+        const apkPath = path.join(this.projectRoot, 'native', 'app', 'build', 'outputs', 'apk', 'production', 'release', 'app-production-release.apk');
+        const bundlePath = path.join(this.projectRoot, 'native', 'app', 'build', 'outputs', 'bundle', 'productionRelease', 'app-production-release.aab');
         
         const releaseInfo = {
             version: version,
@@ -548,7 +516,9 @@ Download the APK below. Enable "Install from unknown sources" in Android setting
             }
 
             if (buildBundle) {
-                this.buildSignedBundle();
+                if (!this.buildSignedBundle()) {
+                    throw new Error('Release bundle build failed');
+                }
             }
             
             // Copy and organize release files

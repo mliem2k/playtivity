@@ -4,6 +4,8 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import android.webkit.CookieManager
+import com.mliem.playtivity.core.spotifySessionCookie
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -20,8 +22,22 @@ class SessionStore(context: Context) {
         cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
         String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8)
     } catch (_: Exception) {
-        clear()
+        preferences.edit().remove("sp_dc").apply()
         null
+    }
+
+    fun readOrImportCookie(): String? {
+        readCookie()?.let { return it }
+        if (preferences.getBoolean("web_cookie_checked", false)) return null
+        val cookieHeader = try {
+            CookieManager.getInstance().getCookie("https://open.spotify.com")
+        } catch (_: Exception) {
+            return null
+        }
+        val cookie = spotifySessionCookie(cookieHeader)
+        if (cookie != null) saveCookie(cookie)
+        preferences.edit().putBoolean("web_cookie_checked", true).apply()
+        return cookie
     }
 
     fun saveCookie(cookie: String) {
@@ -32,7 +48,7 @@ class SessionStore(context: Context) {
     }
 
     fun clear() {
-        preferences.edit().remove("sp_dc").apply()
+        preferences.edit().remove("sp_dc").putBoolean("web_cookie_checked", true).apply()
     }
 
     private fun key(): SecretKey {

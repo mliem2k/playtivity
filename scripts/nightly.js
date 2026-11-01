@@ -10,7 +10,7 @@ class NightlyBuilder {
         this.projectRoot = path.join(__dirname, '..');
         this.pubspecPath = path.join(this.projectRoot, 'version.yml');
         this.outputDir = path.join(this.projectRoot, 'nightly');
-        this.apkPath = path.join(this.projectRoot, 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk');
+        this.apkPath = path.join(this.projectRoot, 'native', 'app', 'build', 'outputs', 'apk', 'production', 'release', 'app-production-release.apk');
         this.keystorePath = path.join(this.projectRoot, 'release-key.jks');
         this.keystoreBase64Path = path.join(this.projectRoot, 'keystore.base64.txt');
         this.githubRepo = this.detectGitHubRepo();
@@ -200,12 +200,10 @@ After installation, authenticate with: gh auth login
 
     getBuildEnvironment() {
         const env = {};
-        try {
-            env.expoVersion = JSON.parse(fs.readFileSync(path.join(this.projectRoot, 'node_modules', 'expo', 'package.json'), 'utf8')).version;
-        } catch {
-            env.expoVersion = 'unknown';
-        }
-        env.bunVersion = Bun.version;
+        const gradle = fs.readFileSync(path.join(this.projectRoot, 'native', 'gradle', 'wrapper', 'gradle-wrapper.properties'), 'utf8');
+        const plugins = fs.readFileSync(path.join(this.projectRoot, 'native', 'build.gradle'), 'utf8');
+        env.gradleVersion = gradle.match(/gradle-([\d.]+)-all\.zip/)?.[1] || 'unknown';
+        env.kotlinVersion = plugins.match(/org\.jetbrains\.kotlin\.plugin\.compose' version '([^']+)'/)?.[1] || 'unknown';
         return env;
     }
 
@@ -221,8 +219,9 @@ After installation, authenticate with: gh auth login
             this.log(`${description} completed`, 'success');
             return true;
         } catch (error) {
-            this.log(`${description} failed: ${error.message}`, 'error');
-            throw error;
+            const failure = new Error(`${description} failed with exit code ${error.status ?? 'unknown'}`);
+            this.log(failure.message, 'error');
+            throw failure;
         }
     }
 
@@ -264,19 +263,9 @@ After installation, authenticate with: gh auth login
                 this.buildOnRemote(process.env.PLAYTIVITY_BUILDER);
                 return true;
             }
-            // Same ccache speed-up as the remote builder, when it is installed here.
-            try {
-                execSync('ccache --version', { stdio: 'pipe' });
-                process.env.CMAKE_C_COMPILER_LAUNCHER = 'ccache';
-                process.env.CMAKE_CXX_COMPILER_LAUNCHER = 'ccache';
-                process.env.CCACHE_SLOPPINESS = 'pch_defines,time_macros';
-            } catch {}
-            this.runCommand('bun install --frozen-lockfile', 'Installing dependencies');
-            // Prebuild regenerates android/ from app.config.js, which reads version.yml, so the
-            // nightly version written above is what lands in versionName and versionCode.
-            const clean = this.shouldCleanBuild() ? ' --clean' : '';
-            this.runCommand(`bunx expo prebuild --platform android --no-install${clean}`, 'Generating Android project');
-            this.runCommand('cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a', 'Building APK');
+            const clean = this.shouldCleanBuild() ? ' clean' : '';
+            this.runCommand(`cd native && ./gradlew${clean} :core:testDebugUnitTest :app:lintProductionRelease :app:assembleProductionRelease`, 'Building Kotlin APK');
+            this.verifyApk(this.apkPath);
             return true;
         } catch (error) {
             this.log(`Build failed: ${error.message}`, 'error');
@@ -289,9 +278,12 @@ After installation, authenticate with: gh auth login
     buildOnRemote(host) {
         const remoteDir = 'C:/b/pt';
         const apkOut = this.apkPath;
-        const tracked = execSync('git ls-files -z --cached --others --exclude-standard', { cwd: this.projectRoot, maxBuffer: 64 * 1024 * 1024 })
+        const bundleOut = path.join(this.projectRoot, 'native', 'app', 'build', 'outputs', 'bundle', 'productionRelease', 'app-production-release.aab');
+        fs.rmSync(apkOut, { force: true });
+        fs.rmSync(bundleOut, { force: true });
+        const tracked = execSync('git ls-files -z native version.yml', { cwd: this.projectRoot, maxBuffer: 64 * 1024 * 1024 })
             .toString('utf8').split('\0')
-            .filter((p) => p && !/^(landing|releases|nightly|builds|screenshots|docs)\//.test(p) && !/jks|keystore/.test(p));
+            .filter(Boolean);
         const listFile = path.join(this.outputDir, '.sync-files');
         fs.mkdirSync(this.outputDir, { recursive: true });
         fs.writeFileSync(listFile, tracked.join('\n'));
@@ -299,7 +291,7 @@ After installation, authenticate with: gh auth login
         this.runCommand(`ssh ${host} "if not exist C:\\b\\pt mkdir C:\\b\\pt"`, `Preparing ${host}`);
         // Source folders are replaced, not merged: a route or module deleted here must not survive there.
         const remoteWin = 'C:\\b\\pt';
-        this.runCommand(`ssh ${host} "for %d in (app src tests plugins) do if exist ${remoteWin}\\%d rmdir /s /q ${remoteWin}\\%d"`, `Clearing stale sources on ${host}`);
+        this.runCommand(`ssh ${host} "if exist ${remoteWin}\\native rmdir /s /q ${remoteWin}\\native"`, `Clearing stale Kotlin sources on ${host}`);
         this.runCommand(`COPYFILE_DISABLE=1 tar -c -T "${listFile}" -f - | ssh ${host} "tar -x -C ${remoteDir} -f -"`, `Syncing source to ${host}`);
         this.runCommand(`scp -q scripts/builder/build-android.ps1 scripts/builder/sign-android.ps1 ${host}:C:/b/`, 'Copying build scripts');
         this.runCommand(`ssh ${host} "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\b\\build-android.ps1"`, `Building on ${host}`);
@@ -314,7 +306,9 @@ After installation, authenticate with: gh auth login
         );
 
         fs.mkdirSync(path.dirname(apkOut), { recursive: true });
-        this.runCommand(`scp -q ${host}:${remoteDir}/android/app/build/outputs/apk/release/app-release-signed.apk "${apkOut}"`, 'Fetching signed APK');
+        fs.mkdirSync(path.dirname(bundleOut), { recursive: true });
+        this.runCommand(`scp -q ${host}:${remoteDir}/native/app/build/outputs/apk/production/release/app-production-release-signed.apk "${apkOut}"`, 'Fetching signed APK');
+        this.runCommand(`scp -q ${host}:${remoteDir}/native/app/build/outputs/bundle/productionRelease/app-production-release-signed.aab "${bundleOut}"`, 'Fetching signed App Bundle');
         this.verifyApk(apkOut);
     }
 
@@ -331,7 +325,7 @@ After installation, authenticate with: gh auth login
     }
 
     shouldCleanBuild() {
-        return !fs.existsSync(path.join(this.projectRoot, 'android')) ||
+        return !fs.existsSync(path.join(this.projectRoot, 'native', 'app', 'build')) ||
                process.env.FORCE_CLEAN === 'true' ||
                process.argv.includes('--clean');
     }
@@ -508,7 +502,7 @@ After installation, authenticate with: gh auth login
 **Base Version**: \`${baseVersion}\`
 **Commit**: \`${git.commitShort}\` — ${git.commitMessage}
 **Branch**: \`${git.branch}\`
-**Expo**: ${environment.expoVersion} / Bun ${environment.bunVersion}
+**Kotlin**: ${environment.kotlinVersion} / Gradle ${environment.gradleVersion}
 
 **APK**: ${apk.fileName} (${apk.size} MB)
 **SHA256**: \`${apk.checksum}\`
@@ -674,7 +668,7 @@ Examples:
   bun nightly.js --clean            # Force clean rebuild
 
 Requirements:
-  - Android SDK and JDK 17 installed
+  - Android SDK and JDK 21 installed
   - GitHub CLI (gh) installed and authenticated
   - Git repository with GitHub remote
 
