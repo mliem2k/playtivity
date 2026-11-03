@@ -70,17 +70,16 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -243,6 +242,13 @@ private fun LoginScreen(state: PlaytivityState, viewModel: PlaytivityViewModel) 
 @Composable
 private fun AppScreen(state: PlaytivityState, viewModel: PlaytivityViewModel) {
     BackHandler(enabled = state.page == Page.Settings) { viewModel.open(Page.Profile) }
+    // Three flat pages (Activities, Top Songs, Top Artists); the bottom bar shows two items.
+    val pager = rememberPagerState(initialPage = if (state.page == Page.Profile) 1 else 0) { 3 }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(pager.settledPage) {
+        val target = if (pager.settledPage == 0) Page.Activities else Page.Profile
+        if (state.page != Page.Settings && state.page != target) viewModel.open(target)
+    }
     Scaffold(
         topBar = {
             state.updateInfo?.let { info ->
@@ -261,9 +267,9 @@ private fun AppScreen(state: PlaytivityState, viewModel: PlaytivityViewModel) {
                 Row(Modifier.fillMaxWidth().height(64.dp).background(Color.Black)) {
                     listOf(Triple(Page.Activities, "Activities", Icons.Filled.Home), Triple(Page.Profile, "Profile", Icons.Filled.Person))
                         .forEach { (page, label, icon) ->
-                            val selected = state.page == page
+                            val selected = (if (pager.currentPage == 0) Page.Activities else Page.Profile) == page
                             Column(
-                                Modifier.weight(1f).fillMaxHeight().selectable(selected = selected, role = Role.Tab, onClick = { viewModel.open(page) }),
+                                Modifier.weight(1f).fillMaxHeight().selectable(selected = selected, role = Role.Tab, onClick = { scope.launch { pager.animateScrollToPage(if (page == Page.Activities) 0 else pager.currentPage.coerceAtLeast(1)) } }),
                                 verticalArrangement = Arrangement.Center,
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
@@ -275,20 +281,26 @@ private fun AppScreen(state: PlaytivityState, viewModel: PlaytivityViewModel) {
                 }
             }
         },
-        containerColor = if (state.page == Page.Profile) PlaytivityColors.primary else PlaytivityColors.background,
+        containerColor = if (state.page != Page.Settings && pager.currentPage > 0) PlaytivityColors.primary else PlaytivityColors.background,
     ) { padding ->
-        when (state.page) {
-            Page.Activities -> ActivitiesPage(state, viewModel::refreshFeed, { viewModel.open(Page.Profile) }, Modifier.padding(padding))
-            Page.Profile -> ProfilePage(state, viewModel::refreshProfile, { viewModel.open(Page.Settings) }, { viewModel.open(Page.Activities) }, Modifier.padding(padding))
-            Page.Settings -> SettingsPage(state, viewModel, Modifier.padding(padding))
+        if (state.page == Page.Settings) {
+            SettingsPage(state, viewModel, Modifier.padding(padding))
+        } else {
+            HorizontalPager(pager, Modifier.padding(padding).fillMaxSize()) { index ->
+                if (index == 0) ActivitiesPage(state, viewModel::refreshFeed)
+                else ProfilePage(
+                    state, viewModel::refreshProfile, { viewModel.open(Page.Settings) }, index - 1,
+                    { scope.launch { pager.animateScrollToPage(1 + it) } },
+                )
+            }
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ActivitiesPage(state: PlaytivityState, refresh: () -> Unit, onSwipeNext: () -> Unit, modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxSize().swipeHorizontally(onLeft = onSwipeNext, onRight = {})) {
+private fun ActivitiesPage(state: PlaytivityState, refresh: () -> Unit, modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxSize()) {
         Box(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 16.dp), contentAlignment = Alignment.CenterStart) {
             Text("Friend Activity", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         }
@@ -356,32 +368,17 @@ private fun ActivityRow(activity: Activity) {
     }
 }
 
-/** Fires [onLeft] or [onRight] after a horizontal drag of 100 px or more; vertical scrolling is unaffected. */
-@Composable
-private fun Modifier.swipeHorizontally(onLeft: () -> Unit, onRight: () -> Unit): Modifier {
-    val left by rememberUpdatedState(onLeft)
-    val right by rememberUpdatedState(onRight)
-    return pointerInput(Unit) {
-        var total = 0f
-        detectHorizontalDragGestures(
-            onDragStart = { total = 0f },
-            onDragEnd = { if (total < -100f) left() else if (total > 100f) right() },
-        ) { _, delta -> total += delta }
-    }
-}
-
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
-private fun ProfilePage(state: PlaytivityState, refresh: () -> Unit, onSettings: () -> Unit, onSwipeBack: () -> Unit, modifier: Modifier = Modifier) {
-    var tab by remember { mutableIntStateOf(0) }
+private fun ProfilePage(state: PlaytivityState, refresh: () -> Unit, onSettings: () -> Unit, tab: Int, onTab: (Int) -> Unit, modifier: Modifier = Modifier) {
     CompositionLocalProvider(LocalContentColor provides Color.White) {
-        PullToRefreshBox(isRefreshing = state.loadingProfile, onRefresh = refresh, modifier = modifier.fillMaxSize().background(PlaytivityColors.background).swipeHorizontally(onLeft = { tab = 1 }, onRight = { if (tab == 1) tab = 0 else onSwipeBack() })) {
+        PullToRefreshBox(isRefreshing = state.loadingProfile, onRefresh = refresh, modifier = modifier.fillMaxSize().background(PlaytivityColors.background)) {
             LazyColumn(Modifier.fillMaxSize()) {
                 item { ProfileHero(state, onSettings) }
                 stickyHeader {
                     Row(Modifier.fillMaxWidth().height(48.dp).background(PlaytivityColors.background)) {
                         listOf("Top Songs", "Top Artists").forEachIndexed { index, label ->
-                            Box(Modifier.weight(1f).fillMaxHeight().selectable(selected = tab == index, role = Role.Tab, onClick = { tab = index }), contentAlignment = Alignment.Center) {
+                            Box(Modifier.weight(1f).fillMaxHeight().selectable(selected = tab == index, role = Role.Tab, onClick = { onTab(index) }), contentAlignment = Alignment.Center) {
                                 Text(label, fontSize = 13.sp, fontWeight = if (tab == index) FontWeight.SemiBold else FontWeight.Normal, color = if (tab == index) Color.White else PlaytivityColors.textSecondary)
                                 if (tab == index) Box(Modifier.align(Alignment.BottomCenter).width(72.dp).height(2.dp).background(PlaytivityColors.primary))
                             }
