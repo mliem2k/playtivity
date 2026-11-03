@@ -78,7 +78,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -242,8 +254,8 @@ private fun LoginScreen(state: PlaytivityState, viewModel: PlaytivityViewModel) 
 @Composable
 private fun AppScreen(state: PlaytivityState, viewModel: PlaytivityViewModel) {
     BackHandler(enabled = state.page == Page.Settings) { viewModel.open(Page.Profile) }
-    // Three flat pages (Activities, Top Songs, Top Artists); the bottom bar shows two items.
-    val pager = rememberPagerState(initialPage = if (state.page == Page.Profile) 1 else 0) { 3 }
+    val pager = rememberPagerState(initialPage = if (state.page == Page.Profile) 1 else 0) { 2 }
+    var profileTab by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(pager.settledPage) {
         val target = if (pager.settledPage == 0) Page.Activities else Page.Profile
@@ -269,7 +281,7 @@ private fun AppScreen(state: PlaytivityState, viewModel: PlaytivityViewModel) {
                         .forEach { (page, label, icon) ->
                             val selected = (if (pager.currentPage == 0) Page.Activities else Page.Profile) == page
                             Column(
-                                Modifier.weight(1f).fillMaxHeight().selectable(selected = selected, role = Role.Tab, onClick = { scope.launch { pager.animateScrollToPage(if (page == Page.Activities) 0 else pager.currentPage.coerceAtLeast(1)) } }),
+                                Modifier.weight(1f).fillMaxHeight().selectable(selected = selected, role = Role.Tab, onClick = { scope.launch { pager.animateScrollToPage(if (page == Page.Activities) 0 else 1) } }),
                                 verticalArrangement = Arrangement.Center,
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
@@ -281,19 +293,39 @@ private fun AppScreen(state: PlaytivityState, viewModel: PlaytivityViewModel) {
                 }
             }
         },
-        containerColor = if (state.page != Page.Settings && pager.currentPage > 0) PlaytivityColors.primary else PlaytivityColors.background,
+        containerColor = PlaytivityColors.background,
     ) { padding ->
         if (state.page == Page.Settings) {
             SettingsPage(state, viewModel, Modifier.padding(padding))
         } else {
-            HorizontalPager(pager, Modifier.padding(padding).fillMaxSize()) { index ->
-                if (index == 0) ActivitiesPage(state, viewModel::refreshFeed)
-                else ProfilePage(
-                    state, viewModel::refreshProfile, { viewModel.open(Page.Settings) }, index - 1,
-                    { scope.launch { pager.animateScrollToPage(1 + it) } },
-                )
+            // Each page paints its own background, so nothing changes colour while a swipe is in flight.
+            // The profile page owns its tab swipe, so the pager only scrolls by touch from Activities.
+            HorizontalPager(pager, Modifier.fillMaxSize(), userScrollEnabled = pager.settledPage == 0) { index ->
+                if (index == 0) {
+                    ActivitiesPage(state, viewModel::refreshFeed, Modifier.background(PlaytivityColors.background).padding(padding))
+                } else {
+                    ProfilePage(
+                        state, viewModel::refreshProfile, { viewModel.open(Page.Settings) }, profileTab, { profileTab = it },
+                        { scope.launch { pager.animateScrollToPage(0) } },
+                        Modifier.background(PlaytivityColors.primary).padding(padding),
+                    )
+                }
             }
         }
+    }
+}
+
+/** Fires [onLeft] or [onRight] after a horizontal drag of 100 px or more; vertical scrolling is unaffected. */
+@Composable
+private fun Modifier.swipeHorizontally(onLeft: () -> Unit, onRight: () -> Unit): Modifier {
+    val left by rememberUpdatedState(onLeft)
+    val right by rememberUpdatedState(onRight)
+    return pointerInput(Unit) {
+        var total = 0f
+        detectHorizontalDragGestures(
+            onDragStart = { total = 0f },
+            onDragEnd = { if (total < -100f) left() else if (total > 100f) right() },
+        ) { _, delta -> total += delta }
     }
 }
 
@@ -370,7 +402,7 @@ private fun ActivityRow(activity: Activity) {
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
-private fun ProfilePage(state: PlaytivityState, refresh: () -> Unit, onSettings: () -> Unit, tab: Int, onTab: (Int) -> Unit, modifier: Modifier = Modifier) {
+private fun ProfilePage(state: PlaytivityState, refresh: () -> Unit, onSettings: () -> Unit, tab: Int, onTab: (Int) -> Unit, onSwipeBack: () -> Unit, modifier: Modifier = Modifier) {
     CompositionLocalProvider(LocalContentColor provides Color.White) {
         PullToRefreshBox(isRefreshing = state.loadingProfile, onRefresh = refresh, modifier = modifier.fillMaxSize().background(PlaytivityColors.background)) {
             LazyColumn(Modifier.fillMaxSize()) {
@@ -386,11 +418,28 @@ private fun ProfilePage(state: PlaytivityState, refresh: () -> Unit, onSettings:
                     }
                 }
                 if (state.profileError != null) item { Text(state.profileError, Modifier.padding(16.dp), color = MaterialTheme.colorScheme.error) }
-                if (tab == 0) {
-                    items(state.top?.tracks.orEmpty().withIndex().toList(), key = { it.index }) { (index, track) -> TrackRow(track, index + 1) }
-                } else {
-                    items(state.top?.artists.orEmpty().withIndex().toList(), key = { it.index }) { (index, artist) ->
-                        ArtistRow(artist.copy(monthlyListeners = state.artistListeners[artist.uri.substringAfterLast(':')]?.takeIf { it >= 0 }), index + 1)
+                // Only this list slides between tabs; the header above stays put.
+                item {
+                    AnimatedContent(
+                        targetState = tab,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 400.dp).clipToBounds().background(PlaytivityColors.background)
+                            .swipeHorizontally(onLeft = { onTab(1) }, onRight = { if (tab == 1) onTab(0) else onSwipeBack() }),
+                        transitionSpec = {
+                            val forward = targetState > initialState
+                            (slideInHorizontally { if (forward) it else -it } + fadeIn()) togetherWith
+                                (slideOutHorizontally { if (forward) -it else it } + fadeOut())
+                        },
+                        label = "profileTab",
+                    ) { shown ->
+                        Column(Modifier.fillMaxWidth()) {
+                            if (shown == 0) {
+                                state.top?.tracks.orEmpty().forEachIndexed { index, track -> TrackRow(track, index + 1) }
+                            } else {
+                                state.top?.artists.orEmpty().forEachIndexed { index, artist ->
+                                    ArtistRow(artist.copy(monthlyListeners = state.artistListeners[artist.uri.substringAfterLast(':')]?.takeIf { it >= 0 }), index + 1)
+                                }
+                            }
+                        }
                     }
                 }
             }
