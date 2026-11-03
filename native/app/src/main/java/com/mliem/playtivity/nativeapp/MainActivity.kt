@@ -78,6 +78,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -275,8 +278,8 @@ private fun AppScreen(state: PlaytivityState, viewModel: PlaytivityViewModel) {
         containerColor = if (state.page == Page.Profile) PlaytivityColors.primary else PlaytivityColors.background,
     ) { padding ->
         when (state.page) {
-            Page.Activities -> ActivitiesPage(state, viewModel::refreshFeed, Modifier.padding(padding))
-            Page.Profile -> ProfilePage(state, viewModel::refreshProfile, { viewModel.open(Page.Settings) }, Modifier.padding(padding))
+            Page.Activities -> ActivitiesPage(state, viewModel::refreshFeed, { viewModel.open(Page.Profile) }, Modifier.padding(padding))
+            Page.Profile -> ProfilePage(state, viewModel::refreshProfile, { viewModel.open(Page.Settings) }, { viewModel.open(Page.Activities) }, Modifier.padding(padding))
             Page.Settings -> SettingsPage(state, viewModel, Modifier.padding(padding))
         }
     }
@@ -284,8 +287,8 @@ private fun AppScreen(state: PlaytivityState, viewModel: PlaytivityViewModel) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ActivitiesPage(state: PlaytivityState, refresh: () -> Unit, modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxSize()) {
+private fun ActivitiesPage(state: PlaytivityState, refresh: () -> Unit, onSwipeNext: () -> Unit, modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxSize().swipeHorizontally(onLeft = onSwipeNext, onRight = {})) {
         Box(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 16.dp), contentAlignment = Alignment.CenterStart) {
             Text("Friend Activity", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         }
@@ -353,12 +356,26 @@ private fun ActivityRow(activity: Activity) {
     }
 }
 
+/** Fires [onLeft] or [onRight] after a horizontal drag of 100 px or more; vertical scrolling is unaffected. */
+@Composable
+private fun Modifier.swipeHorizontally(onLeft: () -> Unit, onRight: () -> Unit): Modifier {
+    val left by rememberUpdatedState(onLeft)
+    val right by rememberUpdatedState(onRight)
+    return pointerInput(Unit) {
+        var total = 0f
+        detectHorizontalDragGestures(
+            onDragStart = { total = 0f },
+            onDragEnd = { if (total < -100f) left() else if (total > 100f) right() },
+        ) { _, delta -> total += delta }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
-private fun ProfilePage(state: PlaytivityState, refresh: () -> Unit, onSettings: () -> Unit, modifier: Modifier = Modifier) {
+private fun ProfilePage(state: PlaytivityState, refresh: () -> Unit, onSettings: () -> Unit, onSwipeBack: () -> Unit, modifier: Modifier = Modifier) {
     var tab by remember { mutableIntStateOf(0) }
     CompositionLocalProvider(LocalContentColor provides Color.White) {
-        PullToRefreshBox(isRefreshing = state.loadingProfile, onRefresh = refresh, modifier = modifier.fillMaxSize().background(PlaytivityColors.background)) {
+        PullToRefreshBox(isRefreshing = state.loadingProfile, onRefresh = refresh, modifier = modifier.fillMaxSize().background(PlaytivityColors.background).swipeHorizontally(onLeft = { tab = 1 }, onRight = { if (tab == 1) tab = 0 else onSwipeBack() })) {
             LazyColumn(Modifier.fillMaxSize()) {
                 item { ProfileHero(state, onSettings) }
                 stickyHeader {
