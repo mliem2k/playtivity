@@ -29,6 +29,14 @@ class UpdateModelsTest {
         assertFalse(shouldUpdateToNightly(AppVersion("0.0.3", "1"), info))
     }
 
+    @Test fun readsTheApkDigestWhenGithubReportsOne() {
+        assertEquals(null, infoFromRelease(nightly, true).sha256)
+        val withDigest = JSONObject(nightly.toString()).apply {
+            getJSONArray("assets").getJSONObject(0).put("digest", "sha256:ABCDEF")
+        }
+        assertEquals("abcdef", infoFromRelease(withDigest, true).sha256)
+    }
+
     @Test fun comparesStableReleasesAndSelectsLatestPublished() {
         assertTrue(isNewerVersion("0.0.2", "0.0.3"))
         assertFalse(isNewerVersion("0.0.3", "0.0.2"))

@@ -1,9 +1,13 @@
 package com.mliem.playtivity.nativeapp
 
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
-import androidx.core.content.FileProvider
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.core.content.pm.PackageInfoCompat
 import com.mliem.playtivity.core.AppVersion
 import com.mliem.playtivity.core.UpdateCheck
@@ -13,14 +17,27 @@ import com.mliem.playtivity.core.checkRelease
 import com.mliem.playtivity.core.isNightlyVersion
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import java.io.File
+import java.security.MessageDigest
 
 class UpdateManager(private val context: Context, private val client: OkHttpClient = OkHttpClient()) {
     private val preferences = context.getSharedPreferences("playtivity_updates", Context.MODE_PRIVATE)
+
+    private val _installError = MutableStateFlow<String?>(null)
+
+    /** Set when the system installer refuses a downloaded update, after [downloadAndInstall] has already returned. */
+    val installError: StateFlow<String?> = _installError.asStateFlow()
+
+    fun onInstallFailed(message: String) {
+        _installError.value = message
+    }
 
     var nightly: Boolean
         get() = preferences.getBoolean("enable_nightly", isNightlyVersion(currentVersion().version))
@@ -81,16 +98,67 @@ class UpdateManager(private val context: Context, private val client: OkHttpClie
         }
         val archive = context.packageManager.getPackageArchiveInfo(destination.absolutePath, PackageManager.GET_ACTIVITIES)
         require(archive?.packageName == context.packageName) { "This update is for a different app" }
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", destination)
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        if (!checksumMatches(sha256Of(destination), info.sha256)) {
+            destination.delete()
+            error("The downloaded file did not match its checksum, so it was not installed")
         }
-        context.startActivity(intent)
+        if (!context.packageManager.canRequestPackageInstalls()) {
+            context.startActivity(
+                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+            error("Allow Playtivity to install apps in the settings screen that just opened, then tap Install again")
+        }
+        _installError.value = null
+        commit(destination)
+    }
+
+    private fun sha256Of(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private fun commit(apk: File) {
+        val installer = context.packageManager.packageInstaller
+        val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
+            setAppPackageName(context.packageName)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+            }
+        }
+        val sessionId = installer.createSession(params)
+        installer.openSession(sessionId).use { session ->
+            apk.inputStream().use { input ->
+                session.openWrite("update.apk", 0, apk.length()).use { output ->
+                    input.copyTo(output)
+                    session.fsync(output)
+                }
+            }
+            // The installer fills in the status extras, so this PendingIntent has to be mutable.
+            val callback = PendingIntent.getBroadcast(
+                context,
+                sessionId,
+                Intent(context, InstallResultReceiver::class.java).setPackage(context.packageName),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+            )
+            session.commit(callback.intentSender)
+        }
     }
 
     companion object {
         private const val DAY_MS = 24 * 60 * 60 * 1000L
         private const val PRODUCTION_PACKAGE = "com.mliem.playtivity"
+
+        /** GitHub reports a digest for new assets; an older asset has none and is accepted on size alone. */
+        internal fun checksumMatches(actualHex: String, expected: String?) =
+            expected == null || actualHex.equals(expected, ignoreCase = true)
     }
 }

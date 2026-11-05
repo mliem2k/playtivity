@@ -65,6 +65,7 @@ class PlaytivityViewModel(private val app: PlaytivityApp) : ViewModel() {
     private var lastTopFetchAt: Long = 0
 
     init {
+        collectInstallErrors()
         viewModelScope.launch {
             _state.update { it.copy(nightlyUpdates = app.updates.nightly, hapticsEnabled = app.hapticsEnabled, version = app.updates.currentVersion().version) }
             app.secrets.initialize(viewModelScope)
@@ -158,6 +159,12 @@ class PlaytivityViewModel(private val app: PlaytivityApp) : ViewModel() {
 
     fun dismissUpdate() {
         _state.update { it.copy(updateInfo = null, updateMessage = null) }
+    }
+
+    private fun collectInstallErrors() = viewModelScope.launch {
+        app.updates.installError.collect { message ->
+            if (message != null) _state.update { it.copy(updateMessage = message) }
+        }
     }
 
     fun installUpdate() {

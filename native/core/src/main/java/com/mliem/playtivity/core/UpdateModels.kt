@@ -17,6 +17,8 @@ data class UpdateInfo(
     val changelog: String,
     val isNightly: Boolean,
     val fileSizeBytes: Long,
+    /** Lowercase hex SHA-256 of the APK as GitHub reports it, or null for an asset uploaded before GitHub added digests. */
+    val sha256: String? = null,
 )
 
 data class UpdateCheck(val hasUpdate: Boolean, val isNightly: Boolean, val info: UpdateInfo? = null, val error: String? = null)
@@ -102,7 +104,8 @@ fun infoFromRelease(release: JSONObject, isNightly: Boolean): UpdateInfo {
         buildNumber = Regex("build number[:\\s]+`?(\\d+)").find(lower)?.groupValues?.get(1)
             ?: Regex("build\\s*(\\d+)").find(name.lowercase())?.groupValues?.get(1).orEmpty()
     }
-    return UpdateInfo(version, buildNumber, buildDate, apkUrl, apkUrl.substringAfterLast('/'), body, isNightly, asset?.optLong("size") ?: 0)
+    return UpdateInfo(version, buildNumber, buildDate, apkUrl, apkUrl.substringAfterLast('/'), body, isNightly, asset?.optLong("size") ?: 0,
+        asset?.optString("digest").orEmpty().removePrefix("sha256:").lowercase().ifBlank { null })
 }
 
 fun checkRelease(releases: JSONArray, current: AppVersion): UpdateCheck {
