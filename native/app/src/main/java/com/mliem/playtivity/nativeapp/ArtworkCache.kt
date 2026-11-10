@@ -144,7 +144,8 @@ class ArtworkCache(context: Context) {
         currentCoroutineContext().ensureActive()
         val bitmap = decode(bytes) ?: return@withContext null
         memory.put(memoryKey, bitmap)
-        encodeJpeg(bitmap)?.let { disk.write(diskKey, it) }
+        // A disk failure must not throw away a decoded bitmap that is already in memory.
+        runCatching { encodeJpeg(bitmap)?.let { disk.write(diskKey, it) } }
         bitmap
     }
 
@@ -195,6 +196,6 @@ class ArtworkCache(context: Context) {
     }
 
     private fun artworkKey(url: String): String =
-        MessageDigest.getInstance("SHA-256").digest("$url@$TARGET_PX".toByteArray())
+        MessageDigest.getInstance("SHA-256").digest("$url@$TARGET_PX".toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
 }
