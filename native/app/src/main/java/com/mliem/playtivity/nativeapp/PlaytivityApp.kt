@@ -22,6 +22,7 @@ class PlaytivityApp : Application() {
         set(value) { preferences.edit().putBoolean("enable_nightly", value).apply() }
     val sessions by lazy { SessionStore(this) }
     val activityCache by lazy { ActivityCache() }
+    val artworkCache by lazy { ArtworkCache(this) }
     val updates by lazy {
         UpdateClient(
             context = this,

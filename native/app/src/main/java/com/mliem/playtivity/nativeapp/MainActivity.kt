@@ -246,6 +246,15 @@ private fun LoginScreen(state: PlaytivityState, viewModel: PlaytivityViewModel) 
                         loadUrl("https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F")
                     }
                 },
+                onRelease = { webView ->
+                    webView.stopLoading()
+                    webView.webViewClient = WebViewClient()
+                    webView.loadUrl("about:blank")
+                    webView.clearHistory()
+                    webView.removeAllViews()
+                    (webView.parent as? ViewGroup)?.removeView(webView)
+                    webView.destroy()
+                },
             )
         }
     }
