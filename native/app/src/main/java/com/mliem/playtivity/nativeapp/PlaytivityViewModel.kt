@@ -5,12 +5,16 @@ import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.AP
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.mliem.android.update.CheckResult
+import com.mliem.android.update.FailureKind
+import com.mliem.android.update.InstallResult
+import com.mliem.android.update.UpdateInfo
+import com.mliem.android.update.UpdateState
 import com.mliem.playtivity.core.Activity
 import com.mliem.playtivity.core.SpotifyAuthException
 import com.mliem.playtivity.core.TopContent
 import com.mliem.playtivity.core.Track
 import com.mliem.playtivity.core.User
-import com.mliem.playtivity.core.UpdateInfo
 import com.mliem.playtivity.core.mergeActivities
 import com.mliem.playtivity.core.parseFriends
 import com.mliem.playtivity.core.userIdFromJwt
@@ -65,9 +69,9 @@ class PlaytivityViewModel(private val app: PlaytivityApp) : ViewModel() {
     private var lastTopFetchAt: Long = 0
 
     init {
-        collectInstallErrors()
+        collectUpdateErrors()
         viewModelScope.launch {
-            _state.update { it.copy(nightlyUpdates = app.updates.nightly, hapticsEnabled = app.hapticsEnabled, version = app.updates.currentVersion().version) }
+            _state.update { it.copy(nightlyUpdates = app.nightlyUpdates, hapticsEnabled = app.hapticsEnabled, version = app.updates.currentVersion.versionName) }
             app.secrets.initialize(viewModelScope)
             val cookie = app.sessions.readOrImportCookie()
             val cached = if (cookie != null) mergeActivities(app.activityCache.load(), emptyList()) else emptyList()
@@ -83,7 +87,7 @@ class PlaytivityViewModel(private val app: PlaytivityApp) : ViewModel() {
                 loadUser()
                 startPolling()
             }
-            checkUpdate(force = app.updates.nightly)
+            checkUpdate(force = app.nightlyUpdates)
         }
     }
 
@@ -127,7 +131,7 @@ class PlaytivityViewModel(private val app: PlaytivityApp) : ViewModel() {
         nowPlayingJob = null
         token = null
         lastTopFetchAt = 0
-        _state.value = PlaytivityState(ready = true, nightlyUpdates = app.updates.nightly, hapticsEnabled = app.hapticsEnabled, version = app.updates.currentVersion().version)
+        _state.value = PlaytivityState(ready = true, nightlyUpdates = app.nightlyUpdates, hapticsEnabled = app.hapticsEnabled, version = app.updates.currentVersion.versionName)
     }
 
     fun open(page: Page) {
@@ -146,7 +150,7 @@ class PlaytivityViewModel(private val app: PlaytivityApp) : ViewModel() {
     fun refreshProfile() = viewModelScope.launch { loadProfile() }
 
     fun setNightlyUpdates(enabled: Boolean) {
-        app.updates.nightly = enabled
+        app.nightlyUpdates = enabled
         _state.update { it.copy(nightlyUpdates = enabled) }
     }
 
@@ -161,9 +165,12 @@ class PlaytivityViewModel(private val app: PlaytivityApp) : ViewModel() {
         _state.update { it.copy(updateInfo = null, updateMessage = null) }
     }
 
-    private fun collectInstallErrors() = viewModelScope.launch {
-        app.updates.installError.collect { message ->
-            if (message != null) _state.update { it.copy(updateMessage = message) }
+    private fun collectUpdateErrors() = viewModelScope.launch {
+        app.updates.state.collect { state ->
+            // Check failures are quiet on launch; install and installer failures are shown.
+            if (state is UpdateState.Failed && state.kind == FailureKind.INSTALL) {
+                _state.update { it.copy(updateMessage = state.message) }
+            }
         }
     }
 
@@ -173,11 +180,11 @@ class PlaytivityViewModel(private val app: PlaytivityApp) : ViewModel() {
         viewModelScope.launch {
             _state.update { it.copy(installingUpdate = true, updateMessage = null) }
             try {
-                app.updates.downloadAndInstall(info)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                _state.update { it.copy(updateMessage = error.message ?: "Could not install update") }
+                when (val result = app.updates.install(info)) {
+                    is InstallResult.Failed -> _state.update { it.copy(updateMessage = result.message) }
+                    is InstallResult.PermissionRequired -> _state.update { it.copy(updateMessage = result.message) }
+                    InstallResult.Started -> Unit
+                }
             } finally {
                 _state.update { it.copy(installingUpdate = false) }
             }
@@ -188,8 +195,19 @@ class PlaytivityViewModel(private val app: PlaytivityApp) : ViewModel() {
         if (_state.value.checkingUpdate) return
         _state.update { it.copy(checkingUpdate = true, updateMessage = null) }
         try {
-            val result = app.updates.check(force)
-            _state.update { it.copy(updateInfo = result.info, updateMessage = if (force && result.info == null) result.error ?: "Up to date" else null) }
+            val result = app.updates.checkNow(force, app.updateChannels())
+            val info = (result as? CheckResult.Available)?.info
+            val message = if (force) {
+                when (result) {
+                    is CheckResult.Available -> null
+                    is CheckResult.Failed -> result.message
+                    CheckResult.UpToDate, CheckResult.Throttled -> "Up to date"
+                    CheckResult.Unsupported -> app.updates.config.messages.unsupported
+                }
+            } else {
+                null
+            }
+            _state.update { it.copy(updateInfo = info, updateMessage = message) }
         } finally {
             _state.update { it.copy(checkingUpdate = false) }
         }

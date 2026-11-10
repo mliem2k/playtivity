@@ -19,5 +19,16 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = 'playtivity-native'
+
+def coreDir = file(System.getenv("ANDROID_CORE_DIR") ?: "../../android-core")
+if (!coreDir.exists()) {
+    throw new GradleException("android-core not found at ${coreDir}. Check it out beside this repository or set ANDROID_CORE_DIR.")
+}
+includeBuild(coreDir) {
+    dependencySubstitution {
+        substitute module("com.mliem.android:update") using project(":update")
+    }
+}
+
 include ':core'
 include ':app'

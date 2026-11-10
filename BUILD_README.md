@@ -5,8 +5,9 @@ The Android app is built from `native/` with Kotlin and Gradle. `version.yml` su
 ## Requirements
 
 1. JDK 21, Android SDK, and Bun.
-2. For a production build, a release keystore at `release-key.jks` or `keystore.base64.txt`. These files stay local and are ignored by Git.
-3. Release signing variables `ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD`. The local scripts configure these from the keystore and environment.
+2. The shared [android-core](https://github.com/mliem2k/android-core) checkout beside this repository at `../android-core` (or set `ANDROID_CORE_DIR`). The self-updater comes from it.
+3. For a production build, a release keystore at `release-key.jks` or `keystore.base64.txt`. These files stay local and are ignored by Git.
+4. Release signing variables `ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD`. The local scripts configure these from the keystore and environment.
 
 ## Preview build
 

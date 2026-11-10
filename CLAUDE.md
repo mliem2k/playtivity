@@ -54,17 +54,27 @@ Example: `0.0.2-nightly-20260611-050901+1781212141`
   by the in-app update checker to decide whether a nightly is newer.
 - `version.yml` is temporarily patched to the nightly version for the build
   and then restored to the stable base immediately after.
-- GitHub tags: `nightly-YYYYMMDD-HHMMSS` (individual build) and
-  `latest-nightly` (floating, always recreated to point to the newest nightly).
+- GitHub tags: `nightly-YYYYMMDD-BUILD` (individual build, the same BUILD as
+  the Android version code) and `latest-nightly` (floating, always recreated to
+  point to the newest nightly). This is the shared nightly tag policy used by
+  Playtivity, Scientific Calculator, and CarLyrics. The updater still reads the
+  old `nightly-YYYYMMDD-HHMMSS` tags so installed builds update across.
 
-### In-app update detection (`native/core/src/main/java/com/mliem/playtivity/core/UpdateModels.kt`)
+### In-app update detection (`../android-core/update/src/main/java/com/mliem/android/update/ReleaseParser.kt`)
+
+The updater is the shared `com.mliem.android:update` module from
+[android-core](https://github.com/mliem2k/android-core), included from the
+`android-core` checkout beside this repository (or `ANDROID_CORE_DIR`). It reads
+the release notes' `**Version**` and `+BUILD` when present, so old wall-clock
+tags still resolve to the real Android version code.
 
 | Installed | Available | Rule |
 |-----------|-----------|------|
-| nightly   | nightly   | BUILD (integer) comparison — larger BUILD wins. Timestamp fallback if BUILDs are unparseable. |
+| nightly   | nightly   | BUILD (integer) comparison — larger BUILD wins, and a nightly from an older base version is never offered. |
 | nightly   | stable    | Offered when stable base version > nightly base version (any semver bump). |
 | stable    | stable    | Semver comparison on NAME. |
 | stable    | nightly   | Offered for a higher or equal base version only when the nightly Android code is newer, if both codes are available. |
+| any       | none      | No stable or nightly candidate newer than the installed build is "Up to date", not an error. |
 
 ### What never changes
 
