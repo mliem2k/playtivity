@@ -32,6 +32,7 @@ class PlaytivityApp : Application() {
                 updatesEnabled = packageName == PRODUCTION_PACKAGE,
                 minCheckIntervalMillis = DAY_MS,
                 messages = UpdateMessages(
+                    unsupported = "Updates are available in the official Playtivity app",
                     permission = "Allow Playtivity to install apps in the settings screen that just opened, then tap Install again.",
                     signature = "This build is signed with a different key than the installed app. Uninstall Playtivity once, then install the new APK.",
                     installFailed = "The installer could not install the update.",

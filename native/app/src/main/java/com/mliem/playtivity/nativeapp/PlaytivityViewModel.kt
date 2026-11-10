@@ -202,7 +202,7 @@ class PlaytivityViewModel(private val app: PlaytivityApp) : ViewModel() {
                     is CheckResult.Available -> null
                     is CheckResult.Failed -> result.message
                     CheckResult.UpToDate, CheckResult.Throttled -> "Up to date"
-                    CheckResult.Unsupported -> "Updates are off for this build"
+                    CheckResult.Unsupported -> app.updates.config.messages.unsupported
                 }
             } else {
                 null
