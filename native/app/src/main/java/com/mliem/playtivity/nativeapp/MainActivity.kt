@@ -9,8 +9,10 @@ import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -27,8 +29,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -124,6 +129,10 @@ class MainActivity : ComponentActivity() {
     private val viewModel: PlaytivityViewModel by viewModels { PlaytivityViewModel.Factory }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
         super.onCreate(savedInstanceState)
         openWidgetLink(intent)
         setContent {
@@ -166,14 +175,14 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun LoadingScreen() {
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) { CircularProgressIndicator() }
+    Column(Modifier.fillMaxSize().safeDrawingPadding(), verticalArrangement = Arrangement.Center) { CircularProgressIndicator() }
 }
 
 @Composable
 private fun LoginScreen(state: PlaytivityState, viewModel: PlaytivityViewModel) {
     var webLogin by remember { mutableStateOf(false) }
     if (!webLogin) {
-        Column(Modifier.fillMaxSize().background(Color.Black)) {
+        Column(Modifier.fillMaxSize().background(Color.Black).safeDrawingPadding()) {
             Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.End) {
                 IconButton(onClick = viewModel::checkUpdateNow, enabled = !state.checkingUpdate) {
                     Icon(Icons.Filled.SystemUpdate, contentDescription = "Check for updates", tint = PlaytivityColors.textSecondary)
@@ -273,7 +282,11 @@ private fun AppScreen(state: PlaytivityState, viewModel: PlaytivityViewModel) {
     Scaffold(
         topBar = {
             state.updateInfo?.let { info ->
-                Column {
+                Column(
+                    Modifier.fillMaxWidth()
+                        .background(PlaytivityColors.background)
+                        .statusBarsPadding(),
+                ) {
                     Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("Update ${info.version} available", Modifier.weight(1f).padding(8.dp))
                         Button(onClick = viewModel::installUpdate, enabled = !state.installingUpdate) { Text("Install") }
@@ -285,7 +298,7 @@ private fun AppScreen(state: PlaytivityState, viewModel: PlaytivityViewModel) {
         },
         bottomBar = {
             if (state.page != Page.Settings) {
-                Row(Modifier.fillMaxWidth().height(64.dp).background(Color.Black)) {
+                Row(Modifier.fillMaxWidth().background(Color.Black).navigationBarsPadding().height(64.dp)) {
                     listOf(Triple(Page.Activities, "Activities", Icons.Filled.Home), Triple(Page.Profile, "Profile", Icons.Filled.Person))
                         .forEach { (page, label, icon) ->
                             val selected = (if (pager.currentPage == 0) Page.Activities else Page.Profile) == page
