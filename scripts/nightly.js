@@ -377,6 +377,7 @@ After installation, authenticate with: gh auth login
         
         this.buildInfo = {
             buildId,
+            tagName: `nightly-${versionInfo.dateStr}-${versionInfo.nightly.buildNumber}`,
             buildType: 'nightly',
             buildDate: new Date().toISOString(),
             version: versionInfo.nightly,
@@ -434,7 +435,7 @@ After installation, authenticate with: gh auth login
         this.log('Creating GitHub release', 'github');
         this.cleanDraftReleases();
 
-        const tagName = `nightly-${this.buildInfo.buildId}`;
+        const tagName = this.buildInfo.tagName;
         const releaseName = `Nightly Build ${this.buildInfo.buildId}`;
         const releaseNotes = this.generateReleaseNotes(apkInfo);
 
@@ -641,7 +642,7 @@ Report issues with build ID: \`${this.buildInfo.buildId}\``;
 
         if (!skipGitHub && this.githubRepo) {
             console.log(`\nGitHub Release:`);
-            console.log(`   https://github.com/${this.githubRepo}/releases/tag/nightly-${this.buildInfo.buildId}`);
+            console.log(`   https://github.com/${this.githubRepo}/releases/tag/${this.buildInfo.tagName}`);
         }
 
         console.log(`   APK: ${apkInfo.latestPath}`);
